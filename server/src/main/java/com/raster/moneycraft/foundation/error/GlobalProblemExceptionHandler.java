@@ -377,6 +377,54 @@ public class GlobalProblemExceptionHandler {
                     )
                 );
             }
+            if (rawMsg.contains("MC-INV-SYSTEM-GODOWN-PROTECTED")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-INV-SYSTEM-GODOWN-PROTECTED",
+                        "Default System Godown Protected",
+                        "Predefined Main Location godown cannot be deleted or demoted.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-INV-GODOWN-CYCLE")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-INV-GODOWN-CYCLE",
+                        "Godown Hierarchy Cycle",
+                        "Godown parent assignment would introduce a cycle.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-INV-GODOWN-DEPTH")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-INV-GODOWN-DEPTH",
+                        "Godown Maximum Depth Exceeded",
+                        "Godown hierarchy cannot exceed depth 32.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-INV-STOCKGROUP-CYCLE")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-INV-STOCKGROUP-CYCLE",
+                        "Stock Group Hierarchy Cycle",
+                        "Stock group parent assignment would introduce a cycle.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
             if (ex instanceof org.springframework.dao.DataIntegrityViolationException
                 && (rawMsg.contains("violates foreign key constraint") || rawMsg.contains("still referenced"))) {
                 return ResponseEntity.status(HttpStatus.CONFLICT).contentType(PROBLEM_JSON).body(

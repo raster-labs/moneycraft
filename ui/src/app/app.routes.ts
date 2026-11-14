@@ -66,6 +66,78 @@ const VOUCHERS_CHILD_ROUTES: Routes = [
   },
 ];
 
+const INVENTORY_CHILD_ROUTES: Routes = [
+  {
+    path: 'masters',
+    loadComponent: () =>
+      import('./features/masters/masters-hub.component').then((m) => m.MastersHubComponent),
+  },
+  {
+    path: 'uoms',
+    loadComponent: () =>
+      import('./features/inventory/uom-workbench.component').then((m) => m.UomWorkbenchComponent),
+  },
+  {
+    path: 'godowns',
+    loadComponent: () =>
+      import('./features/inventory/godown-workbench.component').then(
+        (m) => m.GodownWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'stock-groups',
+    loadComponent: () =>
+      import('./features/inventory/stock-group-workbench.component').then(
+        (m) => m.StockGroupWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'stock-items',
+    loadComponent: () =>
+      import('./features/inventory/stock-item-workbench.component').then(
+        (m) => m.StockItemWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'price-lists',
+    loadComponent: () =>
+      import('./features/inventory/price-list-workbench.component').then(
+        (m) => m.PriceListWorkbenchComponent,
+      ),
+  },
+  {
+    path: '',
+    pathMatch: 'full',
+    redirectTo: 'masters',
+  },
+];
+
+const REPORTS_CHILD_ROUTES: Routes = [
+  {
+    path: 'stock-summary',
+    data: { reportTab: 'STOCK_SUMMARY' },
+    loadComponent: () =>
+      import('./features/inventory/stock-summary.component').then((m) => m.StockSummaryComponent),
+  },
+  {
+    path: 'godown-summary',
+    data: { reportTab: 'GODOWN_SUMMARY' },
+    loadComponent: () =>
+      import('./features/inventory/stock-summary.component').then((m) => m.StockSummaryComponent),
+  },
+  {
+    path: 'batch-ageing',
+    data: { reportTab: 'BATCH_AGEING' },
+    loadComponent: () =>
+      import('./features/inventory/stock-summary.component').then((m) => m.StockSummaryComponent),
+  },
+  {
+    path: '',
+    pathMatch: 'full',
+    redirectTo: 'stock-summary',
+  },
+];
+
 export const APP_ROUTES: Routes = [
   {
     path: 'setup',
@@ -139,6 +211,20 @@ export const APP_ROUTES: Routes = [
     children: MASTERS_CHILD_ROUTES,
   },
   {
+    path: 'inventory',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: INVENTORY_CHILD_ROUTES,
+  },
+  {
+    path: 'reports',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: REPORTS_CHILD_ROUTES,
+  },
+  {
     path: 'companies',
     canActivate: [authenticatedGuard],
     loadComponent: () =>
@@ -204,6 +290,14 @@ export const APP_ROUTES: Routes = [
       {
         path: 'masters',
         children: MASTERS_CHILD_ROUTES,
+      },
+      {
+        path: 'inventory',
+        children: INVENTORY_CHILD_ROUTES,
+      },
+      {
+        path: 'reports',
+        children: REPORTS_CHILD_ROUTES,
       },
       {
         path: 'companies',

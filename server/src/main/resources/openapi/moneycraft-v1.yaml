@@ -1567,6 +1567,829 @@ paths:
               schema:
                 type: string
 
+  /companies/{companyId}/uoms:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listUoms
+      tags: [InventoryMasters]
+      summary: List Units of Measure (Simple & Compound)
+      responses:
+        '200':
+          description: UOM list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UomDto'
+    post:
+      operationId: createUom
+      tags: [InventoryMasters]
+      summary: Create Unit of Measure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertUomRequest'
+      responses:
+        '201':
+          description: Created UOM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UomDto'
+
+  /companies/{companyId}/uoms/{uomId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: uomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getUom
+      tags: [InventoryMasters]
+      summary: Get UOM by ID
+      responses:
+        '200':
+          description: UOM detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UomDto'
+    put:
+      operationId: updateUom
+      tags: [InventoryMasters]
+      summary: Update UOM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertUomRequest'
+      responses:
+        '200':
+          description: Updated UOM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UomDto'
+    delete:
+      operationId: deleteUom
+      tags: [InventoryMasters]
+      summary: Delete unreferenced UOM
+      responses:
+        '204':
+          description: Deleted
+
+  /companies/{companyId}/godowns:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listGodowns
+      tags: [InventoryMasters]
+      summary: List hierarchical Godowns / Locations
+      responses:
+        '200':
+          description: Godowns list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GodownDto'
+    post:
+      operationId: createGodown
+      tags: [InventoryMasters]
+      summary: Create Godown
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertGodownRequest'
+      responses:
+        '201':
+          description: Created Godown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GodownDto'
+
+  /companies/{companyId}/godowns/{godownId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: godownId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getGodown
+      tags: [InventoryMasters]
+      summary: Get Godown by ID
+      responses:
+        '200':
+          description: Godown detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GodownDto'
+    put:
+      operationId: updateGodown
+      tags: [InventoryMasters]
+      summary: Update Godown
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertGodownRequest'
+      responses:
+        '200':
+          description: Updated Godown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GodownDto'
+    delete:
+      operationId: deleteGodown
+      tags: [InventoryMasters]
+      summary: Delete Godown (Main Location protected)
+      responses:
+        '204':
+          description: Deleted
+
+  /companies/{companyId}/stock-groups:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listStockGroups
+      tags: [InventoryMasters]
+      summary: List hierarchical Stock Groups
+      responses:
+        '200':
+          description: Stock Groups list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockGroupDto'
+    post:
+      operationId: createStockGroup
+      tags: [InventoryMasters]
+      summary: Create Stock Group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertStockGroupRequest'
+      responses:
+        '201':
+          description: Created Stock Group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockGroupDto'
+
+  /companies/{companyId}/stock-groups/{stockGroupId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: stockGroupId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getStockGroup
+      tags: [InventoryMasters]
+      summary: Get Stock Group by ID
+      responses:
+        '200':
+          description: Stock Group detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockGroupDto'
+    put:
+      operationId: updateStockGroup
+      tags: [InventoryMasters]
+      summary: Update Stock Group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertStockGroupRequest'
+      responses:
+        '200':
+          description: Updated Stock Group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockGroupDto'
+    delete:
+      operationId: deleteStockGroup
+      tags: [InventoryMasters]
+      summary: Delete Stock Group
+      responses:
+        '204':
+          description: Deleted
+
+  /companies/{companyId}/stock-categories:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listStockCategories
+      tags: [InventoryMasters]
+      summary: List Stock Categories
+      responses:
+        '200':
+          description: Stock Categories list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockCategoryDto'
+    post:
+      operationId: createStockCategory
+      tags: [InventoryMasters]
+      summary: Create Stock Category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertStockCategoryRequest'
+      responses:
+        '201':
+          description: Created Stock Category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockCategoryDto'
+
+  /companies/{companyId}/stock-categories/{stockCategoryId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: stockCategoryId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getStockCategory
+      tags: [InventoryMasters]
+      summary: Get Stock Category by ID
+      responses:
+        '200':
+          description: Stock Category detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockCategoryDto'
+    put:
+      operationId: updateStockCategory
+      tags: [InventoryMasters]
+      summary: Update Stock Category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertStockCategoryRequest'
+      responses:
+        '200':
+          description: Updated Stock Category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockCategoryDto'
+    delete:
+      operationId: deleteStockCategory
+      tags: [InventoryMasters]
+      summary: Delete Stock Category
+      responses:
+        '204':
+          description: Deleted
+
+  /companies/{companyId}/stock-items:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listStockItems
+      tags: [InventoryMasters]
+      summary: List Stock Items
+      parameters:
+        - name: stockGroupId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Stock Items list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockItemDto'
+    post:
+      operationId: createStockItem
+      tags: [InventoryMasters]
+      summary: Create Stock Item (seeds opening batch & cost layer when openingQty > 0)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertStockItemRequest'
+      responses:
+        '201':
+          description: Created Stock Item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItemDto'
+
+  /companies/{companyId}/stock-items/typeahead:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: typeaheadStockItems
+      tags: [InventoryMasters]
+      summary: Fast trigram Stock Item typeahead
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Matching Stock Items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockItemDto'
+
+  /companies/{companyId}/stock-items/{stockItemId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: stockItemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getStockItem
+      tags: [InventoryMasters]
+      summary: Get Stock Item by ID
+      responses:
+        '200':
+          description: Stock Item detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItemDto'
+    put:
+      operationId: updateStockItem
+      tags: [InventoryMasters]
+      summary: Update Stock Item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertStockItemRequest'
+      responses:
+        '200':
+          description: Updated Stock Item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItemDto'
+    delete:
+      operationId: deleteStockItem
+      tags: [InventoryMasters]
+      summary: Delete unreferenced Stock Item
+      responses:
+        '204':
+          description: Deleted
+
+  /companies/{companyId}/stock-items/{stockItemId}/batches:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: stockItemId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listStockItemBatches
+      tags: [InventoryMasters]
+      summary: List Batches for Stock Item
+      parameters:
+        - name: godownId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: asOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: includeZero
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Stock Batches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StockBatchDto'
+
+  /companies/{companyId}/price-lists:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listPriceLists
+      tags: [InventoryMasters]
+      summary: List Price Lists & staggered slabs
+      responses:
+        '200':
+          description: Price Lists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PriceListDto'
+    post:
+      operationId: createPriceList
+      tags: [InventoryMasters]
+      summary: Create Price List
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertPriceListRequest'
+      responses:
+        '201':
+          description: Created Price List
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceListDto'
+
+  /companies/{companyId}/price-lists/lookup:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: lookupPrice
+      tags: [InventoryMasters]
+      summary: Lookup staggered slab rate & discount for Price Level + Item + Qty + Date
+      parameters:
+        - name: priceLevelName
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: stockItemId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: qty
+          in: query
+          schema:
+            type: string
+        - name: asOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Matched Price Tier
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceLookupResponse'
+
+  /companies/{companyId}/price-lists/{priceListId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: priceListId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getPriceList
+      tags: [InventoryMasters]
+      summary: Get Price List by ID
+      responses:
+        '200':
+          description: Price List detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceListDto'
+    put:
+      operationId: updatePriceList
+      tags: [InventoryMasters]
+      summary: Update Price List
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertPriceListRequest'
+      responses:
+        '200':
+          description: Updated Price List
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceListDto'
+
+  /companies/{companyId}/boms:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listBoms
+      tags: [InventoryMasters]
+      summary: List Bills of Materials
+      parameters:
+        - name: stockItemId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: BOM list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BomDto'
+    post:
+      operationId: createBom
+      tags: [InventoryMasters]
+      summary: Create Multi-BOM definition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertBomRequest'
+      responses:
+        '201':
+          description: Created BOM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BomDto'
+
+  /companies/{companyId}/boms/{bomId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: bomId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getBom
+      tags: [InventoryMasters]
+      summary: Get BOM by ID
+      responses:
+        '200':
+          description: BOM detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BomDto'
+    put:
+      operationId: updateBom
+      tags: [InventoryMasters]
+      summary: Update BOM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertBomRequest'
+      responses:
+        '200':
+          description: Updated BOM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BomDto'
+
+  /companies/{companyId}/orders/open:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listOpenOrders
+      tags: [SupplyChain]
+      summary: List open Sales/Purchase orders & unbilled tracking notes
+      parameters:
+        - name: orderType
+          in: query
+          schema:
+            type: string
+            enum: [SALES_ORDER, PURCHASE_ORDER]
+        - name: partyLedgerId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Open order lines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenOrderLineDto'
+
+  /companies/{companyId}/vouchers/manufacturing-preview:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: previewManufacturing
+      tags: [SupplyChain]
+      summary: Preview Multi-BOM raw material consumption, scrap deduction & finished landed cost
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManufacturingPreviewRequest'
+      responses:
+        '200':
+          description: Manufacturing cost preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManufacturingPreviewResponse'
+
+  /companies/{companyId}/reports/stock-summary:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: getStockSummary
+      tags: [InventoryReports]
+      summary: 8-Method High-Precision Stock Summary Report
+      parameters:
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: stockGroupId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: valuationMethodOverride
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Stock Summary Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockSummaryReportDto'
+
+  /companies/{companyId}/reports/godown-summary:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: getGodownSummary
+      tags: [InventoryReports]
+      summary: Godown / Location Stock Summary
+      parameters:
+        - name: godownId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: asOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Godown Summary Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GodownSummaryReportDto'
+
+  /companies/{companyId}/reports/movement-analysis:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: getMovementAnalysis
+      tags: [InventoryReports]
+      summary: Stock Item Inward/Outward Movement Analysis
+      parameters:
+        - name: stockItemId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Movement Analysis Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovementAnalysisReportDto'
+
+  /companies/{companyId}/reports/batch-ageing:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: getBatchAgeing
+      tags: [InventoryReports]
+      summary: Batch Expiry & Ageing Report
+      parameters:
+        - name: stockItemId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: asOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Batch Ageing Report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchAgeingReportDto'
+
 components:
   securitySchemes:
     SessionCookie:
@@ -3196,6 +4019,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/VoucherLineRequest'
+        inventoryLines:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/VoucherInventoryLineDto'
 
     VoucherLineDetailDto:
       type: object
@@ -3402,6 +4229,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/VoucherLineDetailDto'
+        inventoryLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoucherInventoryLineDto'
 
     VoucherSummaryDto:
       type: object
@@ -3543,3 +4374,716 @@ components:
       properties:
         reason:
           type: [string, 'null']
+
+    BatchAllocationDto:
+      type: object
+      properties:
+        godownId:
+          type: [string, 'null']
+          format: uuid
+        godownName:
+          type: [string, 'null']
+        stockBatchId:
+          type: [string, 'null']
+          format: uuid
+        batchName:
+          type: [string, 'null']
+        actualQty:
+          type: string
+        billedQty:
+          type: [string, 'null']
+        rate:
+          type: [string, 'null']
+        amount:
+          type: [string, 'null']
+        mfgDate:
+          type: [string, 'null']
+          format: date
+        expiryDate:
+          type: [string, 'null']
+          format: date
+        allowExpiredBatch:
+          type: [boolean, 'null']
+
+    VoucherInventoryLineDto:
+      type: object
+      required: [stockItemId, actualQty]
+      properties:
+        id:
+          type: [string, 'null']
+          format: uuid
+        lineNo:
+          type: [integer, 'null']
+        accountingLedgerId:
+          type: [string, 'null']
+          format: uuid
+        stockItemId:
+          type: string
+          format: uuid
+        stockItemName:
+          type: [string, 'null']
+        movementDirection:
+          type: [string, 'null']
+          enum: [INWARD, OUTWARD, null]
+        uomId:
+          type: [string, 'null']
+          format: uuid
+        uomSymbol:
+          type: [string, 'null']
+        actualQty:
+          type: string
+        billedQty:
+          type: [string, 'null']
+        rate:
+          type: [string, 'null']
+        discountPct:
+          type: [string, 'null']
+        amount:
+          type: [string, 'null']
+        declaredMrp:
+          type: [string, 'null']
+        orderRefNo:
+          type: [string, 'null']
+        trackingNo:
+          type: [string, 'null']
+        linkedInwardAllocationId:
+          type: [string, 'null']
+          format: uuid
+        batchAllocations:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/BatchAllocationDto'
+
+    UpsertUomRequest:
+      type: object
+      required: [symbol]
+      properties:
+        uomType:
+          type: string
+          enum: [SIMPLE, COMPOUND]
+        symbol:
+          type: string
+        formalName:
+          type: [string, 'null']
+        gstUqcCode:
+          type: [string, 'null']
+        decimalPlaces:
+          type: integer
+        firstUomId:
+          type: [string, 'null']
+          format: uuid
+        conversionFactor:
+          type: [string, 'null']
+        secondUomId:
+          type: [string, 'null']
+          format: uuid
+        versionNo:
+          type: [integer, 'null']
+          format: int64
+
+    UomDto:
+      type: object
+      required: [id, uomType, symbol, decimalPlaces, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        uomType:
+          type: string
+        symbol:
+          type: string
+        formalName:
+          type: [string, 'null']
+        gstUqcCode:
+          type: [string, 'null']
+        decimalPlaces:
+          type: integer
+        firstUomId:
+          type: [string, 'null']
+          format: uuid
+        conversionFactor:
+          type: [string, 'null']
+        secondUomId:
+          type: [string, 'null']
+          format: uuid
+        versionNo:
+          type: integer
+          format: int64
+
+    UpsertGodownRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        parentGodownId:
+          type: [string, 'null']
+          format: uuid
+        address:
+          type: [string, 'null']
+        allowStorageOfMaterials:
+          type: boolean
+        ourStockWithThirdParty:
+          type: boolean
+        thirdPartyStockWithUs:
+          type: boolean
+        versionNo:
+          type: [integer, 'null']
+          format: int64
+
+    GodownDto:
+      type: object
+      required: [id, name, isSystemGodown, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        parentGodownId:
+          type: [string, 'null']
+          format: uuid
+        address:
+          type: string
+        allowStorageOfMaterials:
+          type: boolean
+        ourStockWithThirdParty:
+          type: boolean
+        thirdPartyStockWithUs:
+          type: boolean
+        isSystemGodown:
+          type: boolean
+        versionNo:
+          type: integer
+          format: int64
+
+    UpsertStockGroupRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        parentStockGroupId:
+          type: [string, 'null']
+          format: uuid
+        shouldQuantitiesOfItemsBeAdded:
+          type: boolean
+        hsnSacCode:
+          type: [string, 'null']
+        gstRatePct:
+          type: [string, 'null']
+        cessRatePct:
+          type: [string, 'null']
+        versionNo:
+          type: [integer, 'null']
+          format: int64
+
+    StockGroupDto:
+      type: object
+      required: [id, name, shouldQuantitiesOfItemsBeAdded, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        parentStockGroupId:
+          type: [string, 'null']
+          format: uuid
+        shouldQuantitiesOfItemsBeAdded:
+          type: boolean
+        hsnSacCode:
+          type: [string, 'null']
+        gstRatePct:
+          type: [string, 'null']
+        cessRatePct:
+          type: [string, 'null']
+        versionNo:
+          type: integer
+          format: int64
+
+    UpsertStockCategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        parentStockCategoryId:
+          type: [string, 'null']
+          format: uuid
+        versionNo:
+          type: [integer, 'null']
+          format: int64
+
+    StockCategoryDto:
+      type: object
+      required: [id, name, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        parentStockCategoryId:
+          type: [string, 'null']
+          format: uuid
+        versionNo:
+          type: integer
+          format: int64
+
+    UpsertStockItemRequest:
+      type: object
+      required: [name, baseUomId]
+      properties:
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        partNo:
+          type: [string, 'null']
+        description:
+          type: [string, 'null']
+        stockGroupId:
+          type: [string, 'null']
+          format: uuid
+        stockCategoryId:
+          type: [string, 'null']
+          format: uuid
+        baseUomId:
+          type: string
+          format: uuid
+        alternateUomId:
+          type: [string, 'null']
+          format: uuid
+        conversionNumerator:
+          type: [string, 'null']
+        conversionDenominator:
+          type: [string, 'null']
+        maintainInBatches:
+          type: boolean
+        trackDateOfMfg:
+          type: boolean
+        useExpiryDates:
+          type: boolean
+        costingMethod:
+          type: string
+          enum: [AVG_COST, FIFO, FIFO_PERPETUAL, LIFO_ANNUAL, LIFO_PERPETUAL, LAST_PURCHASE_COST, STD_COST, AT_ZERO_COST]
+        marketValuationMethod:
+          type: string
+          enum: [AVG_PRICE, LAST_SALE_PRICE, STD_PRICE, AT_ZERO_PRICE]
+        standardCost:
+          type: [string, 'null']
+        standardSellingPrice:
+          type: [string, 'null']
+        openingQty:
+          type: [string, 'null']
+        openingRate:
+          type: [string, 'null']
+        openingValue:
+          type: [string, 'null']
+        openingGodownId:
+          type: [string, 'null']
+          format: uuid
+        openingBatchName:
+          type: [string, 'null']
+        openingMfgDate:
+          type: [string, 'null']
+          format: date
+        openingExpiryDate:
+          type: [string, 'null']
+          format: date
+        gstApplicability:
+          type: string
+        gstSupplyType:
+          type: string
+        hsnSacCode:
+          type: [string, 'null']
+        gstRatePct:
+          type: [string, 'null']
+        cessRatePct:
+          type: [string, 'null']
+        cessPerUnit:
+          type: [string, 'null']
+        isTobaccoMrpItem:
+          type: boolean
+        mrpPerUnit:
+          type: [string, 'null']
+        defaultSalesLedgerId:
+          type: [string, 'null']
+          format: uuid
+        defaultPurchaseLedgerId:
+          type: [string, 'null']
+          format: uuid
+        versionNo:
+          type: [integer, 'null']
+          format: int64
+
+    StockItemDto:
+      type: object
+      required: [id, name, baseUomId, baseUomSymbol, costingMethod, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        baseUomId:
+          type: string
+          format: uuid
+        baseUomSymbol:
+          type: string
+        baseUomDecimals:
+          type: integer
+        costingMethod:
+          type: string
+        openingQty:
+          type: string
+        openingRate:
+          type: string
+        openingValue:
+          type: string
+        versionNo:
+          type: integer
+          format: int64
+
+    StockBatchDto:
+      type: object
+      required: [id, stockItemId, godownId, batchName, openingQty, closingQty, expired]
+      properties:
+        id:
+          type: string
+          format: uuid
+        stockItemId:
+          type: string
+          format: uuid
+        godownId:
+          type: string
+          format: uuid
+        godownName:
+          type: string
+        batchName:
+          type: string
+        mfgDate:
+          type: [string, 'null']
+          format: date
+        expiryDate:
+          type: [string, 'null']
+          format: date
+        mrpPerUnit:
+          type: [string, 'null']
+        openingQty:
+          type: string
+        closingQty:
+          type: string
+        expired:
+          type: boolean
+
+    PriceTierDto:
+      type: object
+      required: [stockItemId, rate]
+      properties:
+        stockItemId:
+          type: string
+          format: uuid
+        fromQty:
+          type: string
+        lessThanQty:
+          type: [string, 'null']
+        rate:
+          type: string
+        discountPct:
+          type: string
+
+    UpsertPriceListRequest:
+      type: object
+      required: [priceLevelName, effectiveFrom, tiers]
+      properties:
+        priceLevelName:
+          type: string
+        effectiveFrom:
+          type: string
+          format: date
+        currencyCode:
+          type: [string, 'null']
+        tiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceTierDto'
+        versionNo:
+          type: [integer, 'null']
+          format: int64
+
+    PriceListDto:
+      type: object
+      required: [id, priceLevelName, effectiveFrom, tiers, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        priceLevelName:
+          type: string
+        effectiveFrom:
+          type: string
+          format: date
+        currencyCode:
+          type: string
+        tiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceTierDto'
+        versionNo:
+          type: integer
+          format: int64
+
+    PriceLookupResponse:
+      type: object
+      required: [priceLevelName, stockItemId, rate, discountPct]
+      properties:
+        priceListId:
+          type: string
+          format: uuid
+        priceLevelName:
+          type: string
+        stockItemId:
+          type: string
+          format: uuid
+        rate:
+          type: string
+        discountPct:
+          type: string
+
+    BomComponentDto:
+      type: object
+      required: [componentItemId, quantity]
+      properties:
+        lineNo:
+          type: integer
+        componentItemId:
+          type: string
+          format: uuid
+        componentItemName:
+          type: [string, 'null']
+        componentType:
+          type: string
+          enum: [RAW_MATERIAL, CO_PRODUCT, BY_PRODUCT, SCRAP]
+        godownId:
+          type: [string, 'null']
+          format: uuid
+        quantity:
+          type: string
+        costAllocationPct:
+          type: string
+
+    UpsertBomRequest:
+      type: object
+      required: [stockItemId, bomName, components]
+      properties:
+        stockItemId:
+          type: string
+          format: uuid
+        bomName:
+          type: string
+        unitOfManufacture:
+          type: string
+        additionalCostRules:
+          type: array
+          items:
+            type: object
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/BomComponentDto'
+        versionNo:
+          type: [integer, 'null']
+          format: int64
+
+    BomDto:
+      type: object
+      required: [id, stockItemId, bomName, unitOfManufacture, components, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        stockItemId:
+          type: string
+          format: uuid
+        bomName:
+          type: string
+        unitOfManufacture:
+          type: string
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/BomComponentDto'
+        versionNo:
+          type: integer
+          format: int64
+
+    OpenOrderLineDto:
+      type: object
+      required: [orderNo, orderDate, orderType, stockItemId, stockItemName, orderedQty, pendingQty, rate]
+      properties:
+        orderVoucherId:
+          type: string
+          format: uuid
+        orderNo:
+          type: string
+        orderDate:
+          type: string
+          format: date
+        orderType:
+          type: string
+        partyLedgerId:
+          type: [string, 'null']
+          format: uuid
+        stockItemId:
+          type: string
+          format: uuid
+        stockItemName:
+          type: string
+        orderedQty:
+          type: string
+        deliveredReceivedQty:
+          type: string
+        billedQty:
+          type: string
+        pendingQty:
+          type: string
+        trackingNo:
+          type: [string, 'null']
+        status:
+          type: string
+        rate:
+          type: string
+
+    ManufacturingPreviewRequest:
+      type: object
+      required: [bomId, finishedQty]
+      properties:
+        bomId:
+          type: string
+          format: uuid
+        finishedQty:
+          type: string
+        godownId:
+          type: [string, 'null']
+          format: uuid
+        asOfDate:
+          type: [string, 'null']
+          format: date
+
+    ManufacturingPreviewResponse:
+      type: object
+      required: [bomId, bomName, finishedStockItemId, finishedQty, componentTotalCost, totalManufacturingCost, effectiveUnitRate]
+      properties:
+        bomId:
+          type: string
+          format: uuid
+        bomName:
+          type: string
+        finishedStockItemId:
+          type: string
+          format: uuid
+        finishedQty:
+          type: string
+        componentTotalCost:
+          type: string
+        scrapDeductionTotal:
+          type: string
+        additionalCostTotal:
+          type: string
+        totalManufacturingCost:
+          type: string
+        effectiveUnitRate:
+          type: string
+
+    StockSummaryReportDto:
+      type: object
+      required: [groups, items, totalOpeningValue, totalInwardValue, totalOutwardValue, totalClosingQty, totalClosingValue]
+      properties:
+        fromDate:
+          type: [string, 'null']
+          format: date
+        toDate:
+          type: [string, 'null']
+          format: date
+        groups:
+          type: array
+          items:
+            type: object
+        items:
+          type: array
+          items:
+            type: object
+        totalOpeningValue:
+          type: string
+        totalInwardValue:
+          type: string
+        totalOutwardValue:
+          type: string
+        totalClosingQty:
+          type: string
+        totalClosingValue:
+          type: string
+
+    GodownSummaryReportDto:
+      type: object
+      required: [rows, totalClosingValue]
+      properties:
+        asOfDate:
+          type: [string, 'null']
+          format: date
+        rows:
+          type: array
+          items:
+            type: object
+        totalClosingValue:
+          type: string
+
+    MovementAnalysisReportDto:
+      type: object
+      required: [stockItemId, stockItemName, uomSymbol, inwardQty, inwardValue, outwardQty, outwardValue, movements]
+      properties:
+        stockItemId:
+          type: string
+          format: uuid
+        stockItemName:
+          type: string
+        uomSymbol:
+          type: string
+        inwardQty:
+          type: string
+        inwardValue:
+          type: string
+        outwardQty:
+          type: string
+        outwardValue:
+          type: string
+        movements:
+          type: array
+          items:
+            type: object
+
+    BatchAgeingReportDto:
+      type: object
+      required: [asOfDate, batches]
+      properties:
+        asOfDate:
+          type: string
+          format: date
+        batches:
+          type: array
+          items:
+            type: object

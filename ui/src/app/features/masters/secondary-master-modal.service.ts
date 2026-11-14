@@ -1,7 +1,15 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { NavigationStackStore } from '../../state/navigation-stack.store';
 
-export type SecondaryMasterKind = 'GROUP' | 'LEDGER' | 'COST_CENTRE' | 'CURRENCY';
+export type SecondaryMasterKind =
+  | 'GROUP'
+  | 'LEDGER'
+  | 'COST_CENTRE'
+  | 'CURRENCY'
+  | 'UOM'
+  | 'GODOWN'
+  | 'STOCK_GROUP'
+  | 'STOCK_ITEM';
 
 export const SECONDARY_MASTER_ROUTE_TOKEN = '__secondary_master__';
 
@@ -17,6 +25,8 @@ export interface OpenSecondaryMasterRequest {
   readonly defaultGroupId?: string | null;
   readonly defaultParentGroupId?: string | null;
   readonly defaultCostCategoryId?: string | null;
+  readonly defaultStockGroupId?: string | null;
+  readonly defaultBaseUomId?: string | null;
   readonly onCreated?: (created: SecondaryCreatedMaster) => void;
 }
 
@@ -29,6 +39,8 @@ export interface SecondaryMasterSession {
   readonly defaultGroupId: string | null;
   readonly defaultParentGroupId: string | null;
   readonly defaultCostCategoryId: string | null;
+  readonly defaultStockGroupId: string | null;
+  readonly defaultBaseUomId: string | null;
   readonly onCreated?: (created: SecondaryCreatedMaster) => void;
   readonly resolve: (result: SecondaryCreatedMaster | null) => void;
 }
@@ -43,6 +55,14 @@ function titleForKind(kind: SecondaryMasterKind): string {
       return 'Cost Centre Creation (Secondary)';
     case 'CURRENCY':
       return 'Currency Creation (Secondary)';
+    case 'UOM':
+      return 'Unit Creation (Secondary)';
+    case 'GODOWN':
+      return 'Godown Creation (Secondary)';
+    case 'STOCK_GROUP':
+      return 'Stock Group Creation (Secondary)';
+    case 'STOCK_ITEM':
+      return 'Stock Item Creation (Secondary)';
   }
 }
 
@@ -97,6 +117,8 @@ export class SecondaryMasterModalService {
         defaultGroupId: request.defaultGroupId ?? null,
         defaultParentGroupId: request.defaultParentGroupId ?? null,
         defaultCostCategoryId: request.defaultCostCategoryId ?? null,
+        defaultStockGroupId: request.defaultStockGroupId ?? null,
+        defaultBaseUomId: request.defaultBaseUomId ?? null,
         onCreated: request.onCreated,
         resolve,
       };

@@ -86,9 +86,38 @@ export interface BankAllocationDto {
   readonly amount: string;
 }
 
-/**
- * Clean Phase 4 Inventory Item-Line Extension Hook (`ITEM_INVOICE` mode).
- */
+export interface VoucherBatchAllocationDto {
+  readonly godownId?: string | null;
+  readonly godownName?: string | null;
+  readonly batchName: string;
+  readonly actualQty: string;
+  readonly billedQty: string;
+  readonly rate: string;
+  readonly amount: string;
+  readonly mfgDate?: string | null;
+  readonly expiryDate?: string | null;
+}
+
+export interface VoucherInventoryLineDto {
+  readonly lineNo: number;
+  readonly accountingLedgerId?: string | null;
+  readonly stockItemId: string;
+  readonly stockItemName?: string;
+  readonly movementDirection?: 'INWARD' | 'OUTWARD';
+  readonly uomId?: string | null;
+  readonly uomSymbol?: string;
+  readonly actualQty: string;
+  readonly billedQty: string;
+  readonly rate: string;
+  readonly discountPct: string;
+  readonly amount: string;
+  readonly declaredMrp?: string | null;
+  readonly orderRefNo?: string | null;
+  readonly trackingNo?: string | null;
+  readonly linkedInwardAllocationId?: string | null;
+  readonly batchAllocations?: readonly VoucherBatchAllocationDto[];
+}
+
 export interface VoucherInventoryItemHookDto {
   readonly rowId: string;
   readonly stockItemId: string | null;
@@ -96,12 +125,27 @@ export interface VoucherInventoryItemHookDto {
   readonly godownId?: string | null;
   readonly batchNo?: string | null;
   readonly quantity: string;
+  readonly actualQty?: string;
+  readonly billedQty?: string;
+  readonly uomId?: string | null;
   readonly uomCode: string;
+  readonly baseUomId?: string | null;
+  readonly baseUomSymbol?: string;
   readonly alternateUomId: string | null;
+  readonly alternateUomSymbol?: string | null;
+  readonly maintainInBatches?: boolean;
+  readonly trackDateOfMfg?: boolean;
+  readonly useExpiryDates?: boolean;
+  readonly isTobaccoMrpItem?: boolean;
+  readonly declaredMrp?: string | null;
+  readonly orderRefNo?: string | null;
+  readonly trackingNo?: string | null;
+  readonly movementDirection?: 'INWARD' | 'OUTWARD';
   readonly rate: string;
   readonly discountPct?: string | null;
   readonly amount: string;
   readonly gstRatePct?: string | null;
+  readonly batchAllocations?: readonly VoucherBatchAllocationDto[];
 }
 
 export interface VoucherLineRequest {
@@ -154,6 +198,7 @@ export interface UpsertVoucherRequest {
   readonly exchangeRate?: string;
   readonly narration: string;
   readonly lines: readonly VoucherLineRequest[];
+  readonly inventoryLines?: readonly VoucherInventoryLineDto[];
 }
 
 export interface VoucherDetailDto {
@@ -190,6 +235,7 @@ export interface VoucherDetailDto {
   readonly totalDebit: string;
   readonly totalCredit: string;
   readonly lines: readonly VoucherLineResponse[];
+  readonly inventoryLines?: readonly VoucherInventoryLineDto[];
   readonly createdBy?: string | null;
   readonly approvedBy?: string | null;
   readonly cancelledReason?: string | null;

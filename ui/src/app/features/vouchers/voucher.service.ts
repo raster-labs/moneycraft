@@ -111,6 +111,7 @@ function normalizeVoucherDetail(raw: RawVoucherDetailWire, fallbackCompanyId: st
     totalDebit: raw.totalDebit ?? '0.00',
     totalCredit: raw.totalCredit ?? '0.00',
     lines: raw.lines ?? [],
+    inventoryLines: raw.inventoryLines ?? [],
     createdBy: raw.createdBy ?? null,
     approvedBy: raw.approvedBy ?? null,
     cancelledReason: raw.cancelledReason ?? null,

@@ -12,11 +12,16 @@ import {
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { InventoryStore } from '../inventory/inventory.store';
 import { ChartOfAccountsStore } from './chart-of-accounts.store';
 
 export interface MasterCatalogEntry {
   readonly id: string;
-  readonly category: 'Accounting Masters' | 'Cost & Multi-Currency' | 'Chart & Hierarchy';
+  readonly category:
+    | 'Accounting Masters'
+    | 'Inventory Masters'
+    | 'Cost & Multi-Currency'
+    | 'Chart & Hierarchy';
   readonly label: string;
   readonly description: string;
   readonly route: string;
@@ -48,6 +53,55 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: '24 predefined accounting/inventory voucher types, numbering series & 4-eyes approval',
     route: '/app/masters/voucher-types',
     badge: '24 VCH TYPES',
+  },
+  {
+    id: 'stock-group',
+    category: 'Inventory Masters',
+    label: 'Stock Group',
+    description: 'Hierarchical product families with inherited HSN/SAC and GST tax rates',
+    route: '/app/inventory/stock-groups',
+    badge: 'STK GROUP',
+  },
+  {
+    id: 'stock-category',
+    category: 'Inventory Masters',
+    label: 'Stock Category',
+    description: 'Parallel inventory classification dimension across Stock Groups',
+    route: '/app/inventory/stock-groups',
+    badge: 'STK CAT',
+    extraParams: { tab: 'categories' },
+  },
+  {
+    id: 'stock-item',
+    category: 'Inventory Masters',
+    label: 'Stock Item',
+    description: 'SKUs, Alternate UOMs, Batches, 8 Costing Methods, Tobacco MRP & Multi-BOM',
+    route: '/app/inventory/stock-items',
+    badge: 'SKU & BOM',
+  },
+  {
+    id: 'uom',
+    category: 'Inventory Masters',
+    label: 'Unit (UOM)',
+    description: 'Simple and Compound Units of Measure mapped to GST UQC codes',
+    route: '/app/inventory/uoms',
+    badge: 'UOM / UQC',
+  },
+  {
+    id: 'godown',
+    category: 'Inventory Masters',
+    label: 'Godown / Location',
+    description: 'Multi-warehouse storage hierarchy, bins, Job Work Out/In & Main Location',
+    route: '/app/inventory/godowns',
+    badge: 'WAREHOUSE',
+  },
+  {
+    id: 'price-list',
+    category: 'Inventory Masters',
+    label: 'Price List',
+    description: 'Date-effective Wholesale/Dealer/Retail staggered quantity slab pricing',
+    route: '/app/inventory/price-lists',
+    badge: 'SLAB PRICE',
   },
   {
     id: 'currency',
@@ -192,12 +246,25 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
               {{ coaStore.currencies().length }} / {{ coaStore.costCentres().length }}
             </span>
           </div>
+          <div class="mc-metric-tile">
+            <span class="mc-metric-label">Stock Items / BOMs</span>
+            <span class="mc-metric-val">
+              {{ inventoryStore.stockItems().length }} / {{ inventoryStore.boms().length }}
+            </span>
+          </div>
+          <div class="mc-metric-tile">
+            <span class="mc-metric-label">Godowns / Units</span>
+            <span class="mc-metric-val">
+              {{ inventoryStore.godowns().length }} / {{ inventoryStore.uoms().length }}
+            </span>
+          </div>
         </div>
 
         <div class="mc-overview-links">
           <a routerLink="/app/coa" class="mc-btn mc-btn-primary">
             Open Chart of Accounts (<span class="mc-key-alt">G</span>)
           </a>
+          <a routerLink="/app/reports/stock-summary" class="mc-btn">Stock Summary</a>
           <a routerLink="/app/gateway" class="mc-btn">Back to Gateway</a>
         </div>
       </aside>
@@ -373,10 +440,12 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
 })
 export class MastersHubComponent implements OnInit {
   readonly coaStore = inject(ChartOfAccountsStore);
+  readonly inventoryStore = inject(InventoryStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   readonly initialMode = input<'create' | 'alter' | null>(null);
+  readonly initialSection = input<'all' | 'inventory'>('all');
 
   private readonly filterInputRef = viewChild<ElementRef<HTMLInputElement>>('filterInput');
 
@@ -386,10 +455,14 @@ export class MastersHubComponent implements OnInit {
 
   readonly filteredEntries = computed(() => {
     const q = this.filterQuery().trim().toLowerCase();
+    const base =
+      this.initialSection() === 'inventory'
+        ? ACCOUNTING_MASTER_CATALOG.filter((e) => e.category === 'Inventory Masters')
+        : ACCOUNTING_MASTER_CATALOG;
     if (!q) {
-      return ACCOUNTING_MASTER_CATALOG;
+      return base;
     }
-    return ACCOUNTING_MASTER_CATALOG.filter(
+    return base.filter(
       (e) =>
         e.label.toLowerCase().includes(q) ||
         e.description.toLowerCase().includes(q) ||
@@ -404,11 +477,15 @@ export class MastersHubComponent implements OnInit {
     } else {
       this.hubMode.set('create');
     }
+    if (this.router.url.includes('/inventory/masters') && !this.filterQuery()) {
+      this.filterQuery.set('Inventory Masters');
+    }
 
     void this.coaStore.ensureAccountingMastersLoaded();
     void this.coaStore.loadVoucherTypes().catch(() => []);
     void this.coaStore.loadCurrencies().catch(() => []);
     void this.coaStore.loadCostCentresAndCategories().catch(() => undefined);
+    void this.inventoryStore.ensureLoaded();
 
     queueMicrotask(() => {
       this.filterInputRef()?.nativeElement.focus();

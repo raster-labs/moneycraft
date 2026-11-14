@@ -5,6 +5,7 @@ import com.raster.moneycraft.foundation.error.MoneyCraftException;
 import com.raster.moneycraft.foundation.security.CompanyRole;
 import com.raster.moneycraft.foundation.security.MoneyCraftPrincipal;
 import com.raster.moneycraft.foundation.security.RbacAuthorizationService;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -26,6 +27,13 @@ public class CompanyMasterSequenceHelper {
         CompanyRole.COMPANY_ADMIN,
         CompanyRole.SENIOR_ACCOUNTANT,
         CompanyRole.DATA_ENTRY_OPERATOR
+    );
+
+    public static final Set<CompanyRole> INVENTORY_WRITE_ROLES = Set.of(
+        CompanyRole.COMPANY_ADMIN,
+        CompanyRole.SENIOR_ACCOUNTANT,
+        CompanyRole.DATA_ENTRY_OPERATOR,
+        CompanyRole.INVENTORY_CLERK
     );
 
     public static final Set<CompanyRole> MASTER_ADMIN_ROLES = Set.of(
@@ -113,12 +121,32 @@ public class CompanyMasterSequenceHelper {
         );
     }
 
+    public LocalDate readBooksBeginningFrom(UUID companyId) {
+        List<LocalDate> rows = businessJdbcTemplate.query(
+            "SELECT books_beginning_from FROM mc_company WHERE id = ?",
+            (rs, rowNum) -> rs.getObject("books_beginning_from", LocalDate.class),
+            companyId
+        );
+        if (rows.isEmpty() || rows.getFirst() == null) {
+            return LocalDate.of(2025, 4, 1);
+        }
+        return rows.getFirst();
+    }
+
     public static void requireMasterWriteRole(
         RbacAuthorizationService rbacGuard,
         MoneyCraftPrincipal actor,
         UUID companyId
     ) {
         rbacGuard.requireCompanyRole(actor, companyId, MASTER_WRITE_ROLES);
+    }
+
+    public static void requireInventoryWriteRole(
+        RbacAuthorizationService rbacGuard,
+        MoneyCraftPrincipal actor,
+        UUID companyId
+    ) {
+        rbacGuard.requireCompanyRole(actor, companyId, INVENTORY_WRITE_ROLES);
     }
 
     public static long requireIfMatchVersion(String ifMatchHeader, Long bodyVersionNo) {

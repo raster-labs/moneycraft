@@ -35,21 +35,31 @@ import {
   VoucherBaseCategory,
   resolveGroupLineageFlags,
 } from '../masters/masters.models';
+import {
+  ManufacturingPreviewResponse,
+  OpenOrderLineDto,
+  OrderVoucherKind,
+} from '../inventory/inventory.models';
+import { InventoryService } from '../inventory/inventory.service';
+import { InventoryStore } from '../inventory/inventory.store';
 import { SecondaryMasterModalService } from '../masters/secondary-master-modal.service';
 import { BankAllocationPopoverComponent } from './bank-allocation-popover.component';
 import { BillWisePopoverComponent } from './bill-wise-popover.component';
 import { CostAllocationPopoverComponent } from './cost-allocation-popover.component';
+import { GodownBatchPopoverComponent } from './godown-batch-popover.component';
 import { VoucherService } from './voucher.service';
 import {
   BankAllocationDto,
   BillAllocationDto,
-   BillAllocationType,
+  BillAllocationType,
   CostAllocationDto,
   PREDEFINED_24_VOUCHER_SPECS,
   PredefinedVoucherSpec,
   UpsertVoucherRequest,
+  VoucherBatchAllocationDto,
   VoucherDetailDto,
   VoucherInventoryItemHookDto,
+  VoucherInventoryLineDto,
   VoucherLifecycleStatus,
   VoucherLineRequest,
   VoucherLineRole,
@@ -148,6 +158,30 @@ function inferInvoiceLineRole(ledger: Ledger, groups: readonly AccountGroup[]): 
   return 'ADDITIONAL_CHARGE';
 }
 
+function isNonAccountingInventoryCategory(category: VoucherBaseCategory): boolean {
+  switch (category) {
+    case 'STOCK_JOURNAL':
+    case 'PHYSICAL_STOCK':
+    case 'SALES_ORDER':
+    case 'PURCHASE_ORDER':
+    case 'JOB_WORK_OUT_ORDER':
+    case 'JOB_WORK_IN_ORDER':
+    case 'DELIVERY_NOTE':
+    case 'RECEIPT_NOTE':
+    case 'REJECTIONS_IN':
+    case 'REJECTIONS_OUT':
+    case 'MATERIAL_IN':
+    case 'MATERIAL_OUT':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isPureWarehouseCategory(category: VoucherBaseCategory): boolean {
+  return category === 'STOCK_JOURNAL' || category === 'PHYSICAL_STOCK';
+}
+
 function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
   readonly partySide: BalanceSide;
   readonly revenueExpenseSide: BalanceSide;
@@ -179,6 +213,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
     BillWisePopoverComponent,
     CostAllocationPopoverComponent,
     BankAllocationPopoverComponent,
+    GodownBatchPopoverComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -380,7 +415,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
           }
 
           <!-- ACCOUNTING_INVOICE / ITEM_INVOICE Header: Party A/c Name + Place of Supply + Sales/Purchase Ledger -->
-          @if (persistedView() === 'ACCOUNTING_INVOICE' || persistedView() === 'ITEM_INVOICE') {
+          @if ((persistedView() === 'ACCOUNTING_INVOICE' || persistedView() === 'ITEM_INVOICE') && !isPureWarehouseVch()) {
             <div class="mc-vch-invoice-header-grid" data-testid="invoice-party-header">
               <div>
                 <label class="mc-field-label" for="vch-party-account">
@@ -451,35 +486,342 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
         </div>
 
         <!-- ======================================================================= -->
-        <!-- ITEM_INVOICE Stock Item Extension Section (Phase 4 Hook + Skip UOM per) -->
+        <!-- STOCK_JOURNAL (Alt+F7) Two-Pane Grid + Ctrl+H Manufacturing BOM Mode   -->
         <!-- ======================================================================= -->
-        @if (persistedView() === 'ITEM_INVOICE') {
+        @if (activeCategory() === 'STOCK_JOURNAL') {
+          <div class="mc-vch-stkj-section" data-testid="stock-journal-two-pane">
+            <div class="mc-vch-section-banner">
+              <span>
+                {{ bomManufacturingMode() ? 'Manufacturing Journal (BOM Assembly)' : 'Stock Journal — Source (Consumption) vs Destination (Production)' }}
+              </span>
+              <div class="mc-vch-banner-actions">
+                <button
+                  type="button"
+                  class="mc-btn"
+                  data-testid="toggle-bom-mode-btn"
+                  (click)="toggleStockJournalManufacturingMode()"
+                >
+                  Ctrl+H: {{ bomManufacturingMode() ? 'Switch to Transfer Journal' : 'Use for Manufacturing (BOM)' }}
+                </button>
+              </div>
+            </div>
+
+            @if (bomManufacturingMode()) {
+              <div class="mc-vch-bom-header" data-testid="bom-manufacturing-header">
+                <div class="mc-vch-bom-grid">
+                  <div>
+                    <label class="mc-field-label" for="mfg-fin-item">Name of Product</label>
+                    <mc-typeahead-select
+                      inputId="mfg-fin-item"
+                      listTitle="List of Finished Products"
+                      [options]="inventoryStore.stockItemOptions()"
+                      [selectedId]="manufacturingFinishedItemId()"
+                      [allowInlineCreate]="true"
+                      (optionSelected)="onManufacturingProductSelected($event)"
+                      (createRequested)="openInlineStockItemCreate(-1, $event)"
+                    />
+                  </div>
+
+                  <div>
+                    <label class="mc-field-label" for="mfg-bom-sel">BoM Name</label>
+                    <select
+                      id="mfg-bom-sel"
+                      class="mc-select"
+                      data-testid="mfg-bom-select"
+                      mcGridCellNav
+                      [ngModel]="selectedBomId() ?? ''"
+                      (ngModelChange)="selectedBomId.set($event || null)"
+                    >
+                      @for (b of availableBomsForSelectedProduct(); track b.id) {
+                        <option [value]="b.id">{{ b.bomName }}</option>
+                      }
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="mc-field-label" for="mfg-godown">Target Godown</label>
+                    <select
+                      id="mfg-godown"
+                      class="mc-select"
+                      mcGridCellNav
+                      [ngModel]="manufacturingTargetGodownId() ?? ''"
+                      (ngModelChange)="manufacturingTargetGodownId.set($event || null)"
+                    >
+                      @for (g of inventoryStore.godowns(); track g.id) {
+                        <option [value]="g.id">{{ g.name }}</option>
+                      }
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="mc-field-label" for="mfg-qty">Qty to Manufacture</label>
+                    <input
+                      id="mfg-qty"
+                      type="text"
+                      class="mc-input mc-amount"
+                      data-testid="mfg-qty-input"
+                      mcGridCellNav
+                      [ngModel]="manufacturedQty()"
+                      (ngModelChange)="manufacturedQty.set($event)"
+                      (keydown.enter)="onMfgQtyEnter($event)"
+                    />
+                  </div>
+
+                  <div class="mc-vch-bom-btn-col">
+                    <button
+                      type="button"
+                      class="mc-btn mc-btn-primary"
+                      data-testid="expand-bom-preview-btn"
+                      (click)="runManufacturingBomPreview()"
+                    >
+                      Expand BOM Preview
+                    </button>
+                  </div>
+                </div>
+
+                @if (manufacturingPreviewResult(); as mfgSum) {
+                  <div class="mc-vch-bom-summary" data-testid="bom-cost-summary">
+                    <span>
+                      Components Cost:
+                      <strong class="mc-amount">
+                        {{ mfgSum.componentTotalCost | mcIndianCurrency: companyContext.currencyScale() : true }}
+                      </strong>
+                    </span>
+                    <span>
+                      Additional Cost:
+                      <strong class="mc-amount">
+                        {{ mfgSum.additionalCostTotal | mcIndianCurrency: companyContext.currencyScale() : true }}
+                      </strong>
+                    </span>
+                    <span>
+                      Total Manufacturing Cost:
+                      <strong class="mc-amount">
+                        {{ mfgSum.totalManufacturingCost | mcIndianCurrency: companyContext.currencyScale() : true }}
+                      </strong>
+                    </span>
+                    <span>
+                      Effective Rate / Unit:
+                      <strong class="mc-amount">{{ mfgSum.effectiveUnitRate }}</strong>
+                    </span>
+                  </div>
+                }
+              </div>
+            }
+
+            <div class="mc-vch-stkj-panes">
+              <!-- Left Pane: Source (Consumption — OUTWARD) -->
+              <div class="mc-vch-stkj-pane" data-testid="stkj-source-pane">
+                <div class="mc-vch-stkj-pane-head">
+                  <span>Source (Consumption — Outward)</span>
+                  <button type="button" class="mc-btn" (click)="addItemHookRow()">+ Source Item</button>
+                </div>
+                <table class="mc-dense-table" aria-label="Stock Journal Source Outward Items">
+                  <thead>
+                    <tr>
+                      <th>Name of Item</th>
+                      <th class="mc-vch-col-qty mc-amount">Qty</th>
+                      <th class="mc-vch-col-rate mc-amount">Rate</th>
+                      <th class="mc-vch-col-amt mc-amount">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (src of itemHookRows(); track src.rowId; let sIdx = $index) {
+                      <tr>
+                        <td>
+                          <mc-typeahead-select
+                            [inputId]="'stkj-src-item-' + sIdx"
+                            listTitle="List of Stock Items"
+                            [options]="inventoryStore.stockItemOptions()"
+                            [selectedId]="src.stockItemId"
+                            [allowInlineCreate]="true"
+                            (optionSelected)="onStockItemSelected(sIdx, $event)"
+                            (createRequested)="openInlineStockItemCreate(sIdx, $event)"
+                          />
+                          <button
+                            type="button"
+                            class="mc-vch-alloc-chip"
+                            (click)="openItemBatchModal('SOURCE', sIdx)"
+                          >
+                            {{ (src.batchAllocations?.length ?? 0) > 0 ? 'Batches (' + src.batchAllocations!.length + ')' : 'Godown / Batch' }}
+                          </button>
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            class="mc-input mc-amount"
+                            mcGridCellNav
+                            [ngModel]="src.quantity"
+                            (ngModelChange)="onItemHookQtyOrRateChange(sIdx, $event, src.rate, src.discountPct)"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            class="mc-input mc-amount"
+                            mcGridCellNav
+                            [ngModel]="src.rate"
+                            (ngModelChange)="onItemHookQtyOrRateChange(sIdx, src.quantity, $event, src.discountPct)"
+                          />
+                        </td>
+                        <td class="mc-amount mc-vch-col-amt">
+                          {{ src.amount | mcIndianCurrency: companyContext.currencyScale() : true }}
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Right Pane: Destination (Production — INWARD) -->
+              <div class="mc-vch-stkj-pane" data-testid="stkj-dest-pane">
+                <div class="mc-vch-stkj-pane-head">
+                  <span>Destination (Production — Inward)</span>
+                  <button type="button" class="mc-btn" (click)="addStockJournalDestRow()">+ Dest Item</button>
+                </div>
+                <table class="mc-dense-table" aria-label="Stock Journal Destination Inward Items">
+                  <thead>
+                    <tr>
+                      <th>Name of Item</th>
+                      <th class="mc-vch-col-qty mc-amount">Qty</th>
+                      <th class="mc-vch-col-rate mc-amount">Rate</th>
+                      <th class="mc-vch-col-amt mc-amount">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (dst of stockJournalDestRows(); track dst.rowId; let dIdx = $index) {
+                      <tr>
+                        <td>
+                          <mc-typeahead-select
+                            [inputId]="'stkj-dst-item-' + dIdx"
+                            listTitle="List of Stock Items"
+                            [options]="inventoryStore.stockItemOptions()"
+                            [selectedId]="dst.stockItemId"
+                            [allowInlineCreate]="true"
+                            (optionSelected)="onDestStockItemSelected(dIdx, $event)"
+                            (createRequested)="openInlineDestStockItemCreate(dIdx, $event)"
+                          />
+                          <button
+                            type="button"
+                            class="mc-vch-alloc-chip"
+                            (click)="openItemBatchModal('DEST', dIdx)"
+                          >
+                            {{ (dst.batchAllocations?.length ?? 0) > 0 ? 'Batches (' + dst.batchAllocations!.length + ')' : 'Godown / Batch' }}
+                          </button>
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            class="mc-input mc-amount"
+                            mcGridCellNav
+                            [ngModel]="dst.quantity"
+                            (ngModelChange)="onDestQtyOrRateChange(dIdx, $event, dst.rate)"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            class="mc-input mc-amount"
+                            mcGridCellNav
+                            [ngModel]="dst.rate"
+                            (ngModelChange)="onDestQtyOrRateChange(dIdx, dst.quantity, $event)"
+                          />
+                        </td>
+                        <td class="mc-amount mc-vch-col-amt">
+                          {{ dst.amount | mcIndianCurrency: companyContext.currencyScale() : true }}
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- ======================================================================= -->
+        <!-- ITEM_INVOICE Stock Item Table (Skip UOM 'per' when no Alternate UOM)    -->
+        <!-- ======================================================================= -->
+        @if (persistedView() === 'ITEM_INVOICE' && activeCategory() !== 'STOCK_JOURNAL') {
           <div class="mc-vch-item-section" data-testid="item-invoice-section">
             <div class="mc-vch-section-banner">
-              <span>Name of Item (Phase 4 Inventory Hook — UOM 'per' skipped on Enter when no Alternate UOM)</span>
-              <button type="button" class="mc-btn" (click)="addItemHookRow()">+ Add Item Line</button>
+              <span>Name of Item (<span class="mc-key-alt">C</span> = Create Stock Item &bull; UOM 'per' skipped on Enter when single UOM)</span>
+              <div class="mc-vch-banner-actions">
+                @if (!isPureWarehouseVch()) {
+                  <button
+                    type="button"
+                    class="mc-btn"
+                    data-testid="open-order-link-btn"
+                    (click)="openOrderLinkerModal()"
+                  >
+                    Link Open Order
+                  </button>
+                }
+                <button
+                  type="button"
+                  class="mc-btn"
+                  data-testid="add-item-line-btn"
+                  (click)="addItemHookRow()"
+                >
+                  + Add Item Line
+                </button>
+              </div>
             </div>
             <table class="mc-dense-table" aria-label="Item Invoice Lines">
               <thead>
                 <tr>
                   <th>Name of Item</th>
-                  <th class="mc-vch-col-qty mc-amount">Quantity</th>
+                  <th class="mc-vch-col-qty mc-amount">Actual</th>
+                  <th class="mc-vch-col-qty mc-amount">Billed</th>
                   <th class="mc-vch-col-rate mc-amount">Rate</th>
                   <th class="mc-vch-col-uom">per</th>
+                  <th class="mc-vch-col-ratepct mc-amount">Disc %</th>
+                  @if (hasAnyTobaccoMrpItem()) {
+                    <th class="mc-vch-col-rate mc-amount">MRP/Unit</th>
+                  }
                   <th class="mc-vch-col-amt mc-amount">Amount</th>
+                  <th class="mc-vch-col-act"></th>
                 </tr>
               </thead>
               <tbody>
                 @for (item of itemHookRows(); track item.rowId; let iIdx = $index) {
-                  <tr>
+                  <tr [attr.data-testid]="'item-inv-row-' + iIdx">
+                    <td>
+                      <mc-typeahead-select
+                        [inputId]="'item-select-' + iIdx"
+                        listTitle="List of Stock Items"
+                        [options]="inventoryStore.stockItemOptions()"
+                        [selectedId]="item.stockItemId"
+                        [allowInlineCreate]="true"
+                        (optionSelected)="onStockItemSelected(iIdx, $event)"
+                        (createRequested)="openInlineStockItemCreate(iIdx, $event)"
+                      />
+                      <div class="mc-vch-alloc-chips">
+                        <button
+                          type="button"
+                          class="mc-vch-alloc-chip"
+                          [attr.data-testid]="'item-batch-btn-' + iIdx"
+                          (click)="openItemBatchModal('SOURCE', iIdx)"
+                        >
+                          @if ((item.batchAllocations?.length ?? 0) > 0) {
+                            Batch: <mc-code-badge [code]="item.batchAllocations![0].batchName" />
+                            ({{ item.batchAllocations!.length }})
+                          } @else {
+                            Godown / Batch
+                          }
+                        </button>
+                        @if (item.orderRefNo) {
+                          <mc-code-badge [code]="'ORD:' + item.orderRefNo" />
+                        }
+                      </div>
+                    </td>
                     <td>
                       <input
                         type="text"
-                        class="mc-input"
+                        class="mc-input mc-amount"
                         mcGridCellNav
-                        [ngModel]="item.stockItemName"
-                        (ngModelChange)="onItemHookNameChange(iIdx, $event)"
-                        placeholder="Stock Item description (or leave blank for Additional Ledgers)"
+                        [attr.data-testid]="'item-actual-qty-' + iIdx"
+                        [ngModel]="item.actualQty ?? item.quantity"
+                        (ngModelChange)="onItemActualQtyChange(iIdx, $event)"
                       />
                     </td>
                     <td>
@@ -487,8 +829,9 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                         type="text"
                         class="mc-input mc-amount"
                         mcGridCellNav
+                        [attr.data-testid]="'item-billed-qty-' + iIdx"
                         [ngModel]="item.quantity"
-                        (ngModelChange)="onItemHookQtyOrRateChange(iIdx, $event, item.rate)"
+                        (ngModelChange)="onItemHookQtyOrRateChange(iIdx, $event, item.rate, item.discountPct)"
                       />
                     </td>
                     <td>
@@ -496,25 +839,57 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                         type="text"
                         class="mc-input mc-amount"
                         mcGridCellNav
+                        [attr.data-testid]="'item-rate-' + iIdx"
                         [ngModel]="item.rate"
-                        (ngModelChange)="onItemHookQtyOrRateChange(iIdx, item.quantity, $event)"
+                        (ngModelChange)="onItemHookQtyOrRateChange(iIdx, item.quantity, $event, item.discountPct)"
                       />
                     </td>
                     <td>
                       @if (item.alternateUomId !== null) {
-                        <input
-                          type="text"
-                          class="mc-input mc-code"
+                        <select
+                          class="mc-select mc-code"
                           mcGridCellNav
-                          [ngModel]="item.uomCode"
-                        />
+                          [attr.data-testid]="'editable-uom-cell-' + iIdx"
+                          [ngModel]="item.uomId ?? item.baseUomId ?? ''"
+                          (ngModelChange)="onItemUomChange(iIdx, $event)"
+                        >
+                          <option [value]="item.baseUomId ?? ''">{{ item.baseUomSymbol ?? item.uomCode }}</option>
+                          <option [value]="item.alternateUomId">{{ item.alternateUomSymbol ?? 'ALT' }}</option>
+                        </select>
                       } @else {
-                        <!-- Read-only UOM ('per') omitted from mcGridCellNav so Enter skips directly to Amount! -->
+                        <!-- Read-only UOM ('per') omitted from mcGridCellNav so Enter skips directly over 'per'! -->
                         <span class="mc-code mc-vch-readonly-uom" data-testid="readonly-uom-cell">
                           {{ item.uomCode }}
                         </span>
                       }
                     </td>
+                    <td>
+                      <input
+                        type="text"
+                        class="mc-input mc-amount"
+                        mcGridCellNav
+                        [attr.data-testid]="'item-disc-' + iIdx"
+                        [ngModel]="item.discountPct ?? '0'"
+                        (ngModelChange)="onItemHookQtyOrRateChange(iIdx, item.quantity, item.rate, $event)"
+                      />
+                    </td>
+                    @if (hasAnyTobaccoMrpItem()) {
+                      <td>
+                        @if (item.isTobaccoMrpItem) {
+                          <input
+                            type="text"
+                            class="mc-input mc-amount"
+                            mcGridCellNav
+                            [attr.data-testid]="'item-mrp-' + iIdx"
+                            [ngModel]="item.declaredMrp ?? ''"
+                            (ngModelChange)="onItemDeclaredMrpChange(iIdx, $event)"
+                            placeholder="MRP"
+                          />
+                        } @else {
+                          <span class="mc-vch-readonly-uom">—</span>
+                        }
+                      </td>
+                    }
                     <td>
                       <mc-amount-cell
                         [inputId]="'item-amt-' + iIdx"
@@ -522,7 +897,19 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                         [currencySymbol]="companyContext.currencySymbol()"
                         [ngModel]="item.amount"
                         (ngModelChange)="onItemHookAmountOverride(iIdx, $event)"
+                        (enterPressed)="onItemAmountEnter(iIdx)"
                       />
+                    </td>
+                    <td>
+                      @if (itemHookRows().length > 1) {
+                        <button
+                          type="button"
+                          class="mc-btn mc-vch-row-del"
+                          (click)="removeItemHookRow(iIdx)"
+                        >
+                          &times;
+                        </button>
+                      }
                     </td>
                   </tr>
                 }
@@ -765,7 +1152,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                 }
               </tbody>
             </table>
-          } @else {
+          } @else if (!isPureWarehouseVch()) {
             <!-- ACCOUNTING_INVOICE / ITEM_INVOICE Additional & Tax Ledgers Grid (with Rate % + Amount) -->
             <table class="mc-dense-table mc-vch-table" aria-label="Invoice Accounting & Tax Ledgers">
               <thead>
@@ -855,19 +1242,21 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
           }
         </div>
 
-        <div class="mc-vch-addline-row">
-          <button type="button" class="mc-btn" (click)="appendBlankLine()">+ Add Line</button>
-          @if (selectedPartyLedger()?.maintainBalancesBillByBill && (persistedView() === 'ACCOUNTING_INVOICE' || persistedView() === 'ITEM_INVOICE')) {
-            <button
-              type="button"
-              class="mc-btn"
-              data-testid="btn-open-party-billwise"
-              (click)="openPartyBillWiseModal()"
-            >
-              Bill-wise Details ({{ partyBillAllocations().length || 'Auto New Ref' }})
-            </button>
-          }
-        </div>
+        @if (!isPureWarehouseVch()) {
+          <div class="mc-vch-addline-row">
+            <button type="button" class="mc-btn" (click)="appendBlankLine()">+ Add Line</button>
+            @if (selectedPartyLedger()?.maintainBalancesBillByBill && (persistedView() === 'ACCOUNTING_INVOICE' || persistedView() === 'ITEM_INVOICE')) {
+              <button
+                type="button"
+                class="mc-btn"
+                data-testid="btn-open-party-billwise"
+                (click)="openPartyBillWiseModal()"
+              >
+                Bill-wise Details ({{ partyBillAllocations().length || 'Auto New Ref' }})
+              </button>
+            }
+          </div>
+        }
 
         <!-- Narration + Running Totals Footer -->
         <footer class="mc-vch-footer">
@@ -934,7 +1323,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
       </section>
 
       <!-- ======================================================================= -->
-      <!-- Sub-Ledger Allocation Popovers (Bill-Wise, Cost Centre, Bank)           -->
+      <!-- Sub-Ledger Allocation Popovers (Bill-Wise, Cost Centre, Bank, Batch)    -->
       <!-- ======================================================================= -->
       <mc-bill-wise-popover
         [isOpen]="activeSubModal()?.stage === 'BILL'"
@@ -981,6 +1370,62 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
         (allocationsCommitted)="onBankAllocationsCommitted($event)"
         (cancelled)="onSubModalCancelled()"
       />
+
+      <mc-godown-batch-popover
+        [isOpen]="activeItemBatchModal() !== null"
+        [companyId]="companyContext.activeCompany()?.id ?? null"
+        [stockItemId]="activeBatchModalRow()?.stockItemId ?? ''"
+        [stockItemName]="activeBatchModalRow()?.stockItemName ?? ''"
+        [movementDirection]="activeBatchModalDirection()"
+        [maintainInBatches]="!!activeBatchModalRow()?.maintainInBatches"
+        [trackDateOfMfg]="!!activeBatchModalRow()?.trackDateOfMfg"
+        [useExpiryDates]="!!activeBatchModalRow()?.useExpiryDates"
+        [targetActualQty]="activeBatchModalRow()?.actualQty ?? activeBatchModalRow()?.quantity ?? '1'"
+        [targetBilledQty]="activeBatchModalRow()?.quantity ?? '1'"
+        [defaultRate]="activeBatchModalRow()?.rate ?? '0'"
+        [uomSymbol]="activeBatchModalRow()?.uomCode ?? 'NOS'"
+        [voucherDate]="voucherDate()"
+        [currencyScale]="companyContext.currencyScale()"
+        [initialAllocations]="activeBatchModalRow()?.batchAllocations ?? []"
+        (allocationsCommitted)="onItemBatchAllocationsCommitted($event)"
+        (cancelled)="activeItemBatchModal.set(null)"
+      />
+
+      @if (openOrderModalOpen()) {
+        <div
+          class="mc-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="open-order-modal"
+          aria-label="Pending Open Orders"
+          (keydown.escape)="openOrderModalOpen.set(false)"
+        >
+          <div class="mc-modal-dialog mc-vch-other-modal">
+            <div class="mc-modal-header">
+              <span>Pending Open Orders ({{ isOutwardInvoice() ? 'Sales Orders' : 'Purchase Orders' }})</span>
+              <button type="button" class="mc-btn" (click)="openOrderModalOpen.set(false)">Esc</button>
+            </div>
+            <ul class="mc-vch-modal-list" role="listbox">
+              @for (ord of openOrderLines(); track ord.orderNo + '_' + ord.stockItemId) {
+                <li
+                  role="option"
+                  class="mc-vch-modal-item"
+                  (click)="importOpenOrderLine(ord)"
+                >
+                  <div>
+                    <strong class="mc-code">{{ ord.orderNo }}</strong> — {{ ord.stockItemName }}
+                  </div>
+                  <span class="mc-amount">
+                    Pending: {{ ord.pendingQty }} {{ ord.uomSymbol ?? 'NOS' }} @ {{ ord.rate }}
+                  </span>
+                </li>
+              } @empty {
+                <li class="mc-vch-modal-item">No pending open orders found for selected Party.</li>
+              }
+            </ul>
+          </div>
+        </div>
+      }
 
       <!-- ======================================================================= -->
       <!-- Tally-Authentic Accept? Yes / No Confirmation Box                       -->
@@ -1598,11 +2043,90 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
       align-items: center;
       gap: 6px;
     }
+
+    .mc-vch-banner-actions {
+      display: flex;
+      gap: var(--mc-space-2);
+      align-items: center;
+    }
+
+    .mc-vch-stkj-section {
+      border-bottom: var(--mc-border-subtle);
+    }
+
+    .mc-vch-bom-header {
+      padding: var(--mc-space-3);
+      background: var(--mc-color-teal-50);
+      border-bottom: var(--mc-border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: var(--mc-space-2);
+    }
+
+    .mc-vch-bom-grid {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.5fr) minmax(140px, 1fr) minmax(140px, 1fr) 120px auto;
+      gap: var(--mc-space-2);
+      align-items: end;
+    }
+
+    @media (max-width: 960px) {
+      .mc-vch-bom-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .mc-vch-bom-btn-col {
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .mc-vch-bom-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--mc-space-4);
+      font-size: var(--mc-font-size-xs);
+      font-weight: 600;
+      color: var(--mc-color-slate-900);
+    }
+
+    .mc-vch-stkj-panes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0;
+    }
+
+    @media (max-width: 960px) {
+      .mc-vch-stkj-panes {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .mc-vch-stkj-pane {
+      border-right: var(--mc-border-subtle);
+    }
+
+    .mc-vch-stkj-pane:last-child {
+      border-right: none;
+    }
+
+    .mc-vch-stkj-pane-head {
+      padding: 0.4rem 0.75rem;
+      background: var(--mc-color-canvas);
+      border-bottom: var(--mc-border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: var(--mc-font-size-xs);
+      font-weight: 700;
+    }
   `,
 })
 export class VoucherGridComponent implements OnInit {
   readonly companyContext = inject(CompanyContextStore);
   readonly coaStore = inject(ChartOfAccountsStore);
+  readonly inventoryStore = inject(InventoryStore);
+  private readonly inventoryService = inject(InventoryService);
   private readonly voucherService = inject(VoucherService);
   private readonly secondaryMasterModal = inject(SecondaryMasterModalService);
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
@@ -1639,6 +2163,7 @@ export class VoucherGridComponent implements OnInit {
     { key: 'F9', label: 'Purchase', category: 'PURCHASE' },
     { key: 'Alt+F5', label: 'Debit Note', category: 'DEBIT_NOTE' },
     { key: 'Alt+F6', label: 'Credit Note', category: 'CREDIT_NOTE' },
+    { key: 'Alt+F7', label: 'Stock Journal', category: 'STOCK_JOURNAL' },
   ];
 
   // Voucher Header & Identity Signals
@@ -1670,12 +2195,25 @@ export class VoucherGridComponent implements OnInit {
   readonly isReverseCharge = signal<boolean>(false);
   readonly narration = signal<string>('');
 
-  // Grid Lines & Phase 4 Item Hook Signals
+  // Grid Lines & Phase 4 Inventory / Stock Journal / BOM Signals
   readonly gridLines = signal<readonly EditableVoucherLine[]>([]);
   readonly itemHookRows = signal<readonly VoucherInventoryItemHookDto[]>([]);
+  readonly stockJournalDestRows = signal<readonly VoucherInventoryItemHookDto[]>([]);
+  readonly bomManufacturingMode = signal<boolean>(false);
+  readonly manufacturingFinishedItemId = signal<string | null>(null);
+  readonly selectedBomId = signal<string | null>(null);
+  readonly manufacturingTargetGodownId = signal<string | null>(null);
+  readonly manufacturedQty = signal<string>('1');
+  readonly manufacturingPreviewResult = signal<ManufacturingPreviewResponse | null>(null);
 
   // Modal & UI Status Signals
   readonly activeSubModal = signal<ActiveSubModalContext | null>(null);
+  readonly activeItemBatchModal = signal<{
+    readonly pane: 'SOURCE' | 'DEST';
+    readonly rowIndex: number;
+  } | null>(null);
+  readonly openOrderModalOpen = signal<boolean>(false);
+  readonly openOrderLines = signal<readonly OpenOrderLineDto[]>([]);
   readonly acceptPromptOpen = signal<boolean>(false);
   readonly changeModeModalOpen = signal<boolean>(false);
   readonly changeModeHighlightIdx = signal<number>(0);
@@ -1693,6 +2231,40 @@ export class VoucherGridComponent implements OnInit {
   // Computed Lookups & Ledger Typeahead Options
   // ---------------------------------------------------------------------------
 
+  readonly isPureWarehouseVch = computed(() => isPureWarehouseCategory(this.activeCategory()));
+
+  readonly hasAnyTobaccoMrpItem = computed(() =>
+    this.itemHookRows().some((r) => Boolean(r.isTobaccoMrpItem)),
+  );
+
+  readonly availableBomsForSelectedProduct = computed(() => {
+    const finId = this.manufacturingFinishedItemId();
+    const allBoms = this.inventoryStore.boms();
+    if (!finId) return allBoms;
+    const matching = allBoms.filter((b) => b.stockItemId === finId);
+    return matching.length > 0 ? matching : allBoms;
+  });
+
+  readonly activeBatchModalRow = computed<VoucherInventoryItemHookDto | null>(() => {
+    const ctx = this.activeItemBatchModal();
+    if (!ctx) return null;
+    return ctx.pane === 'DEST'
+      ? (this.stockJournalDestRows()[ctx.rowIndex] ?? null)
+      : (this.itemHookRows()[ctx.rowIndex] ?? null);
+  });
+
+  readonly activeBatchModalDirection = computed<'INWARD' | 'OUTWARD'>(() => {
+    const ctx = this.activeItemBatchModal();
+    if (!ctx) return 'OUTWARD';
+    if (this.activeCategory() === 'STOCK_JOURNAL') {
+      return ctx.pane === 'DEST' ? 'INWARD' : 'OUTWARD';
+    }
+    if (this.activeCategory() === 'PHYSICAL_STOCK') {
+      return 'INWARD';
+    }
+    return this.isOutwardInvoice() ? 'OUTWARD' : 'INWARD';
+  });
+
   readonly isPurchaseOrDebitNote = computed(() => {
     const cat = this.activeCategory();
     return cat === 'PURCHASE' || cat === 'DEBIT_NOTE' || cat === 'PURCHASE_ORDER' || cat === 'RECEIPT_NOTE';
@@ -1700,7 +2272,7 @@ export class VoucherGridComponent implements OnInit {
 
   readonly isOutwardInvoice = computed(() => {
     const cat = this.activeCategory();
-    return cat === 'SALES' || cat === 'CREDIT_NOTE' || cat === 'SALES_ORDER' || cat === 'DELIVERY_NOTE';
+    return cat === 'SALES' || cat === 'CREDIT_NOTE' || cat === 'SALES_ORDER' || cat === 'DELIVERY_NOTE' || cat === 'REJECTIONS_OUT' || cat === 'MATERIAL_OUT';
   });
 
   readonly isManualNumbering = computed(() => {
@@ -1864,6 +2436,48 @@ export class VoucherGridComponent implements OnInit {
       };
     }
 
+    if (this.activeCategory() === 'STOCK_JOURNAL') {
+      let srcSum = ExactDecimal.zero(scale);
+      for (const s of this.itemHookRows()) {
+        if (!s.stockItemId && !s.stockItemName.trim()) continue;
+        const amt = ExactDecimal.tryParse(s.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
+        srcSum = srcSum.add(amt);
+      }
+      let dstSum = ExactDecimal.zero(scale);
+      for (const d of this.stockJournalDestRows()) {
+        if (!d.stockItemId && !d.stockItemName.trim()) continue;
+        const amt = ExactDecimal.tryParse(d.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
+        dstSum = dstSum.add(amt);
+      }
+      return {
+        totalDebit: dstSum,
+        totalCredit: srcSum,
+        totalDebitWire: dstSum.toWireString(scale),
+        totalCreditWire: srcSum.toWireString(scale),
+        diffWire: ExactDecimal.zero(scale).toWireString(scale),
+        isBalanced: true,
+        isBalancedAndPositive: dstSum.isPositive() || srcSum.isPositive(),
+      };
+    }
+
+    if (this.activeCategory() === 'PHYSICAL_STOCK') {
+      let phySum = ExactDecimal.zero(scale);
+      for (const p of this.itemHookRows()) {
+        if (!p.stockItemId && !p.stockItemName.trim()) continue;
+        const amt = ExactDecimal.tryParse(p.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
+        phySum = phySum.add(amt);
+      }
+      return {
+        totalDebit: phySum,
+        totalCredit: phySum,
+        totalDebitWire: phySum.toWireString(scale),
+        totalCreditWire: phySum.toWireString(scale),
+        diffWire: ExactDecimal.zero(scale).toWireString(scale),
+        isBalanced: true,
+        isBalancedAndPositive: true,
+      };
+    }
+
     // ACCOUNTING_INVOICE or ITEM_INVOICE
     let itemSubtotal = ExactDecimal.zero(scale);
     if (view === 'ITEM_INVOICE') {
@@ -1890,8 +2504,12 @@ export class VoucherGridComponent implements OnInit {
     }
 
     const hasParty = Boolean(this.partyLedgerId());
+    const isNonAccountingOrderOrChallan = isNonAccountingInventoryCategory(this.activeCategory());
     const hasAccountingForItems =
-      view !== 'ITEM_INVOICE' || itemSubtotal.isZero() || Boolean(this.accountingLedgerId());
+      isNonAccountingOrderOrChallan ||
+      view !== 'ITEM_INVOICE' ||
+      itemSubtotal.isZero() ||
+      Boolean(this.accountingLedgerId());
     const balancedTotal = netInvoiceTotal.isPositive() ? netInvoiceTotal : ExactDecimal.zero(scale);
     const dr =
       partySide === 'DR'
@@ -1973,6 +2591,8 @@ export class VoucherGridComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     const noModalGuard = () =>
       !this.activeSubModal() &&
+      !this.activeItemBatchModal() &&
+      !this.openOrderModalOpen() &&
       !this.secondaryMasterModal.isOpen() &&
       !this.acceptPromptOpen() &&
       !this.changeModeModalOpen() &&
@@ -2038,6 +2658,30 @@ export class VoucherGridComponent implements OnInit {
         'voucher.physicalStock',
         'SCREEN',
         () => this.switchToCategory('PHYSICAL_STOCK'),
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.salesOrder',
+        'SCREEN',
+        () => this.switchToCategory('SALES_ORDER'),
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.purchaseOrder',
+        'SCREEN',
+        () => this.switchToCategory('PURCHASE_ORDER'),
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.deliveryNote',
+        'SCREEN',
+        () => this.switchToCategory('DELIVERY_NOTE'),
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.receiptNote',
+        'SCREEN',
+        () => this.switchToCategory('RECEIPT_NOTE'),
         noModalGuard,
       ),
       this.shortcutRegistry.bindHandler(
@@ -2145,11 +2789,32 @@ export class VoucherGridComponent implements OnInit {
   // Category & Mode Switching (F4-F10, Ctrl+H, Ctrl+L)
   // ---------------------------------------------------------------------------
 
+  private makeBlankInventoryRow(zeroWire: string): VoucherInventoryItemHookDto {
+    return {
+      rowId: `item-${this.rowCounter++}`,
+      stockItemId: null,
+      stockItemName: '',
+      quantity: '1',
+      actualQty: '1',
+      uomCode: 'NOS',
+      alternateUomId: null,
+      rate: zeroWire,
+      discountPct: '0',
+      amount: zeroWire,
+      batchAllocations: [],
+    };
+  }
+
   initializeBlankVoucher(category: VoucherBaseCategory): void {
     const spec = resolveVoucherSpecByCategory(category);
     const matchedVt = this.coaStore
       .voucherTypes()
       .find((vt) => vt.baseCategory === category && vt.isSystemVoucherType);
+    const rawEntryMode = matchedVt?.defaultEntryMode;
+    const initialView: VoucherPersistedView =
+      rawEntryMode === 'DOUBLE_ENTRY'
+        ? 'AS_VOUCHER'
+        : (rawEntryMode ?? spec.defaultPersistedView);
 
     this.editingVoucherId.set(null);
     this.editingVersionNo.set(1);
@@ -2158,7 +2823,7 @@ export class VoucherGridComponent implements OnInit {
     this.activeCategory.set(category);
     this.activeVoucherTypeId.set(matchedVt?.id ?? null);
     this.activeVoucherTypeName.set(matchedVt?.name ?? spec.name);
-    this.persistedView.set(spec.defaultPersistedView);
+    this.persistedView.set(initialView);
     this.postingNature.set(
       matchedVt?.makeOptionalByDefault ? 'OPTIONAL' : spec.defaultPostingNature,
     );
@@ -2176,6 +2841,8 @@ export class VoucherGridComponent implements OnInit {
     this.isReverseCharge.set(false);
     this.narration.set('');
     this.errorBanner.set(null);
+    this.bomManufacturingMode.set(Boolean(matchedVt?.isManufacturingJournal));
+    this.manufacturingPreviewResult.set(null);
 
     const scale = this.companyContext.currencyScale();
     const zeroWire = ExactDecimal.zero(scale).toWireString(scale);
@@ -2183,20 +2850,14 @@ export class VoucherGridComponent implements OnInit {
 
     this.gridLines.set([this.makeBlankLine(firstSide, zeroWire)]);
     this.itemHookRows.set(
-      spec.defaultPersistedView === 'ITEM_INVOICE'
-        ? [
-            {
-              rowId: `item-${this.rowCounter++}`,
-              stockItemId: null,
-              stockItemName: '',
-              quantity: '1',
-              uomCode: 'NOS',
-              alternateUomId: null,
-              rate: zeroWire,
-              amount: zeroWire,
-            },
-          ]
+      initialView === 'ITEM_INVOICE' ||
+        category === 'STOCK_JOURNAL' ||
+        category === 'PHYSICAL_STOCK'
+        ? [this.makeBlankInventoryRow(zeroWire)]
         : [],
+    );
+    this.stockJournalDestRows.set(
+      category === 'STOCK_JOURNAL' ? [this.makeBlankInventoryRow(zeroWire)] : [],
     );
 
     this.companyContext.setHasUnsavedDraft(false);
@@ -2212,28 +2873,42 @@ export class VoucherGridComponent implements OnInit {
     const matchedVt = this.coaStore
       .voucherTypes()
       .find((vt) => vt.baseCategory === category && vt.isSystemVoucherType);
+    const rawTargetMode = matchedVt?.defaultEntryMode;
+    const targetView: VoucherPersistedView =
+      rawTargetMode === 'DOUBLE_ENTRY'
+        ? 'AS_VOUCHER'
+        : (rawTargetMode ?? spec.defaultPersistedView);
 
     this.activeCategory.set(category);
     this.activeVoucherTypeId.set(matchedVt?.id ?? null);
     this.activeVoucherTypeName.set(matchedVt?.name ?? spec.name);
 
+    const scale = this.companyContext.currencyScale();
+    const zeroWire = ExactDecimal.zero(scale).toWireString(scale);
+
     if (!spec.allowedViews.includes(this.persistedView())) {
-      this.applyPersistedView(spec.defaultPersistedView);
+      this.applyPersistedView(targetView);
     } else if (
       this.gridLines().every((l) => !l.ledgerId) &&
       !this.headerAccountLedgerId() &&
       !this.partyLedgerId()
     ) {
-      this.persistedView.set(spec.defaultPersistedView);
+      this.persistedView.set(targetView);
       const firstSide = this.defaultLineSideForCurrentView(spec);
-      this.gridLines.set([
-        this.makeBlankLine(
-          firstSide,
-          ExactDecimal.zero(this.companyContext.currencyScale()).toWireString(
-            this.companyContext.currencyScale(),
-          ),
-        ),
-      ]);
+      this.gridLines.set([this.makeBlankLine(firstSide, zeroWire)]);
+    }
+
+    if (
+      (targetView === 'ITEM_INVOICE' ||
+        category === 'STOCK_JOURNAL' ||
+        category === 'PHYSICAL_STOCK') &&
+      this.itemHookRows().length === 0
+    ) {
+      this.itemHookRows.set([this.makeBlankInventoryRow(zeroWire)]);
+    }
+
+    if (category === 'STOCK_JOURNAL' && this.stockJournalDestRows().length === 0) {
+      this.stockJournalDestRows.set([this.makeBlankInventoryRow(zeroWire)]);
     }
 
     if (category === 'MEMORANDUM') {
@@ -2260,7 +2935,28 @@ export class VoucherGridComponent implements OnInit {
     this.markDirty();
   }
 
+  toggleStockJournalManufacturingMode(): void {
+    const next = !this.bomManufacturingMode();
+    this.bomManufacturingMode.set(next);
+    if (next) {
+      const boms = this.inventoryStore.boms();
+      if (!this.selectedBomId() && boms.length > 0) {
+        this.selectedBomId.set(boms[0].id);
+        this.manufacturingFinishedItemId.set(boms[0].stockItemId);
+      }
+      const godowns = this.inventoryStore.godowns();
+      if (!this.manufacturingTargetGodownId() && godowns.length > 0) {
+        this.manufacturingTargetGodownId.set(godowns[0].id);
+      }
+    }
+    this.markDirty();
+  }
+
   openChangeModeModal(): void {
+    if (this.activeCategory() === 'STOCK_JOURNAL') {
+      this.toggleStockJournalManufacturingMode();
+      return;
+    }
     const allowed = this.availableViewsForCategory();
     if (allowed.length <= 1) {
       return;
@@ -2932,49 +3628,249 @@ export class VoucherGridComponent implements OnInit {
   }
 
   // ---------------------------------------------------------------------------
-  // Phase 4 Item-Invoice Hook Helpers
+  // Phase 4 Item-Invoice, Stock Journal, BOM, Batch & Order Helpers
   // ---------------------------------------------------------------------------
+
+  private computeExactItemLineAmount(
+    billedQtyRaw: string,
+    rateRaw: string,
+    discountPctRaw: string | null | undefined,
+     fallbackAmount: string,
+  ): string {
+    const scale = this.companyContext.currencyScale();
+    const qtyDec = ExactDecimal.tryParse(billedQtyRaw.trim(), 6, 'HALF_UP');
+    const rateDec = ExactDecimal.tryParse(rateRaw.trim(), 6, 'HALF_UP');
+    if (!qtyDec || !rateDec) {
+      return fallbackAmount;
+    }
+    const gross = qtyDec.mulScaled(rateDec, 6, 'HALF_UP');
+    const discDec = discountPctRaw
+      ? ExactDecimal.tryParse(discountPctRaw.trim(), 4, 'HALF_UP')
+      : null;
+    if (discDec && discDec.isPositive()) {
+      const hundred = ExactDecimal.fromInt(100, 4);
+      const netFactor = hundred.sub(discDec);
+      return gross
+        .mulScaled(netFactor, 8, 'HALF_UP')
+        .divHalfUp(hundred, scale)
+        .toWireString(scale);
+    }
+    return gross.rescale(scale, 'HALF_UP').toWireString(scale);
+  }
+
+  private recomputeDownstreamInvoiceTaxLines(): void {
+    const scale = this.companyContext.currencyScale();
+    const updated = [...this.gridLines()];
+    let changed = false;
+
+    for (let idx = 0; idx < updated.length; idx++) {
+      const row = updated[idx];
+      if (!row.ledgerId || row.isGstOverridden || !row.ratePct.trim()) {
+        continue;
+      }
+      const pctDec = ExactDecimal.tryParse(row.ratePct.trim(), 4, 'HALF_UP');
+      if (!pctDec) continue;
+
+      let base = ExactDecimal.zero(scale);
+      if (this.persistedView() === 'ITEM_INVOICE') {
+        base = this.computeItemLinesTaxableBase(scale);
+      }
+      for (let prev = 0; prev < idx; prev++) {
+        const pRow = updated[prev];
+        if (!pRow.ledgerId || pRow.lineRole === 'TAX' || pRow.lineRole === 'ROUND_OFF') continue;
+        const pAmt = ExactDecimal.tryParse(pRow.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
+        base = pRow.lineRole === 'DISCOUNT' ? base.sub(pAmt) : base.add(pAmt);
+      }
+
+      if (base.isPositive()) {
+        const hundred = ExactDecimal.fromInt(100, 2);
+        const computed = base
+          .mulScaled(pctDec, 6, 'HALF_UP')
+          .divHalfUp(hundred, scale)
+          .toWireString(scale);
+        updated[idx] = {
+          ...row,
+          amount: computed,
+          computedTaxAmount: row.lineRole === 'TAX' ? computed : row.computedTaxAmount,
+        };
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.gridLines.set(updated);
+    }
+  }
+
+  private computeItemLinesTaxableBase(scale: number): ExactDecimal {
+    let base = ExactDecimal.zero(scale);
+    const hundred = ExactDecimal.fromInt(100, 4);
+
+    for (const item of this.itemHookRows()) {
+      if (!item.stockItemName.trim()) continue;
+      // Rel 7.2 Tobacco / Retail Sale Price (MRP) Deemed Taxable Value:
+      // taxableBase = round((declaredMrp * billedQty * 100) / (100 + gstRatePct), scale)
+      if (item.isTobaccoMrpItem && item.declaredMrp && item.declaredMrp.trim()) {
+        const mrpDec = ExactDecimal.tryParse(item.declaredMrp.trim(), 4, 'HALF_UP');
+        const qtyDec = ExactDecimal.tryParse(item.quantity.trim(), 4, 'HALF_UP');
+        const gstRateDec =
+          ExactDecimal.tryParse((item.gstRatePct ?? '28').trim(), 4, 'HALF_UP') ??
+          ExactDecimal.fromInt(28, 4);
+        if (mrpDec && qtyDec && mrpDec.isPositive() && qtyDec.isPositive()) {
+          const mrpTotal = mrpDec.mulScaled(qtyDec, 6, 'HALF_UP');
+          const divisor = hundred.add(gstRateDec);
+          const deemedTaxable = mrpTotal
+            .mulScaled(hundred, 6, 'HALF_UP')
+            .divHalfUp(divisor, scale);
+          base = base.add(deemedTaxable);
+          continue;
+        }
+      }
+
+      const amt = ExactDecimal.tryParse(item.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
+      base = base.add(amt);
+    }
+    return base;
+  }
 
   addItemHookRow(): void {
     const zeroWire = ExactDecimal.zero(this.companyContext.currencyScale()).toWireString(
       this.companyContext.currencyScale(),
     );
-    this.itemHookRows.set([
-      ...this.itemHookRows(),
-      {
-        rowId: `item-${this.rowCounter++}`,
-        stockItemId: null,
-        stockItemName: '',
-        quantity: '1',
-        uomCode: 'NOS',
-        alternateUomId: null,
-        rate: zeroWire,
-        amount: zeroWire,
-      },
-    ]);
+    this.itemHookRows.set([...this.itemHookRows(), this.makeBlankInventoryRow(zeroWire)]);
+  }
+
+  removeItemHookRow(idx: number): void {
+    if (this.itemHookRows().length <= 1) return;
+    this.itemHookRows.set(this.itemHookRows().filter((_, i) => i !== idx));
+    this.recomputeDownstreamInvoiceTaxLines();
+    this.markDirty();
+  }
+
+  onStockItemSelected(idx: number, opt: TypeaheadOption): void {
+    const scale = this.companyContext.currencyScale();
+    const zeroWire = ExactDecimal.zero(scale).toWireString(scale);
+    const master = this.inventoryStore.stockItems().find((i) => i.id === opt.id);
+    const defaultRate = master
+      ? (this.isOutwardInvoice()
+          ? master.standardSellingPrice ?? master.openingRate ?? zeroWire
+          : master.standardCost ?? master.openingRate ?? zeroWire)
+      : zeroWire;
+
+    const currentRow = this.itemHookRows()[idx];
+    const qty = currentRow?.quantity || '1';
+    const disc = currentRow?.discountPct ?? '0';
+    const computedAmt = this.computeExactItemLineAmount(qty, defaultRate, disc, zeroWire);
+
+    this.itemHookRows.set(
+      this.itemHookRows().map((r, i) =>
+        i === idx
+          ? {
+              ...r,
+              stockItemId: opt.id,
+              stockItemName: master?.name ?? opt.label,
+              uomId: master?.baseUomId ?? null,
+              uomCode: master?.baseUomSymbol ?? 'NOS',
+              baseUomId: master?.baseUomId ?? null,
+              baseUomSymbol: master?.baseUomSymbol ?? 'NOS',
+              alternateUomId: master?.alternateUomId ?? null,
+              alternateUomSymbol: master?.alternateUomSymbol ?? null,
+              maintainInBatches: Boolean(master?.maintainInBatches),
+              trackDateOfMfg: Boolean(master?.trackDateOfMfg),
+              useExpiryDates: Boolean(master?.useExpiryDates),
+              isTobaccoMrpItem: Boolean(master?.isTobaccoMrpItem),
+              declaredMrp: master?.mrpPerUnit ?? null,
+              gstRatePct: master?.gstRatePct ?? null,
+              rate: defaultRate,
+              amount: computedAmt,
+              batchAllocations: [],
+            }
+          : r,
+      ),
+    );
+
+    if (!this.accountingLedgerId() && master) {
+      const defLed = this.isOutwardInvoice()
+        ? master.defaultSalesLedgerId
+        : master.defaultPurchaseLedgerId;
+      if (defLed) {
+        this.accountingLedgerId.set(defLed);
+      }
+    }
+
+    this.recomputeDownstreamInvoiceTaxLines();
+    this.markDirty();
   }
 
   onItemHookNameChange(idx: number, name: string): void {
     this.itemHookRows.set(
       this.itemHookRows().map((r, i) => (i === idx ? { ...r, stockItemName: name } : r)),
     );
+    this.recomputeDownstreamInvoiceTaxLines();
     this.markDirty();
   }
 
-  onItemHookQtyOrRateChange(idx: number, qtyRaw: string, rateRaw: string): void {
-    const scale = this.companyContext.currencyScale();
-    const qtyDec = ExactDecimal.tryParse(qtyRaw.trim(), 4, 'HALF_UP');
-    const rateDec = ExactDecimal.tryParse(rateRaw.trim(), 4, 'HALF_UP');
-    const computedAmt =
-      qtyDec && rateDec
-        ? qtyDec.mulScaled(rateDec, scale, 'HALF_UP').toWireString(scale)
-        : this.itemHookRows()[idx]?.amount ?? '0.00';
+  onItemActualQtyChange(idx: number, actualRaw: string): void {
+    this.itemHookRows.set(
+      this.itemHookRows().map((r, i) => (i === idx ? { ...r, actualQty: actualRaw } : r)),
+    );
+    this.markDirty();
+  }
+
+  onItemHookQtyOrRateChange(
+    idx: number,
+    qtyRaw: string,
+    rateRaw: string,
+    discountPctRaw?: string | null,
+  ): void {
+    const existing = this.itemHookRows()[idx];
+    const disc = discountPctRaw !== undefined ? (discountPctRaw ?? '0') : (existing?.discountPct ?? '0');
+    const computedAmt = this.computeExactItemLineAmount(
+      qtyRaw,
+      rateRaw,
+      disc,
+      existing?.amount ?? '0.00',
+    );
 
     this.itemHookRows.set(
       this.itemHookRows().map((r, i) =>
-        i === idx ? { ...r, quantity: qtyRaw, rate: rateRaw, amount: computedAmt } : r,
+        i === idx
+          ? {
+              ...r,
+              quantity: qtyRaw,
+              actualQty: !r.actualQty || r.actualQty === r.quantity ? qtyRaw : r.actualQty,
+              rate: rateRaw,
+              discountPct: disc,
+              amount: computedAmt,
+            }
+          : r,
       ),
     );
+    this.recomputeDownstreamInvoiceTaxLines();
+    this.markDirty();
+  }
+
+  onItemUomChange(idx: number, nextUomId: string): void {
+    const uom = this.inventoryStore.uoms().find((u) => u.id === nextUomId);
+    this.itemHookRows.set(
+      this.itemHookRows().map((r, i) =>
+        i === idx
+          ? {
+              ...r,
+              uomId: nextUomId || null,
+              uomCode: uom?.symbol ?? r.uomCode,
+            }
+          : r,
+      ),
+    );
+    this.markDirty();
+  }
+
+  onItemDeclaredMrpChange(idx: number, mrpRaw: string): void {
+    this.itemHookRows.set(
+      this.itemHookRows().map((r, i) => (i === idx ? { ...r, declaredMrp: mrpRaw } : r)),
+    );
+    this.recomputeDownstreamInvoiceTaxLines();
     this.markDirty();
   }
 
@@ -2982,12 +3878,321 @@ export class VoucherGridComponent implements OnInit {
     this.itemHookRows.set(
       this.itemHookRows().map((r, i) => (i === idx ? { ...r, amount: amountWire } : r)),
     );
+    this.recomputeDownstreamInvoiceTaxLines();
+    this.markDirty();
+  }
+
+  onItemAmountEnter(idx: number): void {
+    const row = this.itemHookRows()[idx];
+    if (!row) return;
+    if (row.maintainInBatches && (!row.batchAllocations || row.batchAllocations.length === 0)) {
+      this.openItemBatchModal('SOURCE', idx);
+    }
+  }
+
+  openItemBatchModal(pane: 'SOURCE' | 'DEST', rowIndex: number): void {
+    this.activeItemBatchModal.set({ pane, rowIndex });
+  }
+
+  onItemBatchAllocationsCommitted(allocations: readonly VoucherBatchAllocationDto[]): void {
+    const ctx = this.activeItemBatchModal();
+    this.activeItemBatchModal.set(null);
+    if (!ctx) return;
+
+    const scale = this.companyContext.currencyScale();
+    const totalAllocAmt = ExactDecimal.sum(
+      allocations.map((a) => a.amount),
+      scale,
+    ).toWireString(scale);
+
+    if (ctx.pane === 'DEST') {
+      this.stockJournalDestRows.set(
+        this.stockJournalDestRows().map((r, i) =>
+          i === ctx.rowIndex
+            ? {
+                ...r,
+                batchAllocations: allocations,
+                amount: totalAllocAmt,
+              }
+            : r,
+        ),
+      );
+    } else {
+      this.itemHookRows.set(
+        this.itemHookRows().map((r, i) =>
+          i === ctx.rowIndex
+            ? {
+                ...r,
+                batchAllocations: allocations,
+                amount: totalAllocAmt,
+              }
+            : r,
+        ),
+      );
+      this.recomputeDownstreamInvoiceTaxLines();
+    }
+    this.markDirty();
+  }
+
+  // --- Stock Journal Destination & BOM Manufacturing Preview ---
+
+  addStockJournalDestRow(): void {
+    const zeroWire = ExactDecimal.zero(this.companyContext.currencyScale()).toWireString(
+      this.companyContext.currencyScale(),
+    );
+    this.stockJournalDestRows.set([
+      ...this.stockJournalDestRows(),
+      this.makeBlankInventoryRow(zeroWire),
+    ]);
+  }
+
+  onDestStockItemSelected(idx: number, opt: TypeaheadOption): void {
+    const scale = this.companyContext.currencyScale();
+    const zeroWire = ExactDecimal.zero(scale).toWireString(scale);
+    const master = this.inventoryStore.stockItems().find((i) => i.id === opt.id);
+    const defaultRate = master?.standardCost ?? master?.openingRate ?? zeroWire;
+    const qty = this.stockJournalDestRows()[idx]?.quantity || '1';
+    const amt = this.computeExactItemLineAmount(qty, defaultRate, '0', zeroWire);
+
+    this.stockJournalDestRows.set(
+      this.stockJournalDestRows().map((r, i) =>
+        i === idx
+          ? {
+              ...r,
+              stockItemId: opt.id,
+              stockItemName: master?.name ?? opt.label,
+              uomId: master?.baseUomId ?? null,
+              uomCode: master?.baseUomSymbol ?? 'NOS',
+              baseUomId: master?.baseUomId ?? null,
+              baseUomSymbol: master?.baseUomSymbol ?? 'NOS',
+              alternateUomId: master?.alternateUomId ?? null,
+              alternateUomSymbol: master?.alternateUomSymbol ?? null,
+              maintainInBatches: Boolean(master?.maintainInBatches),
+              trackDateOfMfg: Boolean(master?.trackDateOfMfg),
+              useExpiryDates: Boolean(master?.useExpiryDates),
+              rate: defaultRate,
+              amount: amt,
+              batchAllocations: [],
+            }
+          : r,
+      ),
+    );
+    this.markDirty();
+  }
+
+  onDestQtyOrRateChange(idx: number, qtyRaw: string, rateRaw: string): void {
+    const existing = this.stockJournalDestRows()[idx];
+    const amt = this.computeExactItemLineAmount(
+      qtyRaw,
+      rateRaw,
+      '0',
+      existing?.amount ?? '0.00',
+    );
+    this.stockJournalDestRows.set(
+      this.stockJournalDestRows().map((r, i) =>
+        i === idx
+          ? {
+              ...r,
+              quantity: qtyRaw,
+              actualQty: qtyRaw,
+              rate: rateRaw,
+              amount: amt,
+            }
+          : r,
+      ),
+    );
+    this.markDirty();
+  }
+
+  onManufacturingProductSelected(opt: TypeaheadOption): void {
+    this.manufacturingFinishedItemId.set(opt.id);
+    const matchingBom = this.inventoryStore.boms().find((b) => b.stockItemId === opt.id);
+    if (matchingBom) {
+      this.selectedBomId.set(matchingBom.id);
+    }
+    this.markDirty();
+  }
+
+  onMfgQtyEnter(event: Event): void {
+    event.preventDefault();
+    void this.runManufacturingBomPreview();
+  }
+
+  async runManufacturingBomPreview(): Promise<void> {
+    const cid = this.companyContext.activeCompany()?.id;
+    const bomId = this.selectedBomId();
+    if (!cid || !bomId) {
+      this.errorBanner.set('Select a BOM before running Manufacturing Preview.');
+      return;
+    }
+    this.errorBanner.set(null);
+    try {
+      const resp = await this.inventoryService.previewManufacturingBom(cid, {
+        bomId,
+        finishedStockItemId: this.manufacturingFinishedItemId() ?? undefined,
+        manufacturedQty: this.manufacturedQty().trim() || '1',
+        targetGodownId: this.manufacturingTargetGodownId(),
+        asOfDate: this.voucherDate(),
+      });
+      this.manufacturingPreviewResult.set(resp);
+
+      this.itemHookRows.set(
+        resp.components.map((c) => ({
+          rowId: `item-${this.rowCounter++}`,
+          stockItemId: c.stockItemId,
+          stockItemName: c.stockItemName,
+          uomId: c.uomId ?? null,
+          uomCode: c.uomSymbol ?? 'NOS',
+          alternateUomId: null,
+          actualQty: c.requiredQty,
+          quantity: c.requiredQty,
+          rate: c.unitRate,
+          discountPct: '0',
+          amount: c.amount,
+          movementDirection: 'OUTWARD',
+          batchAllocations: c.godownId
+            ? [
+                {
+                  godownId: c.godownId,
+                  batchName: 'Primary Batch',
+                  actualQty: c.requiredQty,
+                  billedQty: c.requiredQty,
+                  rate: c.unitRate,
+                  amount: c.amount,
+                },
+              ]
+            : [],
+        })),
+      );
+
+      const finMaster = this.inventoryStore
+        .stockItems()
+        .find((i) => i.id === resp.finishedStockItemId);
+      const targetGd = this.manufacturingTargetGodownId();
+
+      this.stockJournalDestRows.set([
+        {
+          rowId: `item-${this.rowCounter++}`,
+          stockItemId: resp.finishedStockItemId,
+          stockItemName: resp.finishedStockItemName ?? finMaster?.name ?? 'Finished Product',
+          uomId: finMaster?.baseUomId ?? null,
+          uomCode: finMaster?.baseUomSymbol ?? 'NOS',
+          alternateUomId: null,
+          actualQty: resp.manufacturedQty,
+          quantity: resp.manufacturedQty,
+          rate: resp.effectiveUnitRate,
+          discountPct: '0',
+          amount: resp.totalManufacturingCost,
+          movementDirection: 'INWARD',
+          batchAllocations: targetGd
+            ? [
+                {
+                  godownId: targetGd,
+                  batchName: 'Primary Batch',
+                  actualQty: resp.manufacturedQty,
+                  billedQty: resp.manufacturedQty,
+                  rate: resp.effectiveUnitRate,
+                  amount: resp.totalManufacturingCost,
+                },
+              ]
+            : [],
+        },
+      ]);
+      this.markDirty();
+    } catch (err: unknown) {
+      this.errorBanner.set(
+        err instanceof Error ? err.message : 'Unable to preview Manufacturing BOM.',
+      );
+    }
+  }
+
+  // --- Open Order Linker (`GET /orders/open`) ---
+
+  async openOrderLinkerModal(): Promise<void> {
+    const cid = this.companyContext.activeCompany()?.id;
+    if (!cid) return;
+    const orderType: OrderVoucherKind = this.isOutwardInvoice() ? 'SALES_ORDER' : 'PURCHASE_ORDER';
+    try {
+      const orders = await this.inventoryService.listOpenOrders(
+        cid,
+        orderType,
+        this.partyLedgerId(),
+      );
+      this.openOrderLines.set(orders);
+      this.openOrderModalOpen.set(true);
+    } catch {
+      this.openOrderLines.set([]);
+      this.openOrderModalOpen.set(true);
+    }
+  }
+
+  importOpenOrderLine(ord: OpenOrderLineDto): void {
+    const scale = this.companyContext.currencyScale();
+    const zeroWire = ExactDecimal.zero(scale).toWireString(scale);
+    const disc = ord.discountPct ?? '0';
+    const amt = this.computeExactItemLineAmount(ord.pendingQty, ord.rate, disc, zeroWire);
+    const master = this.inventoryStore.stockItems().find((i) => i.id === ord.stockItemId);
+
+    const newRow: VoucherInventoryItemHookDto = {
+      rowId: `item-${this.rowCounter++}`,
+      stockItemId: ord.stockItemId,
+      stockItemName: ord.stockItemName,
+      uomId: ord.uomId ?? master?.baseUomId ?? null,
+      uomCode: ord.uomSymbol ?? master?.baseUomSymbol ?? 'NOS',
+      baseUomId: master?.baseUomId ?? null,
+      baseUomSymbol: master?.baseUomSymbol ?? 'NOS',
+      alternateUomId: master?.alternateUomId ?? null,
+      alternateUomSymbol: master?.alternateUomSymbol ?? null,
+      maintainInBatches: Boolean(master?.maintainInBatches),
+      trackDateOfMfg: Boolean(master?.trackDateOfMfg),
+      useExpiryDates: Boolean(master?.useExpiryDates),
+      actualQty: ord.pendingQty,
+      quantity: ord.pendingQty,
+      rate: ord.rate,
+      discountPct: disc,
+      amount: amt,
+      orderRefNo: ord.orderNo,
+      batchAllocations: [],
+    };
+
+    const existing = this.itemHookRows();
+    if (existing.length === 1 && !existing[0].stockItemId && !existing[0].stockItemName.trim()) {
+      this.itemHookRows.set([newRow]);
+    } else {
+      this.itemHookRows.set([...existing, newRow]);
+    }
+    this.openOrderModalOpen.set(false);
+    this.recomputeDownstreamInvoiceTaxLines();
     this.markDirty();
   }
 
   // ---------------------------------------------------------------------------
   // Inline Secondary Master Creation (`Alt+C`)
   // ---------------------------------------------------------------------------
+
+  openInlineStockItemCreate(rowIndex: number, seedName: string): void {
+    void this.secondaryMasterModal.open({
+      kind: 'STOCK_ITEM',
+      initialName: seedName,
+      onCreated: (created) => {
+        if (rowIndex < 0) {
+          this.onManufacturingProductSelected({ id: created.id, label: created.name });
+          return;
+        }
+        this.onStockItemSelected(rowIndex, { id: created.id, label: created.name });
+      },
+    });
+  }
+
+  openInlineDestStockItemCreate(rowIndex: number, seedName: string): void {
+    void this.secondaryMasterModal.open({
+      kind: 'STOCK_ITEM',
+      initialName: seedName,
+      onCreated: (created) => {
+        this.onDestStockItemSelected(rowIndex, { id: created.id, label: created.name });
+      },
+    });
+  }
 
   openInlineLedgerCreate(
     target: 'LINE' | 'HEADER_ACCOUNT' | 'HEADER_PARTY',
@@ -3064,9 +4269,47 @@ export class VoucherGridComponent implements OnInit {
     void this.submitVoucher();
   }
 
+  private mapHookRowToInventoryLineDto(
+    row: VoucherInventoryItemHookDto,
+    lineNo: number,
+    direction: 'INWARD' | 'OUTWARD',
+    accountingLedgerId: string | null,
+    scale: number,
+  ): VoucherInventoryLineDto {
+    const billed = (row.quantity || '1').trim();
+    const actual = (row.actualQty || billed).trim();
+    const amt = (
+      ExactDecimal.tryParse(row.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale)
+    ).toWireString(scale);
+
+    return {
+      lineNo,
+      accountingLedgerId,
+      stockItemId: row.stockItemId!,
+      movementDirection: direction,
+      uomId: row.uomId ?? row.baseUomId ?? null,
+      actualQty: actual,
+      billedQty: billed,
+      rate: (row.rate || '0').trim(),
+      discountPct: (row.discountPct ?? '0').trim(),
+      amount: amt,
+      declaredMrp: row.isTobaccoMrpItem && row.declaredMrp ? row.declaredMrp.trim() : null,
+      orderRefNo: row.orderRefNo ?? null,
+      trackingNo: row.trackingNo ?? null,
+      batchAllocations:
+        row.batchAllocations && row.batchAllocations.length > 0
+          ? row.batchAllocations
+          : undefined,
+    };
+  }
+
   buildUpsertRequest(overrideAction?: VoucherSubmitAction): UpsertVoucherRequest {
     const scale = this.companyContext.currencyScale();
     const view = this.persistedView();
+    const cat = this.activeCategory();
+    const nonAccountingVch = isNonAccountingInventoryCategory(cat);
+    const pureWarehouseVch = isPureWarehouseCategory(cat);
+
     const vt = this.coaStore
       .voucherTypes()
       .find((t) => t.id === this.activeVoucherTypeId());
@@ -3075,8 +4318,37 @@ export class VoucherGridComponent implements OnInit {
     const action = overrideAction ?? defaultAction;
 
     const compiledLines: VoucherLineRequest[] = [];
+    const compiledInventoryLines: VoucherInventoryLineDto[] = [];
 
-    if (view === 'AS_VOUCHER') {
+    if (cat === 'STOCK_JOURNAL') {
+      let invSeq = 1;
+      for (const src of this.itemHookRows()) {
+        if (!src.stockItemId) continue;
+        compiledInventoryLines.push(
+          this.mapHookRowToInventoryLineDto(src, invSeq++, 'OUTWARD', null, scale),
+        );
+      }
+      for (const dst of this.stockJournalDestRows()) {
+        if (!dst.stockItemId) continue;
+        compiledInventoryLines.push(
+          this.mapHookRowToInventoryLineDto(dst, invSeq++, 'INWARD', null, scale),
+        );
+      }
+      if (action !== 'SAVE_DRAFT' && compiledInventoryLines.length === 0) {
+        throw new Error('Stock Journal requires at least one Source or Destination Stock Item.');
+      }
+    } else if (cat === 'PHYSICAL_STOCK') {
+      let invSeq = 1;
+      for (const phy of this.itemHookRows()) {
+        if (!phy.stockItemId) continue;
+        compiledInventoryLines.push(
+          this.mapHookRowToInventoryLineDto(phy, invSeq++, 'INWARD', null, scale),
+        );
+      }
+      if (action !== 'SAVE_DRAFT' && compiledInventoryLines.length === 0) {
+        throw new Error('Physical Stock voucher requires at least one Stock Item.');
+      }
+    } else if (view === 'AS_VOUCHER') {
       const populated = this.gridLines().filter((l) => {
         const dec = ExactDecimal.tryParse(l.amount, scale, 'HALF_UP');
         return Boolean(l.ledgerId && dec && dec.isPositive());
@@ -3122,7 +4394,7 @@ export class VoucherGridComponent implements OnInit {
         throw new Error('Enter at least one Particulars ledger line with a positive amount.');
       }
 
-      const headerSide: BalanceSide = this.activeCategory() === 'PAYMENT' ? 'CR' : 'DR';
+      const headerSide: BalanceSide = cat === 'PAYMENT' ? 'CR' : 'DR';
       const lineSide: BalanceSide = headerSide === 'DR' ? 'CR' : 'DR';
       const totalSum = ExactDecimal.sum(
         populated.map((r) => r.amount),
@@ -3166,79 +4438,100 @@ export class VoucherGridComponent implements OnInit {
         });
       });
     } else {
-      // ACCOUNTING_INVOICE or ITEM_INVOICE
+      // ACCOUNTING_INVOICE or ITEM_INVOICE (including Orders & Challans)
       const partyId = this.partyLedgerId();
       if (!partyId) {
-        throw new Error('Select a Party A/c name for this invoice.');
+        throw new Error('Select a Party A/c name for this voucher.');
       }
-      const { partySide, revenueExpenseSide } = invoicePartyAndRevenueSides(this.activeCategory());
-      const tot = this.totals();
-      const partyTotalWire = partySide === 'DR' ? tot.totalDebitWire : tot.totalCreditWire;
-      const partyLed = this.selectedPartyLedger();
-
-      const partyBills: readonly BillAllocationDto[] =
-        partyLed?.maintainBalancesBillByBill && this.partyBillAllocations().length === 0
-          ? [
-              {
-                allocationType: 'NEW_REF',
-                billName: this.defaultBillReference(),
-                creditPeriodDays: partyLed.defaultCreditPeriodDays,
-                side: partySide,
-                amount: partyTotalWire,
-              },
-            ]
-          : this.partyBillAllocations();
-
-      let lineSeq = 1;
-      compiledLines.push({
-        lineNo: lineSeq++,
-        lineRole: 'PARTY',
-        ledgerId: partyId,
-        side: partySide,
-        amount: partyTotalWire,
-        billAllocations: partyBills.length > 0 ? partyBills : undefined,
-      });
 
       if (view === 'ITEM_INVOICE') {
-        let itemSubtotal = ExactDecimal.zero(scale);
+        const invDir: 'INWARD' | 'OUTWARD' = this.isOutwardInvoice() ? 'OUTWARD' : 'INWARD';
+        let invSeq = 1;
         for (const item of this.itemHookRows()) {
-          if (!item.stockItemName.trim()) continue;
-          const amt = ExactDecimal.tryParse(item.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
-          itemSubtotal = itemSubtotal.add(amt);
+          if (!item.stockItemId) continue;
+          compiledInventoryLines.push(
+            this.mapHookRowToInventoryLineDto(
+              item,
+              invSeq++,
+              invDir,
+              this.accountingLedgerId(),
+              scale,
+            ),
+          );
         }
-        if (itemSubtotal.isPositive()) {
-          const acctId = this.accountingLedgerId();
-          if (!acctId) {
-            throw new Error('Select a Sales / Purchase Ledger for the item lines.');
+      }
+
+      if (!nonAccountingVch || Boolean(this.accountingLedgerId())) {
+        const { partySide, revenueExpenseSide } = invoicePartyAndRevenueSides(cat);
+        const tot = this.totals();
+        const partyTotalWire = partySide === 'DR' ? tot.totalDebitWire : tot.totalCreditWire;
+        const partyLed = this.selectedPartyLedger();
+
+        const partyBills: readonly BillAllocationDto[] =
+          partyLed?.maintainBalancesBillByBill && this.partyBillAllocations().length === 0
+            ? [
+                {
+                  allocationType: 'NEW_REF',
+                  billName: this.defaultBillReference(),
+                  creditPeriodDays: partyLed.defaultCreditPeriodDays,
+                  side: partySide,
+                  amount: partyTotalWire,
+                },
+              ]
+            : this.partyBillAllocations();
+
+        let lineSeq = 1;
+        compiledLines.push({
+          lineNo: lineSeq++,
+          lineRole: 'PARTY',
+          ledgerId: partyId,
+          side: partySide,
+          amount: partyTotalWire,
+          billAllocations: partyBills.length > 0 ? partyBills : undefined,
+        });
+
+        if (view === 'ITEM_INVOICE') {
+          let itemSubtotal = ExactDecimal.zero(scale);
+          for (const item of this.itemHookRows()) {
+            if (!item.stockItemName.trim()) continue;
+            const amt =
+              ExactDecimal.tryParse(item.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
+            itemSubtotal = itemSubtotal.add(amt);
           }
+          if (itemSubtotal.isPositive()) {
+            const acctId = this.accountingLedgerId();
+            if (!acctId) {
+              throw new Error('Select a Sales / Purchase Ledger for the item lines.');
+            }
+            compiledLines.push({
+              lineNo: lineSeq++,
+              lineRole: 'ITEM_ACCOUNTING',
+              ledgerId: acctId,
+              side: revenueExpenseSide,
+              amount: itemSubtotal.toWireString(scale),
+            });
+          }
+        }
+
+        for (const row of this.gridLines()) {
+          const dec = ExactDecimal.tryParse(row.amount, scale, 'HALF_UP');
+          if (!row.ledgerId || !dec || !dec.isPositive()) continue;
           compiledLines.push({
             lineNo: lineSeq++,
-            lineRole: 'ITEM_ACCOUNTING',
-            ledgerId: acctId,
-            side: revenueExpenseSide,
-            amount: itemSubtotal.toWireString(scale),
+            lineRole: row.lineRole,
+            ledgerId: row.ledgerId,
+            side: row.lineRole === 'DISCOUNT' ? partySide : revenueExpenseSide,
+            amount: dec.toWireString(scale),
+            ratePct: row.ratePct.trim() || null,
+            computedTaxAmount: row.computedTaxAmount,
+            isGstOverridden: row.isGstOverridden,
+            costAllocations: row.costAllocations.length > 0 ? row.costAllocations : undefined,
           });
         }
       }
-
-      for (const row of this.gridLines()) {
-        const dec = ExactDecimal.tryParse(row.amount, scale, 'HALF_UP');
-        if (!row.ledgerId || !dec || !dec.isPositive()) continue;
-        compiledLines.push({
-          lineNo: lineSeq++,
-          lineRole: row.lineRole,
-          ledgerId: row.ledgerId,
-          side: row.lineRole === 'DISCOUNT' ? partySide : revenueExpenseSide,
-          amount: dec.toWireString(scale),
-          ratePct: row.ratePct.trim() || null,
-          computedTaxAmount: row.computedTaxAmount,
-          isGstOverridden: row.isGstOverridden,
-          costAllocations: row.costAllocations.length > 0 ? row.costAllocations : undefined,
-        });
-      }
     }
 
-    if (action !== 'SAVE_DRAFT') {
+    if (action !== 'SAVE_DRAFT' && !nonAccountingVch) {
       if (compiledLines.length < 2) {
         throw new Error('A double-entry voucher requires at least two balanced ledger lines.');
       }
@@ -3247,6 +4540,10 @@ export class VoucherGridComponent implements OnInit {
         throw new Error(
           `Voucher is out of balance (Total Dr ${tot.totalDebitWire} != Total Cr ${tot.totalCreditWire}).`,
         );
+      }
+    } else if (action !== 'SAVE_DRAFT' && nonAccountingVch && !pureWarehouseVch) {
+      if (compiledInventoryLines.length === 0) {
+        throw new Error('Select at least one Stock Item line before saving this inventory voucher.');
       }
     }
 
@@ -3270,25 +4567,28 @@ export class VoucherGridComponent implements OnInit {
         ? this.supplierInvoiceDate() || null
         : null,
       partyLedgerId:
-        view === 'ACCOUNTING_INVOICE' || view === 'ITEM_INVOICE' ? this.partyLedgerId() : null,
+        (view === 'ACCOUNTING_INVOICE' || view === 'ITEM_INVOICE') && !pureWarehouseVch
+          ? this.partyLedgerId()
+          : null,
       accountingLedgerId:
-        view === 'ITEM_INVOICE'
+        view === 'ITEM_INVOICE' && !pureWarehouseVch
           ? this.accountingLedgerId()
           : view === 'SINGLE_ENTRY'
             ? this.headerAccountLedgerId()
             : null,
       placeOfSupplyState:
-        view === 'ACCOUNTING_INVOICE' || view === 'ITEM_INVOICE'
+        (view === 'ACCOUNTING_INVOICE' || view === 'ITEM_INVOICE') && !pureWarehouseVch
           ? this.placeOfSupplyState() || null
           : null,
-      partyGstin: this.partyGstin(),
-      partyMailingName: this.partyMailingName(),
-      partyStateCode: this.partyStateCode(),
-      isReverseCharge: this.isReverseCharge(),
+      partyGstin: pureWarehouseVch ? null : this.partyGstin(),
+      partyMailingName: pureWarehouseVch ? null : this.partyMailingName(),
+      partyStateCode: pureWarehouseVch ? null : this.partyStateCode(),
+      isReverseCharge: pureWarehouseVch ? false : this.isReverseCharge(),
       currencyCode: this.companyContext.activeCompany()?.baseCurrencyCode ?? 'INR',
       exchangeRate: '1',
       narration: this.narration().trim(),
       lines: compiledLines,
+      inventoryLines: compiledInventoryLines.length > 0 ? compiledInventoryLines : undefined,
     };
   }
 
@@ -3383,6 +4683,36 @@ export class VoucherGridComponent implements OnInit {
     }
   }
 
+  private mapDtoToItemHookRow(inv: VoucherInventoryLineDto): VoucherInventoryItemHookDto {
+    const master = this.inventoryStore.stockItems().find((i) => i.id === inv.stockItemId);
+    return {
+      rowId: `item-${this.rowCounter++}`,
+      stockItemId: inv.stockItemId,
+      stockItemName: inv.stockItemName ?? master?.name ?? inv.stockItemId,
+      uomId: inv.uomId ?? master?.baseUomId ?? null,
+      uomCode: inv.uomSymbol ?? master?.baseUomSymbol ?? 'NOS',
+      baseUomId: master?.baseUomId ?? inv.uomId ?? null,
+      baseUomSymbol: master?.baseUomSymbol ?? inv.uomSymbol ?? 'NOS',
+      alternateUomId: master?.alternateUomId ?? null,
+      alternateUomSymbol: master?.alternateUomSymbol ?? null,
+      maintainInBatches: Boolean(master?.maintainInBatches || (inv.batchAllocations?.length ?? 0) > 0),
+      trackDateOfMfg: Boolean(master?.trackDateOfMfg),
+      useExpiryDates: Boolean(master?.useExpiryDates),
+      isTobaccoMrpItem: Boolean(master?.isTobaccoMrpItem || inv.declaredMrp),
+      declaredMrp: inv.declaredMrp ?? master?.mrpPerUnit ?? null,
+      gstRatePct: master?.gstRatePct ?? null,
+      actualQty: inv.actualQty,
+      quantity: inv.billedQty,
+      rate: inv.rate,
+      discountPct: inv.discountPct ?? '0',
+      amount: inv.amount,
+      orderRefNo: inv.orderRefNo ?? null,
+      trackingNo: inv.trackingNo ?? null,
+      movementDirection: inv.movementDirection,
+      batchAllocations: inv.batchAllocations ?? [],
+    };
+  }
+
   async hydrateFromVoucherDetail(
     detail: VoucherDetailDto,
     asDuplicateNew: boolean,
@@ -3422,6 +4752,22 @@ export class VoucherGridComponent implements OnInit {
     this.isReverseCharge.set(Boolean(detail.isReverseCharge));
     this.narration.set(detail.narration ?? '');
 
+    const invLines = detail.inventoryLines ?? [];
+    if (category === 'STOCK_JOURNAL') {
+      const outs = invLines
+        .filter((l) => l.movementDirection === 'OUTWARD')
+        .map((l) => this.mapDtoToItemHookRow(l));
+      const ins = invLines
+        .filter((l) => l.movementDirection === 'INWARD')
+        .map((l) => this.mapDtoToItemHookRow(l));
+      this.itemHookRows.set(outs.length > 0 ? outs : [this.makeBlankInventoryRow('0.00')]);
+      this.stockJournalDestRows.set(ins.length > 0 ? ins : [this.makeBlankInventoryRow('0.00')]);
+    } else if (invLines.length > 0) {
+      this.itemHookRows.set(invLines.map((l) => this.mapDtoToItemHookRow(l)));
+    } else if (detail.persistedView === 'ITEM_INVOICE') {
+      this.itemHookRows.set([this.makeBlankInventoryRow('0.00')]);
+    }
+
     if (detail.persistedView === 'SINGLE_ENTRY' && detail.lines.length >= 2) {
       const headerLine =
         detail.lines.find((l) => l.lineRole === 'ACCOUNTING') ?? detail.lines[0];
@@ -3438,7 +4784,15 @@ export class VoucherGridComponent implements OnInit {
         this.partyLedgerId.set(pLine.ledgerId);
         this.partyBillAllocations.set(asDuplicateNew ? [] : pLine.billAllocations ?? []);
       }
-      const bodyLines = detail.lines.filter((l) => l.lineRole !== 'PARTY');
+      const itemAcctLine = detail.lines.find((l) => l.lineRole === 'ITEM_ACCOUNTING');
+      if (itemAcctLine && !this.accountingLedgerId()) {
+        this.accountingLedgerId.set(itemAcctLine.ledgerId);
+      }
+      const bodyLines = detail.lines.filter(
+        (l) =>
+          l.lineRole !== 'PARTY' &&
+          (detail.persistedView !== 'ITEM_INVOICE' || l.lineRole !== 'ITEM_ACCOUNTING'),
+      );
       this.gridLines.set(
         bodyLines.length > 0
           ? bodyLines.map((l) => this.mapResponseLineToEditable(l))
@@ -3494,11 +4848,7 @@ export class VoucherGridComponent implements OnInit {
     const scale = this.companyContext.currencyScale();
     let base = ExactDecimal.zero(scale);
     if (this.persistedView() === 'ITEM_INVOICE') {
-      for (const item of this.itemHookRows()) {
-        if (!item.stockItemName.trim()) continue;
-        const amt = ExactDecimal.tryParse(item.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
-        base = base.add(amt);
-      }
+      base = this.computeItemLinesTaxableBase(scale);
     }
     this.gridLines().forEach((r, idx) => {
       if (idx >= beforeLineIdx || !r.ledgerId || r.lineRole === 'TAX' || r.lineRole === 'ROUND_OFF') {
@@ -3553,7 +4903,10 @@ export class VoucherGridComponent implements OnInit {
       const view = this.persistedView();
       if (view === 'SINGLE_ENTRY') {
         this.singleAccountSelectRef()?.focusInput();
-      } else if (view === 'ACCOUNTING_INVOICE' || view === 'ITEM_INVOICE') {
+      } else if (
+        (view === 'ACCOUNTING_INVOICE' || view === 'ITEM_INVOICE') &&
+        !this.isPureWarehouseVch()
+      ) {
         this.partyAccountSelectRef()?.focusInput();
       } else {
         this.lineLedgerSelectRefs()[0]?.focusInput();
@@ -3581,6 +4934,8 @@ export class VoucherGridComponent implements OnInit {
       narration: this.narration(),
       gridLines: this.gridLines(),
       itemHookRows: this.itemHookRows(),
+      stockJournalDestRows: this.stockJournalDestRows(),
+      bomManufacturingMode: this.bomManufacturingMode(),
     };
   }
 
@@ -3634,6 +4989,14 @@ export class VoucherGridComponent implements OnInit {
     }
     if (Array.isArray(s['itemHookRows'])) {
       this.itemHookRows.set(s['itemHookRows'] as readonly VoucherInventoryItemHookDto[]);
+    }
+    if (Array.isArray(s['stockJournalDestRows'])) {
+      this.stockJournalDestRows.set(
+        s['stockJournalDestRows'] as readonly VoucherInventoryItemHookDto[],
+      );
+    }
+    if (typeof s['bomManufacturingMode'] === 'boolean') {
+      this.bomManufacturingMode.set(s['bomManufacturingMode']);
     }
   }
 }

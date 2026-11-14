@@ -2,6 +2,7 @@ package com.raster.moneycraft.accounting.service;
 
 import com.raster.moneycraft.accounting.dto.CursorPage;
 import com.raster.moneycraft.accounting.dto.VoucherDtos;
+import com.raster.moneycraft.accounting.spi.VoucherInventoryBridge;
 import com.raster.moneycraft.foundation.audit.AuditChainService;
 import com.raster.moneycraft.foundation.audit.EditLogSnapshotService;
 import com.raster.moneycraft.foundation.authority.AuthorityGuard;
@@ -32,6 +33,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -95,6 +97,7 @@ public class VoucherService {
     private final ObjectMapper objectMapper;
     private final JdbcTemplate businessJdbcTemplate;
     private final TransactionTemplate businessTxTemplate;
+    private final ObjectProvider<VoucherInventoryBridge> inventoryBridgeProvider;
 
     public VoucherService(
         AuthorityGuard authorityGuard,
@@ -107,7 +110,8 @@ public class VoucherService {
         JcsCanonicalizer jcsCanonicalizer,
         ObjectMapper objectMapper,
         @Qualifier("businessJdbcTemplate") JdbcTemplate businessJdbcTemplate,
-        @Qualifier("transactionManager") PlatformTransactionManager businessTransactionManager
+        @Qualifier("transactionManager") PlatformTransactionManager businessTransactionManager,
+        ObjectProvider<VoucherInventoryBridge> inventoryBridgeProvider
     ) {
         this.authorityGuard = authorityGuard;
         this.rbacGuard = rbacGuard;
@@ -120,6 +124,7 @@ public class VoucherService {
         this.objectMapper = objectMapper;
         this.businessJdbcTemplate = businessJdbcTemplate;
         this.businessTxTemplate = new TransactionTemplate(businessTransactionManager);
+        this.inventoryBridgeProvider = inventoryBridgeProvider;
     }
 
     public VoucherDtos.VoucherDetailDto createVoucher(
@@ -128,7 +133,7 @@ public class VoucherService {
         VoucherDtos.UpsertVoucherRequest request
     ) {
         authorityGuard.assertActiveLease();
-        CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
+        CompanyMasterSequenceHelper.requireInventoryWriteRole(rbacGuard, actor, companyId);
         if (request == null || request.voucherDate() == null) {
             throw new MoneyCraftException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
@@ -151,13 +156,54 @@ public class VoucherService {
 
             // 3. Resolve Voucher Type & normalize header modes
             VoucherTypeMeta vt = resolveVoucherType(companyId, request.voucherTypeId(), request.voucherTypeName());
+            if (vt.postsAccountingEntries()) {
+                CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
+            }
             HeaderSpec header = normalizeHeaderSpec(request, vt, seq.baseCurrencyCode());
+
+            VoucherInventoryBridge invBridge = inventoryBridgeProvider.getIfAvailable();
+            VoucherInventoryBridge.InventoryPreLockPlan invPreLock = invBridge != null
+                ? invBridge.resolvePreLockPlan(companyId, null, request.inventoryLines())
+                : new VoucherInventoryBridge.InventoryPreLockPlan(Set.of(), Set.of());
 
             // 4. Collect & lock all distinct referenced mc_ledger rows sorted ascending by UUID::toString
             Set<UUID> referencedLedgerIds = collectReferencedLedgerIds(request, null);
+            referencedLedgerIds.addAll(invPreLock.additionalLedgerIdsToLock());
             Map<UUID, LockedLedgerMeta> lockedLedgers = lockLedgersInCanonicalOrder(companyId, referencedLedgerIds);
 
-            // 5. Normalize & balance accounting lines + sub-ledger allocations
+            // 5. MCJ1-TXN-01 step: lock mc_stock_item & mc_stock_batch sorted ascending & synthesize ITEM_INVOICE lines
+            LockedLedgerMeta partyLedgerMeta = request.partyLedgerId() == null
+                ? null
+                : lockedLedgers.get(request.partyLedgerId());
+            VoucherInventoryBridge.PreparedInventoryContext invCtx = invBridge != null
+                ? invBridge.lockAndPrepareInventory(
+                    new VoucherInventoryBridge.InventoryPrepareCommand(
+                        companyId,
+                        null,
+                        voucherDate,
+                        effectiveDate,
+                        seq.currencyScale(),
+                        vt.baseCategory(),
+                        vt.postsAccountingEntries(),
+                        vt.movesInventory(),
+                        vt.allowZeroValuedTransactions(),
+                        header.persistedView(),
+                        header.postingNature(),
+                        header.status(),
+                        request.partyLedgerId(),
+                        partyLedgerMeta != null && partyLedgerMeta.maintainBalancesBillByBill(),
+                        request.accountingLedgerId(),
+                        header.supplierInvoiceNo(),
+                        request.voucherNumber(),
+                        invPreLock.stockItemIdsToLock(),
+                        request.lines(),
+                        request.inventoryLines()
+                    )
+                )
+                : new VoucherInventoryBridge.PreparedInventoryContext(request.lines(), null, Set.of());
+
+            // 6. Normalize & balance accounting lines + sub-ledger allocations
+            boolean hasInventoryLines = request.inventoryLines() != null && !request.inventoryLines().isEmpty();
             List<PreparedLine> preparedLines = prepareAndValidateLines(
                 companyId,
                 null,
@@ -167,7 +213,8 @@ public class VoucherService {
                 vt,
                 header,
                 request.accountingLedgerId(),
-                request.lines(),
+                invCtx.effectiveAccountingLines(),
+                hasInventoryLines,
                 lockedLedgers
             );
 
@@ -176,7 +223,7 @@ public class VoucherService {
 
             UUID journalId = UUID.randomUUID();
 
-            // 6. MCJ1-TXN-01 step: lock mc_number_series FOR UPDATE & allocate gap-free voucher number
+            // 7. MCJ1-TXN-01 step: lock mc_number_series FOR UPDATE & allocate gap-free voucher number
             VoucherNumberingService.AllocatedVoucherNumber allocatedNumber = numberingService.allocateNumber(
                 companyId,
                 journalId,
@@ -268,6 +315,24 @@ public class VoucherService {
                 insertActiveGlEntries(companyId, journalId, period.id(), effectiveDate, postingBatchNo, preparedLines);
             }
 
+            if (invBridge != null) {
+                invBridge.persistAndApplyInventory(
+                    new VoucherInventoryBridge.InventoryPersistCommand(
+                        companyId,
+                        journalId,
+                        allocatedNumber.voucherNumber(),
+                        effectiveDate,
+                        header.status(),
+                        header.postingNature(),
+                        vt.baseCategory(),
+                        vt.movesInventory(),
+                        request.partyLedgerId(),
+                        header.supplierInvoiceNo(),
+                        invCtx
+                    )
+                );
+            }
+
             VoucherDtos.VoucherDetailDto created = loadVoucherDetail(companyId, journalId, seq.currencyScale());
 
             editLogSnapshotService.recordVersion(
@@ -328,7 +393,7 @@ public class VoucherService {
         VoucherDtos.UpsertVoucherRequest request
     ) {
         authorityGuard.assertActiveLease();
-        CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
+        CompanyMasterSequenceHelper.requireInventoryWriteRole(rbacGuard, actor, companyId);
         long expectedVersion = CompanyMasterSequenceHelper.requireIfMatchVersion(
             ifMatchHeader,
             request == null ? null : request.versionNo()
@@ -372,6 +437,7 @@ public class VoucherService {
             }
 
             VoucherDtos.VoucherDetailDto beforeSnapshot = loadVoucherDetail(companyId, voucherId, seq.currencyScale());
+            VoucherTypeMeta priorVt = resolveVoucherType(companyId, existing.voucherTypeId(), null);
 
             UUID reqVtId = request.voucherTypeId() != null
                 ? request.voucherTypeId()
@@ -379,11 +445,20 @@ public class VoucherService {
                     ? existing.voucherTypeId()
                     : null);
             VoucherTypeMeta vt = resolveVoucherType(companyId, reqVtId, request.voucherTypeName());
+            if (vt.postsAccountingEntries() || priorVt.postsAccountingEntries()) {
+                CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
+            }
             HeaderSpec header = normalizeHeaderSpecForUpdate(request, vt, existing, seq.baseCurrencyCode());
+
+            VoucherInventoryBridge invBridge = inventoryBridgeProvider.getIfAvailable();
+            VoucherInventoryBridge.InventoryPreLockPlan invPreLock = invBridge != null
+                ? invBridge.resolvePreLockPlan(companyId, voucherId, request.inventoryLines())
+                : new VoucherInventoryBridge.InventoryPreLockPlan(Set.of(), Set.of());
 
             // Collect & lock all distinct ledgers across BOTH prior state and updated request
             Set<UUID> allLedgerIds = collectReferencedLedgerIds(request, beforeSnapshot);
             allLedgerIds.addAll(findPriorEntryLedgerIds(companyId, voucherId));
+            allLedgerIds.addAll(invPreLock.additionalLedgerIdsToLock());
             Map<UUID, LockedLedgerMeta> lockedLedgers = lockLedgersInCanonicalOrder(companyId, allLedgerIds);
 
             // Check if prior entries exist — cannot demote a voucher that already has mc_entry rows to DRAFT/MEMORANDUM
@@ -403,9 +478,53 @@ public class VoucherService {
                 );
             }
 
+            Set<UUID> priorInventoryItems = Set.of();
+            if (invBridge != null) {
+                invBridge.lockJournalStockItemsAndBatches(companyId, voucherId);
+                priorInventoryItems = invBridge.clearAndReverseJournalInventory(
+                    companyId,
+                    voucherId,
+                    existing.status(),
+                    existing.postingNature(),
+                    priorVt.baseCategory(),
+                    priorVt.movesInventory()
+                );
+            }
+
+            LockedLedgerMeta partyLedgerMeta = request.partyLedgerId() == null
+                ? null
+                : lockedLedgers.get(request.partyLedgerId());
+            VoucherInventoryBridge.PreparedInventoryContext invCtx = invBridge != null
+                ? invBridge.lockAndPrepareInventory(
+                    new VoucherInventoryBridge.InventoryPrepareCommand(
+                        companyId,
+                        voucherId,
+                        voucherDate,
+                        effectiveDate,
+                        seq.currencyScale(),
+                        vt.baseCategory(),
+                        vt.postsAccountingEntries(),
+                        vt.movesInventory(),
+                        vt.allowZeroValuedTransactions(),
+                        header.persistedView(),
+                        header.postingNature(),
+                        header.status(),
+                        request.partyLedgerId(),
+                        partyLedgerMeta != null && partyLedgerMeta.maintainBalancesBillByBill(),
+                        request.accountingLedgerId(),
+                        header.supplierInvoiceNo(),
+                        existing.voucherNumber() != null ? existing.voucherNumber() : request.voucherNumber(),
+                        invPreLock.stockItemIdsToLock(),
+                        request.lines(),
+                        request.inventoryLines()
+                    )
+                )
+                : new VoucherInventoryBridge.PreparedInventoryContext(request.lines(), null, Set.of());
+
             // Delete existing sub-ledger allocations & presentation lines before validating new allocations
             deleteSubLedgersAndLines(companyId, voucherId);
 
+            boolean hasInventoryLines = request.inventoryLines() != null && !request.inventoryLines().isEmpty();
             List<PreparedLine> preparedLines = prepareAndValidateLines(
                 companyId,
                 voucherId,
@@ -415,7 +534,8 @@ public class VoucherService {
                 vt,
                 header,
                 request.accountingLedgerId(),
-                request.lines(),
+                invCtx.effectiveAccountingLines(),
+                hasInventoryLines,
                 lockedLedgers
             );
 
@@ -561,6 +681,33 @@ public class VoucherService {
 
             insertLinesAndSubLedgers(companyId, voucherId, preparedLines);
 
+            if (invBridge != null) {
+                Set<UUID> mergedTouched = new TreeSet<>(Comparator.comparing(UUID::toString));
+                mergedTouched.addAll(priorInventoryItems);
+                mergedTouched.addAll(invCtx.touchedStockItemIds());
+                VoucherInventoryBridge.PreparedInventoryContext mergedCtx =
+                    new VoucherInventoryBridge.PreparedInventoryContext(
+                        invCtx.effectiveAccountingLines(),
+                        invCtx.preparedPayload(),
+                        Set.copyOf(mergedTouched)
+                    );
+                invBridge.persistAndApplyInventory(
+                    new VoucherInventoryBridge.InventoryPersistCommand(
+                        companyId,
+                        voucherId,
+                        resolvedNumber,
+                        effectiveDate,
+                        header.status(),
+                        header.postingNature(),
+                        vt.baseCategory(),
+                        vt.movesInventory(),
+                        request.partyLedgerId(),
+                        header.supplierInvoiceNo(),
+                        mergedCtx
+                    )
+                );
+            }
+
             VoucherDtos.VoucherDetailDto afterSnapshot = loadVoucherDetail(companyId, voucherId, seq.currencyScale());
 
             editLogSnapshotService.recordVersion(
@@ -646,6 +793,11 @@ public class VoucherService {
             Set<UUID> ledgerIds = collectSnapshotLedgerIds(beforeSnapshot);
             lockLedgersInCanonicalOrder(companyId, ledgerIds);
 
+            VoucherInventoryBridge invBridge = inventoryBridgeProvider.getIfAvailable();
+            if (invBridge != null) {
+                invBridge.lockJournalStockItemsAndBatches(companyId, voucherId);
+            }
+
             boolean postImmediately = request != null && Boolean.TRUE.equals(request.postImmediately());
             String targetStatus = postImmediately ? "POSTED" : "APPROVED";
             int nextBatch = existing.currentPostingBatchNo();
@@ -687,6 +839,18 @@ public class VoucherService {
                 companyId,
                 voucherId
             );
+
+            if (postImmediately && "NORMAL".equals(existing.postingNature()) && invBridge != null) {
+                invBridge.activateStoredJournalInventoryOnPost(
+                    companyId,
+                    voucherId,
+                    existing.effectiveDate(),
+                    vt.baseCategory(),
+                    vt.movesInventory(),
+                    beforeSnapshot.partyLedgerId(),
+                    existing.voucherNumber()
+                );
+            }
 
             VoucherDtos.VoucherDetailDto afterSnapshot = loadVoucherDetail(companyId, voucherId, seq.currencyScale());
             editLogSnapshotService.recordVersion(
@@ -778,6 +942,11 @@ public class VoucherService {
             Set<UUID> ledgerIds = collectSnapshotLedgerIds(beforeSnapshot);
             Map<UUID, LockedLedgerMeta> lockedLedgers = lockLedgersInCanonicalOrder(companyId, ledgerIds);
 
+            VoucherInventoryBridge invBridge = inventoryBridgeProvider.getIfAvailable();
+            if (invBridge != null) {
+                invBridge.lockJournalStockItemsAndBatches(companyId, voucherId);
+            }
+
             String targetNature = ("MEMORANDUM".equals(vt.baseCategory()) || "REVERSING_JOURNAL".equals(vt.baseCategory()))
                 ? existing.postingNature()
                 : "NORMAL";
@@ -835,6 +1004,18 @@ public class VoucherService {
                 companyId,
                 voucherId
             );
+
+            if ("NORMAL".equals(targetNature) && invBridge != null) {
+                invBridge.activateStoredJournalInventoryOnPost(
+                    companyId,
+                    voucherId,
+                    existing.effectiveDate(),
+                    vt.baseCategory(),
+                    vt.movesInventory(),
+                    beforeSnapshot.partyLedgerId(),
+                    existing.voucherNumber()
+                );
+            }
 
             VoucherDtos.VoucherDetailDto afterSnapshot = loadVoucherDetail(companyId, voucherId, seq.currencyScale());
             editLogSnapshotService.recordVersion(
@@ -917,6 +1098,11 @@ public class VoucherService {
 
             Set<UUID> ledgerIds = collectSnapshotLedgerIds(origBefore);
             lockLedgersInCanonicalOrder(companyId, ledgerIds);
+
+            VoucherInventoryBridge invBridge = inventoryBridgeProvider.getIfAvailable();
+            if (invBridge != null) {
+                invBridge.lockJournalStockItemsAndBatches(companyId, voucherId);
+            }
 
             UUID reversalJournalId = UUID.randomUUID();
             VoucherNumberingService.AllocatedVoucherNumber revNum = numberingService.allocateNumber(
@@ -1030,6 +1216,17 @@ public class VoucherService {
             if (vt.postsAccountingEntries()) {
                 insertActiveGlEntries(companyId, reversalJournalId, reversalPeriod.id(), reversalDate, 1, revLines);
             }
+            if (invBridge != null) {
+                invBridge.cloneInvertedInventoryOnReverse(
+                    companyId,
+                    voucherId,
+                    reversalJournalId,
+                    reversalDate,
+                    vt.baseCategory(),
+                    vt.movesInventory(),
+                    origBefore.partyLedgerId()
+                );
+            }
 
             VoucherDtos.VoucherDetailDto revCreated = loadVoucherDetail(
                 companyId,
@@ -1111,10 +1308,25 @@ public class VoucherService {
             }
 
             VoucherDtos.VoucherDetailDto beforeSnapshot = loadVoucherDetail(companyId, voucherId, seq.currencyScale());
+            VoucherTypeMeta vt = resolveVoucherType(companyId, existing.voucherTypeId(), null);
 
             Set<UUID> ledgerIds = collectSnapshotLedgerIds(beforeSnapshot);
             ledgerIds.addAll(findPriorEntryLedgerIds(companyId, voucherId));
             lockLedgersInCanonicalOrder(companyId, ledgerIds);
+
+            VoucherInventoryBridge invBridge = inventoryBridgeProvider.getIfAvailable();
+            Set<UUID> touchedInventoryItems = Set.of();
+            if (invBridge != null) {
+                invBridge.lockJournalStockItemsAndBatches(companyId, voucherId);
+                touchedInventoryItems = invBridge.clearAndReverseJournalInventory(
+                    companyId,
+                    voucherId,
+                    existing.status(),
+                    existing.postingNature(),
+                    vt.baseCategory(),
+                    vt.movesInventory()
+                );
+            }
 
             // Release all open bill/cost/bank allocations and clear commercial lines
             deleteSubLedgersAndLines(companyId, voucherId);
@@ -1170,6 +1382,10 @@ public class VoucherService {
                 companyId,
                 voucherId
             );
+
+            if (invBridge != null && !touchedInventoryItems.isEmpty()) {
+                invBridge.syncCostLayers(companyId, touchedInventoryItems);
+            }
 
             VoucherDtos.VoucherDetailDto afterSnapshot = loadVoucherDetail(companyId, voucherId, seq.currencyScale());
             editLogSnapshotService.recordVersion(
@@ -1326,7 +1542,7 @@ public class VoucherService {
             SELECT j.id, j.voucher_date, j.effective_date,
                    j.voucher_type_id, vt.name AS voucher_type_name, vt.base_category,
                    j.voucher_number, j.voucher_seq_no, j.status, j.posting_nature, j.persisted_view,
-                   COALESCE(pl.name, fl.first_ledger_name, '') AS primary_particulars,
+                   COALESCE(pl.name, fl.first_ledger_name, fil.first_item_name, '') AS primary_particulars,
                    j.total_debit, j.total_credit, j.narration, j.version_no, j.alter_id
               FROM mc_journal j
               JOIN mc_voucher_type vt
@@ -1343,6 +1559,16 @@ public class VoucherService {
                    ORDER BY jl.line_no ASC
                    LIMIT 1
               ) fl ON true
+              LEFT JOIN LATERAL (
+                  SELECT si.name AS first_item_name
+                    FROM mc_inventory_allocation ia
+                    JOIN mc_stock_item si
+                      ON si.company_id = ia.company_id AND si.id = ia.stock_item_id
+                   WHERE ia.company_id = j.company_id
+                     AND ia.journal_id = j.id
+                   ORDER BY ia.line_no ASC
+                   LIMIT 1
+              ) fil ON true
              WHERE %s
              ORDER BY j.voucher_date ASC,
                       vt.name ASC,
@@ -1771,8 +1997,12 @@ public class VoucherService {
         HeaderSpec header,
         UUID headerAccountingLedgerId,
         List<VoucherDtos.VoucherLineRequest> rawLines,
+        boolean hasInventoryLines,
         Map<UUID, LockedLedgerMeta> lockedLedgers
     ) {
+        if ((rawLines == null || rawLines.isEmpty()) && !vt.postsAccountingEntries() && hasInventoryLines) {
+            return List.of();
+        }
         if (rawLines == null || rawLines.isEmpty()) {
             throw new MoneyCraftException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
@@ -3182,6 +3412,10 @@ public class VoucherService {
         }
         VoucherDtos.VoucherDetailDto hdr = headers.getFirst();
         List<VoucherDtos.VoucherLineDetailDto> lines = loadVoucherLines(companyId, journalId, scale);
+        VoucherInventoryBridge invBridge = inventoryBridgeProvider.getIfAvailable();
+        List<VoucherDtos.VoucherInventoryLineDto> inventoryLines = invBridge != null
+            ? invBridge.loadInventoryLines(companyId, journalId, scale)
+            : List.of();
         return new VoucherDtos.VoucherDetailDto(
             hdr.id(),
             hdr.companyId(),
@@ -3232,7 +3466,8 @@ public class VoucherService {
             hdr.approvedAt(),
             hdr.postedAt(),
             hdr.cancelledAt(),
-            lines
+            lines,
+            inventoryLines
         );
     }
 

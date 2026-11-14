@@ -4,6 +4,7 @@ import {
   DestroyRef,
   OnInit,
   computed,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -12,6 +13,13 @@ import { Router, RouterLink, RouterOutlet } from '@angular/router';
 import { AuthStore } from '../core/auth/auth.store';
 import { SseStreamService } from '../core/http/sse-stream.service';
 import { ShortcutCommandRegistry } from '../core/keyboard/shortcut-command.registry';
+import { GodownWorkbenchComponent } from '../features/inventory/godown-workbench.component';
+import { InventoryStore } from '../features/inventory/inventory.store';
+import { PriceListWorkbenchComponent } from '../features/inventory/price-list-workbench.component';
+import { StockGroupWorkbenchComponent } from '../features/inventory/stock-group-workbench.component';
+import { StockItemWorkbenchComponent } from '../features/inventory/stock-item-workbench.component';
+import { StockSummaryComponent } from '../features/inventory/stock-summary.component';
+import { UomWorkbenchComponent } from '../features/inventory/uom-workbench.component';
 import { CoaExplorerComponent } from '../features/masters/coa-explorer.component';
 import { CostCentreWorkbenchComponent } from '../features/masters/cost-centre-workbench.component';
 import { CurrencyWorkbenchComponent } from '../features/masters/currency-workbench.component';
@@ -55,6 +63,12 @@ import { SmartFindStore } from '../state/smart-find.store';
     CurrencyWorkbenchComponent,
     CostCentreWorkbenchComponent,
     VoucherTypeWorkbenchComponent,
+    UomWorkbenchComponent,
+    GodownWorkbenchComponent,
+    StockGroupWorkbenchComponent,
+    StockItemWorkbenchComponent,
+    PriceListWorkbenchComponent,
+    StockSummaryComponent,
     VoucherGridComponent,
     DayBookComponent,
     ApprovalQueueComponent,
@@ -253,6 +267,60 @@ import { SmartFindStore } from '../state/smart-find.store';
                   }
                   @case ('/app/masters/voucher-types') {
                     <mc-voucher-type-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/inventory/masters') {
+                    <mc-masters-hub [initialMode]="frame.params['mode'] === 'alter' ? 'alter' : 'create'" />
+                  }
+                  @case ('/inventory/masters') {
+                    <mc-masters-hub [initialMode]="frame.params['mode'] === 'alter' ? 'alter' : 'create'" />
+                  }
+                  @case ('/app/inventory/uoms') {
+                    <mc-uom-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/inventory/uoms') {
+                    <mc-uom-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/inventory/godowns') {
+                    <mc-godown-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/inventory/godowns') {
+                    <mc-godown-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/inventory/stock-groups') {
+                    <mc-stock-group-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/inventory/stock-groups') {
+                    <mc-stock-group-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/inventory/stock-items') {
+                    <mc-stock-item-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/inventory/stock-items') {
+                    <mc-stock-item-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/inventory/price-lists') {
+                    <mc-price-list-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/inventory/price-lists') {
+                    <mc-price-list-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/reports/stock-summary') {
+                    <mc-stock-summary [embeddedOverlay]="true" initialTab="STOCK_SUMMARY" />
+                  }
+                  @case ('/reports/stock-summary') {
+                    <mc-stock-summary [embeddedOverlay]="true" initialTab="STOCK_SUMMARY" />
+                  }
+                  @case ('/app/reports/godown-summary') {
+                    <mc-stock-summary [embeddedOverlay]="true" initialTab="GODOWN_SUMMARY" />
+                  }
+                  @case ('/reports/godown-summary') {
+                    <mc-stock-summary [embeddedOverlay]="true" initialTab="GODOWN_SUMMARY" />
+                  }
+                  @case ('/app/reports/batch-ageing') {
+                    <mc-stock-summary [embeddedOverlay]="true" initialTab="BATCH_AGEING" />
+                  }
+                  @case ('/reports/batch-ageing') {
+                    <mc-stock-summary [embeddedOverlay]="true" initialTab="BATCH_AGEING" />
                   }
                   @case ('/app/vouchers/new') {
                     <mc-voucher-grid [embeddedOverlay]="true" />
@@ -814,9 +882,19 @@ export class ErpShellComponent implements OnInit {
   readonly smartFind = inject(SmartFindStore);
 
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
+  private readonly inventoryStore = inject(InventoryStore);
   private readonly sseStream = inject(SseStreamService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+
+  constructor() {
+    effect(() => {
+      const cid = this.companyContext.activeCompany()?.id;
+      if (cid) {
+        void this.inventoryStore.ensureLoaded(cid);
+      }
+    });
+  }
 
   readonly goToOpen = signal<boolean>(false);
   readonly goToMode = signal<'GO_TO' | 'SWITCH_TO'>('GO_TO');
@@ -942,6 +1020,42 @@ export class ErpShellComponent implements OnInit {
         'voucher.creditNote',
         'GLOBAL',
         () => this.navigateToNewVoucher('CREDIT_NOTE'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.stockJournal',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('STOCK_JOURNAL'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.physicalStock',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('PHYSICAL_STOCK'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.salesOrder',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('SALES_ORDER'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.purchaseOrder',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('PURCHASE_ORDER'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.deliveryNote',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('DELIVERY_NOTE'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.receiptNote',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('RECEIPT_NOTE'),
         () => this.canJumpToGlobalVoucher(),
       ),
       this.shortcutRegistry.bindHandler(

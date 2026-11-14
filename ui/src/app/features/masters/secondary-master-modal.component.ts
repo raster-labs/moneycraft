@@ -21,6 +21,13 @@ import {
 import { GridCellNavDirective } from '../../shared/directives/grid-cell-nav.directive';
 import { CompanyContextStore } from '../../state/company-context.store';
 import { NavigationStackStore } from '../../state/navigation-stack.store';
+import {
+  GST_UQC_OPTIONS,
+  STOCK_COSTING_METHOD_OPTIONS,
+  StockCostingMethod,
+  UomType,
+} from '../inventory/inventory.models';
+import { InventoryStore } from '../inventory/inventory.store';
 import { ChartOfAccountsStore } from './chart-of-accounts.store';
 import {
   AccountNature,
@@ -31,7 +38,7 @@ import {
   TDS_NATURE_SECTIONS,
   resolveGroupLineageFlags,
 } from './masters.models';
-import { SecondaryMasterModalService } from './secondary-master-modal.service';
+import { SecondaryMasterKind, SecondaryMasterModalService } from './secondary-master-modal.service';
 
 @Component({
   selector: 'mc-secondary-master-modal',
@@ -460,6 +467,333 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
                   />
                 </div>
               }
+
+              @case ('UOM') {
+                <div class="mc-sec-grid-3">
+                  <div>
+                    <label class="mc-field-label" for="sec-uom-type">Type</label>
+                    <select
+                      id="sec-uom-type"
+                      name="secUomType"
+                      class="mc-select"
+                      mcGridCellNav
+                      [(ngModel)]="uomType"
+                    >
+                      <option value="SIMPLE">Simple</option>
+                      <option value="COMPOUND">Compound</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="mc-field-label" for="sec-uom-sym">Symbol</label>
+                    <input
+                      #primaryInput
+                      id="sec-uom-sym"
+                      type="text"
+                      name="secUomSymbol"
+                      class="mc-input mc-code"
+                      mcGridCellNav
+                      [(ngModel)]="uomSymbol"
+                      placeholder="NOS"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label class="mc-field-label" for="sec-uom-dec">Number of Decimal Places</label>
+                    <input
+                      id="sec-uom-dec"
+                      type="number"
+                      min="0"
+                      max="6"
+                      name="secUomDecimals"
+                      class="mc-input"
+                      mcGridCellNav
+                      [(ngModel)]="uomDecimalPlaces"
+                    />
+                  </div>
+                </div>
+
+                @if (uomType === 'SIMPLE') {
+                  <div class="mc-sec-grid-2">
+                    <div>
+                      <label class="mc-field-label" for="sec-uom-formal">Formal Name</label>
+                      <input
+                        id="sec-uom-formal"
+                        type="text"
+                        name="secUomFormal"
+                        class="mc-input"
+                        mcGridCellNav
+                        [(ngModel)]="uomFormalName"
+                        placeholder="Numbers"
+                      />
+                    </div>
+                    <div>
+                      <label class="mc-field-label" for="sec-uom-uqc">Unit Quantity Code (UQC)</label>
+                      <select
+                        id="sec-uom-uqc"
+                        name="secUomUqc"
+                        class="mc-select mc-code"
+                        mcGridCellNav
+                        [(ngModel)]="uomGstUqcCode"
+                      >
+                        @for (uqc of uqcOptions; track uqc.code) {
+                          <option [value]="uqc.code">{{ uqc.description }}</option>
+                        }
+                      </select>
+                    </div>
+                  </div>
+                } @else {
+                  <div class="mc-sec-grid-3">
+                    <div>
+                      <label class="mc-field-label" for="sec-uom-first">First Unit</label>
+                      <select
+                        id="sec-uom-first"
+                        name="secUomFirst"
+                        class="mc-select"
+                        mcGridCellNav
+                        [(ngModel)]="uomFirstId"
+                      >
+                        @for (u of inventoryStore.uoms(); track u.id) {
+                          <option [value]="u.id">{{ u.symbol }}</option>
+                        }
+                      </select>
+                    </div>
+                    <div>
+                      <label class="mc-field-label" for="sec-uom-conv">Conversion (of)</label>
+                      <input
+                        id="sec-uom-conv"
+                        type="text"
+                        name="secUomConv"
+                        class="mc-input mc-amount"
+                        mcGridCellNav
+                        [(ngModel)]="uomConversionFactor"
+                        placeholder="10"
+                      />
+                    </div>
+                    <div>
+                      <label class="mc-field-label" for="sec-uom-second">Second Unit</label>
+                      <select
+                        id="sec-uom-second"
+                        name="secUomSecond"
+                        class="mc-select"
+                        mcGridCellNav
+                        [(ngModel)]="uomSecondId"
+                      >
+                        @for (u of inventoryStore.uoms(); track u.id) {
+                          <option [value]="u.id">{{ u.symbol }}</option>
+                        }
+                      </select>
+                    </div>
+                  </div>
+                }
+              }
+
+              @case ('GODOWN') {
+                <div class="mc-sec-grid-2">
+                  <div>
+                    <label class="mc-field-label" for="sec-gd-name">Godown / Location Name</label>
+                    <input
+                      #primaryInput
+                      id="sec-gd-name"
+                      type="text"
+                      name="secGodownName"
+                      class="mc-input"
+                      mcGridCellNav
+                      [(ngModel)]="godownName"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label class="mc-field-label" for="sec-gd-alias">Alias</label>
+                    <input
+                      id="sec-gd-alias"
+                      type="text"
+                      name="secGodownAlias"
+                      class="mc-input mc-code"
+                      mcGridCellNav
+                      [(ngModel)]="godownAlias"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label class="mc-field-label" for="sec-gd-under">Under</label>
+                  <mc-typeahead-select
+                    inputId="sec-gd-under"
+                    listTitle="List of Godowns"
+                    [options]="inventoryStore.parentGodownOptions()"
+                    [selectedId]="godownParentId() ?? '__PRIMARY__'"
+                    [allowInlineCreate]="false"
+                    (optionSelected)="godownParentId.set($event.id === '__PRIMARY__' ? null : $event.id)"
+                  />
+                </div>
+              }
+
+              @case ('STOCK_GROUP') {
+                <div class="mc-sec-grid-2">
+                  <div>
+                    <label class="mc-field-label" for="sec-sg-name">Stock Group Name</label>
+                    <input
+                      #primaryInput
+                      id="sec-sg-name"
+                      type="text"
+                      name="secSgName"
+                      class="mc-input"
+                      mcGridCellNav
+                      [(ngModel)]="stockGroupName"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label class="mc-field-label" for="sec-sg-under">Under</label>
+                    <mc-typeahead-select
+                      inputId="sec-sg-under"
+                      listTitle="List of Stock Groups"
+                      [options]="inventoryStore.parentStockGroupOptions()"
+                      [selectedId]="stockGroupParentId() ?? '__PRIMARY__'"
+                      [allowInlineCreate]="false"
+                      (optionSelected)="stockGroupParentId.set($event.id === '__PRIMARY__' ? null : $event.id)"
+                    />
+                  </div>
+                </div>
+                <div class="mc-sec-grid-3">
+                  <label class="mc-sec-toggle">
+                    <input
+                      type="checkbox"
+                      name="secSgAddQty"
+                      [(ngModel)]="stockGroupAddQuantities"
+                    />
+                    <span>Should quantities of items be added</span>
+                  </label>
+                  <div>
+                    <label class="mc-field-label" for="sec-sg-hsn">HSN / SAC Code</label>
+                    <input
+                      id="sec-sg-hsn"
+                      type="text"
+                      name="secSgHsn"
+                      class="mc-input mc-code"
+                      mcGridCellNav
+                      [(ngModel)]="stockGroupHsn"
+                    />
+                  </div>
+                  <div>
+                    <label class="mc-field-label" for="sec-sg-gst">GST Rate (%)</label>
+                    <input
+                      id="sec-sg-gst"
+                      type="text"
+                      name="secSgGst"
+                      class="mc-input mc-amount"
+                      mcGridCellNav
+                      [(ngModel)]="stockGroupGstRate"
+                    />
+                  </div>
+                </div>
+              }
+
+              @case ('STOCK_ITEM') {
+                <div class="mc-sec-grid-3">
+                  <div>
+                    <label class="mc-field-label" for="sec-si-name">Name</label>
+                    <input
+                      #primaryInput
+                      id="sec-si-name"
+                      type="text"
+                      name="secSiName"
+                      class="mc-input"
+                      mcGridCellNav
+                      [(ngModel)]="stockItemName"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label class="mc-field-label" for="sec-si-part">Part No.</label>
+                    <input
+                      id="sec-si-part"
+                      type="text"
+                      name="secSiPart"
+                      class="mc-input mc-code"
+                      mcGridCellNav
+                      [(ngModel)]="stockItemPartNo"
+                    />
+                  </div>
+                  <div>
+                    <label class="mc-field-label" for="sec-si-cost">Costing Method</label>
+                    <select
+                      id="sec-si-cost"
+                      name="secSiCosting"
+                      class="mc-select"
+                      mcGridCellNav
+                      [(ngModel)]="stockItemCostingMethod"
+                    >
+                      @for (cm of costingMethods; track cm.value) {
+                        <option [value]="cm.value">{{ cm.label }}</option>
+                      }
+                    </select>
+                  </div>
+                </div>
+
+                <div class="mc-sec-grid-2">
+                  <div>
+                    <label class="mc-field-label" for="sec-si-under">
+                      Under (<span class="mc-key-alt">C</span> = Create Stock Group)
+                    </label>
+                    <mc-typeahead-select
+                      inputId="sec-si-under"
+                      listTitle="List of Stock Groups"
+                      [options]="inventoryStore.parentStockGroupOptions()"
+                      [selectedId]="stockItemGroupId() ?? '__PRIMARY__'"
+                      [allowInlineCreate]="true"
+                      (optionSelected)="stockItemGroupId.set($event.id === '__PRIMARY__' ? null : $event.id)"
+                      (createRequested)="openNestedStockGroupCreation($event)"
+                    />
+                  </div>
+                  <div>
+                    <label class="mc-field-label" for="sec-si-uom">
+                      Units (<span class="mc-key-alt">C</span> = Create Unit)
+                    </label>
+                    <mc-typeahead-select
+                      inputId="sec-si-uom"
+                      listTitle="List of Units"
+                      [options]="inventoryStore.uomOptions()"
+                      [selectedId]="stockItemBaseUomId()"
+                      [allowInlineCreate]="true"
+                      (optionSelected)="stockItemBaseUomId.set($event.id)"
+                      (createRequested)="openNestedUomCreation($event)"
+                    />
+                  </div>
+                </div>
+
+                <div class="mc-sec-grid-3">
+                  <div>
+                    <label class="mc-field-label" for="sec-si-hsn">HSN / SAC</label>
+                    <input
+                      id="sec-si-hsn"
+                      type="text"
+                      name="secSiHsn"
+                      class="mc-input mc-code"
+                      mcGridCellNav
+                      [(ngModel)]="stockItemHsn"
+                    />
+                  </div>
+                  <div>
+                    <label class="mc-field-label" for="sec-si-gst">GST Rate (%)</label>
+                    <input
+                      id="sec-si-gst"
+                      type="text"
+                      name="secSiGst"
+                      class="mc-input mc-amount"
+                      mcGridCellNav
+                      [(ngModel)]="stockItemGstRate"
+                    />
+                  </div>
+                  <label class="mc-sec-toggle">
+                    <input
+                      type="checkbox"
+                      name="secSiBatches"
+                      [(ngModel)]="stockItemBatches"
+                    />
+                    <span>Maintain in batches</span>
+                  </label>
+                </div>
+              }
             }
           </div>
 
@@ -604,6 +938,7 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
 export class SecondaryMasterModalComponent {
   readonly modalService = inject(SecondaryMasterModalService);
   readonly coaStore = inject(ChartOfAccountsStore);
+  readonly inventoryStore = inject(InventoryStore);
   readonly companyContext = inject(CompanyContextStore);
   readonly navStack = inject(NavigationStackStore);
 
@@ -614,6 +949,8 @@ export class SecondaryMasterModalComponent {
 
   readonly states = INDIAN_GST_STATES;
   readonly tdsSections = TDS_NATURE_SECTIONS;
+  readonly uqcOptions = GST_UQC_OPTIONS;
+  readonly costingMethods = STOCK_COSTING_METHOD_OPTIONS;
 
   readonly saving = signal<boolean>(false);
   readonly formError = signal<string | null>(null);
@@ -652,7 +989,39 @@ export class SecondaryMasterModalComponent {
   currencyFormalName = '';
   currencyDecimalPlaces = 2;
 
-  private initializedSessionId: string | null = null;
+  // UOM fields
+  uomType: UomType = 'SIMPLE';
+  uomSymbol = '';
+  uomFormalName = '';
+  uomGstUqcCode = 'NOS';
+  uomDecimalPlaces = 0;
+  uomFirstId = '';
+  uomConversionFactor = '10';
+  uomSecondId = '';
+
+  // Godown fields
+  godownName = '';
+  godownAlias = '';
+  readonly godownParentId = signal<string | null>(null);
+
+  // Stock Group fields
+  stockGroupName = '';
+  readonly stockGroupParentId = signal<string | null>(null);
+  stockGroupAddQuantities = true;
+  stockGroupHsn = '';
+  stockGroupGstRate = '';
+
+  // Stock Item fields
+  stockItemName = '';
+  stockItemPartNo = '';
+  stockItemCostingMethod: StockCostingMethod = 'AVG_COST';
+  readonly stockItemGroupId = signal<string | null>(null);
+  readonly stockItemBaseUomId = signal<string | null>(null);
+  stockItemHsn = '';
+  stockItemGstRate = '';
+  stockItemBatches = false;
+
+  private readonly hydratedSessionIds = new Set<string>();
 
   readonly ledgerLineage = computed(() =>
     resolveGroupLineageFlags(this.ledgerGroupId(), this.coaStore.groups()),
@@ -676,15 +1045,14 @@ export class SecondaryMasterModalComponent {
     effect(() => {
       const session = this.modalService.activeSession();
       if (!session) {
-        this.initializedSessionId = null;
+        this.hydratedSessionIds.clear();
         return;
       }
-      if (this.initializedSessionId === session.sessionId) {
-        return;
+      if (!this.hydratedSessionIds.has(session.sessionId)) {
+        this.hydratedSessionIds.add(session.sessionId);
+        this.formError.set(null);
+        this.hydrateSessionDefaults(session.kind, session.initialName);
       }
-      this.initializedSessionId = session.sessionId;
-      this.formError.set(null);
-      this.hydrateSessionDefaults(session.kind, session.initialName);
 
       queueMicrotask(() => {
         const el = this.primaryInputRef()?.nativeElement;
@@ -739,6 +1107,26 @@ export class SecondaryMasterModalComponent {
       defaultParentGroupId: this.ledgerGroupId(),
       onCreated: (created) => {
         this.onSecLedgerGroupSelected({ id: created.id, label: created.name });
+      },
+    });
+  }
+
+  openNestedStockGroupCreation(seedText: string): void {
+    void this.modalService.open({
+      kind: 'STOCK_GROUP',
+      initialName: seedText,
+      onCreated: (created) => {
+        this.stockItemGroupId.set(created.id);
+      },
+    });
+  }
+
+  openNestedUomCreation(seedText: string): void {
+    void this.modalService.open({
+      kind: 'UOM',
+      initialName: seedText,
+      onCreated: (created) => {
+        this.stockItemBaseUomId.set(created.id);
       },
     });
   }
@@ -909,6 +1297,113 @@ export class SecondaryMasterModalComponent {
           });
           return;
         }
+
+        case 'UOM': {
+          const symbol = this.uomSymbol.trim();
+          if (!symbol) {
+            this.formError.set('Unit Symbol is required.');
+            return;
+          }
+          if (this.uomType === 'COMPOUND' && (!this.uomFirstId || !this.uomSecondId)) {
+            this.formError.set('Compound UOM requires First Unit and Second Unit.');
+            return;
+          }
+          const created = await this.inventoryStore.createUom({
+            uomType: this.uomType,
+            symbol,
+            formalName: this.uomType === 'SIMPLE' ? this.uomFormalName.trim() || symbol : null,
+            gstUqcCode: this.uomType === 'SIMPLE' ? this.uomGstUqcCode : null,
+            decimalPlaces: Math.min(6, Math.max(0, Math.trunc(this.uomDecimalPlaces))),
+            firstUomId: this.uomType === 'COMPOUND' ? this.uomFirstId : null,
+            conversionFactor:
+              this.uomType === 'COMPOUND' ? this.uomConversionFactor.trim() || '1' : null,
+            secondUomId: this.uomType === 'COMPOUND' ? this.uomSecondId : null,
+          });
+          this.modalService.completeActiveSession({
+            id: created.id,
+            name: created.symbol,
+            kind: 'UOM',
+          });
+          return;
+        }
+
+        case 'GODOWN': {
+          const name = this.godownName.trim();
+          if (!name) {
+            this.formError.set('Godown Name is required.');
+            return;
+          }
+          const created = await this.inventoryStore.createGodown({
+            name,
+            aliasCode: this.godownAlias.trim() || null,
+            parentGodownId: this.godownParentId(),
+            allowStorageOfMaterials: true,
+            ourStockWithThirdParty: false,
+            thirdPartyStockWithUs: false,
+          });
+          this.modalService.completeActiveSession({
+            id: created.id,
+            name: created.name,
+            kind: 'GODOWN',
+          });
+          return;
+        }
+
+        case 'STOCK_GROUP': {
+          const name = this.stockGroupName.trim();
+          if (!name) {
+            this.formError.set('Stock Group Name is required.');
+            return;
+          }
+          const created = await this.inventoryStore.createStockGroup({
+            name,
+            parentStockGroupId: this.stockGroupParentId(),
+            shouldQuantitiesOfItemsBeAdded: this.stockGroupAddQuantities,
+            hsnSacCode: this.stockGroupHsn.trim() || null,
+            gstRatePct: this.stockGroupGstRate.trim() || null,
+          });
+          this.modalService.completeActiveSession({
+            id: created.id,
+            name: created.name,
+            kind: 'STOCK_GROUP',
+          });
+          return;
+        }
+
+        case 'STOCK_ITEM': {
+          const name = this.stockItemName.trim();
+          const baseUomId = this.stockItemBaseUomId();
+          if (!name) {
+            this.formError.set('Stock Item Name is required.');
+            return;
+          }
+          if (!baseUomId) {
+            this.formError.set('Select or create (Alt+C) a Base Unit of Measure.');
+            return;
+          }
+          const created = await this.inventoryStore.createStockItem({
+            name,
+            partNo: this.stockItemPartNo.trim() || null,
+            stockGroupId: this.stockItemGroupId(),
+            baseUomId,
+            maintainInBatches: this.stockItemBatches,
+            trackDateOfMfg: false,
+            useExpiryDates: false,
+            costingMethod: this.stockItemCostingMethod,
+            marketValuationMethod: 'AVG_PRICE',
+            gstApplicability: this.stockItemGstRate.trim() ? 'APPLICABLE' : 'UNDEFINED',
+            gstSupplyType: 'GOODS',
+            hsnSacCode: this.stockItemHsn.trim() || null,
+            gstRatePct: this.stockItemGstRate.trim() || null,
+            isTobaccoMrpItem: false,
+          });
+          this.modalService.completeActiveSession({
+            id: created.id,
+            name: created.name,
+            kind: 'STOCK_ITEM',
+          });
+          return;
+        }
       }
     } catch (err: unknown) {
       this.formError.set(
@@ -919,12 +1414,18 @@ export class SecondaryMasterModalComponent {
     }
   }
 
-  private hydrateSessionDefaults(
-    kind: 'GROUP' | 'LEDGER' | 'COST_CENTRE' | 'CURRENCY',
-    initialName: string,
-  ): void {
+  private hydrateSessionDefaults(kind: SecondaryMasterKind, initialName: string): void {
     const session = this.modalService.activeSession();
-    void this.coaStore.ensureAccountingMastersLoaded();
+    if (
+      kind === 'UOM' ||
+      kind === 'GODOWN' ||
+      kind === 'STOCK_GROUP' ||
+      kind === 'STOCK_ITEM'
+    ) {
+      void this.inventoryStore.ensureLoaded();
+    } else {
+      void this.coaStore.ensureAccountingMastersLoaded();
+    }
 
     if (kind === 'GROUP') {
       this.groupName = initialName;
@@ -965,6 +1466,48 @@ export class SecondaryMasterModalComponent {
         session?.defaultCostCategoryId ?? this.coaStore.costCategories()[0]?.id ?? null,
       );
       this.costCentreParentId.set(null);
+      return;
+    }
+
+    if (kind === 'UOM') {
+      this.uomType = 'SIMPLE';
+      this.uomSymbol = initialName.trim() || 'NOS';
+      this.uomFormalName = '';
+      this.uomGstUqcCode = 'NOS';
+      this.uomDecimalPlaces = 0;
+      this.uomFirstId = this.inventoryStore.uoms()[0]?.id ?? '';
+      this.uomConversionFactor = '10';
+      this.uomSecondId = this.inventoryStore.uoms()[0]?.id ?? '';
+      return;
+    }
+
+    if (kind === 'GODOWN') {
+      this.godownName = initialName;
+      this.godownAlias = '';
+      this.godownParentId.set(null);
+      return;
+    }
+
+    if (kind === 'STOCK_GROUP') {
+      this.stockGroupName = initialName;
+      this.stockGroupParentId.set(null);
+      this.stockGroupAddQuantities = true;
+      this.stockGroupHsn = '';
+      this.stockGroupGstRate = '';
+      return;
+    }
+
+    if (kind === 'STOCK_ITEM') {
+      this.stockItemName = initialName;
+      this.stockItemPartNo = '';
+      this.stockItemCostingMethod = 'AVG_COST';
+      this.stockItemGroupId.set(session?.defaultStockGroupId ?? null);
+      this.stockItemBaseUomId.set(
+        session?.defaultBaseUomId ?? this.inventoryStore.uoms()[0]?.id ?? null,
+      );
+      this.stockItemHsn = '';
+      this.stockItemGstRate = '';
+      this.stockItemBatches = false;
       return;
     }
 

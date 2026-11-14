@@ -201,8 +201,10 @@ export class AmountCellComponent implements ControlValueAccessor {
   readonly placeholder = input<string>('0.00');
   readonly ariaLabel = input<string>('Amount');
   readonly value = input<string | null>(null);
+  readonly advanceFocusOnEnter = input<boolean>(true);
 
   readonly valueCommitted = output<string>();
+  readonly enterPressed = output<string>();
 
   private readonly amountInputRef = viewChild<ElementRef<HTMLInputElement>>('amountInput');
   private readonly calcInputRef = viewChild<ElementRef<HTMLInputElement>>('calcInput');
@@ -256,6 +258,14 @@ export class AmountCellComponent implements ControlValueAccessor {
     this.isDisabled.set(disabled);
   }
 
+  focusInput(): void {
+    const el = this.amountInputRef()?.nativeElement;
+    if (el && !this.isDisabled()) {
+      el.focus();
+      el.select();
+    }
+  }
+
   onFocus(): void {
     if (this.readonly() || this.isDisabled()) {
       return;
@@ -298,9 +308,13 @@ export class AmountCellComponent implements ControlValueAccessor {
     if (event.key === 'Enter') {
       this.commitRawText();
       if (this.validationError() === null) {
+        event.preventDefault();
+        const currentWire = this.value() ?? this.wireValueSignal();
+        if (!event.shiftKey) {
+          this.enterPressed.emit(currentWire);
+        }
         const inputEl = this.amountInputRef()?.nativeElement;
-        if (inputEl) {
-          event.preventDefault();
+        if (inputEl && (event.shiftKey || this.advanceFocusOnEnter())) {
           moveGridCellFocusFrom(inputEl, event.shiftKey ? -1 : 1);
         }
       }

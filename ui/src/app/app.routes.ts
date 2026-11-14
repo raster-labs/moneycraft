@@ -48,6 +48,24 @@ const MASTERS_CHILD_ROUTES: Routes = [
   },
 ];
 
+const VOUCHERS_CHILD_ROUTES: Routes = [
+  {
+    path: 'new',
+    loadComponent: () =>
+      import('./features/vouchers/voucher-grid.component').then((m) => m.VoucherGridComponent),
+  },
+  {
+    path: ':voucherId',
+    loadComponent: () =>
+      import('./features/vouchers/voucher-grid.component').then((m) => m.VoucherGridComponent),
+  },
+  {
+    path: '',
+    pathMatch: 'full',
+    redirectTo: 'new',
+  },
+];
+
 export const APP_ROUTES: Routes = [
   {
     path: 'setup',
@@ -64,6 +82,41 @@ export const APP_ROUTES: Routes = [
     path: 'auth/oidc/callback',
     loadComponent: () =>
       import('./features/auth/oidc-callback.component').then((m) => m.OidcCallbackComponent),
+  },
+  {
+    path: 'vouchers',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: VOUCHERS_CHILD_ROUTES,
+  },
+  {
+    path: 'daybook',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./features/vouchers/day-book.component').then((m) => m.DayBookComponent),
+      },
+    ],
+  },
+  {
+    path: 'approvals',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./features/vouchers/approval-queue.component').then(
+            (m) => m.ApprovalQueueComponent,
+          ),
+      },
+    ],
   },
   {
     path: 'coa',
@@ -126,6 +179,22 @@ export const APP_ROUTES: Routes = [
         path: 'gateway',
         loadComponent: () =>
           import('./shell/gateway.component').then((m) => m.GatewayComponent),
+      },
+      {
+        path: 'vouchers',
+        children: VOUCHERS_CHILD_ROUTES,
+      },
+      {
+        path: 'daybook',
+        loadComponent: () =>
+          import('./features/vouchers/day-book.component').then((m) => m.DayBookComponent),
+      },
+      {
+        path: 'approvals',
+        loadComponent: () =>
+          import('./features/vouchers/approval-queue.component').then(
+            (m) => m.ApprovalQueueComponent,
+          ),
       },
       {
         path: 'coa',

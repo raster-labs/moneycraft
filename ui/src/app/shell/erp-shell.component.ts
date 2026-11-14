@@ -18,9 +18,13 @@ import { CurrencyWorkbenchComponent } from '../features/masters/currency-workben
 import { GroupWorkbenchComponent } from '../features/masters/group-workbench.component';
 import { LedgerWorkbenchComponent } from '../features/masters/ledger-workbench.component';
 import { MastersHubComponent } from '../features/masters/masters-hub.component';
+import { VoucherBaseCategory } from '../features/masters/masters.models';
 import { SecondaryMasterModalComponent } from '../features/masters/secondary-master-modal.component';
 import { SECONDARY_MASTER_ROUTE_TOKEN } from '../features/masters/secondary-master-modal.service';
 import { VoucherTypeWorkbenchComponent } from '../features/masters/voucher-type-workbench.component';
+import { ApprovalQueueComponent } from '../features/vouchers/approval-queue.component';
+import { DayBookComponent } from '../features/vouchers/day-book.component';
+import { VoucherGridComponent } from '../features/vouchers/voucher-grid.component';
 import { CodeBadgeComponent } from '../shared/components/code-badge/code-badge.component';
 import {
   FunctionBarButtonItem,
@@ -51,6 +55,9 @@ import { SmartFindStore } from '../state/smart-find.store';
     CurrencyWorkbenchComponent,
     CostCentreWorkbenchComponent,
     VoucherTypeWorkbenchComponent,
+    VoucherGridComponent,
+    DayBookComponent,
+    ApprovalQueueComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -246,6 +253,24 @@ import { SmartFindStore } from '../state/smart-find.store';
                   }
                   @case ('/app/masters/voucher-types') {
                     <mc-voucher-type-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/vouchers/new') {
+                    <mc-voucher-grid [embeddedOverlay]="true" />
+                  }
+                  @case ('/vouchers/new') {
+                    <mc-voucher-grid [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/daybook') {
+                    <mc-day-book [embeddedOverlay]="true" />
+                  }
+                  @case ('/daybook') {
+                    <mc-day-book [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/approvals') {
+                    <mc-approval-queue [embeddedOverlay]="true" />
+                  }
+                  @case ('/approvals') {
+                    <mc-approval-queue [embeddedOverlay]="true" />
                   }
                   @default {
                     <p>
@@ -832,6 +857,8 @@ export class ErpShellComponent implements OnInit {
     { commandId: 'inline.createOrCalc', keycap: 'C', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Create' },
     { commandId: 'register.deleteVoucher', keycap: 'D', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Delete' },
     { commandId: 'voucher.changeMode', keycap: 'H', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Change Mode' },
+    { commandId: 'voucher.toggleOptional', keycap: 'L', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Optional' },
+    { commandId: 'report.basisOfValues', keycap: 'B', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Basis of Values' },
     { commandId: 'voucher.autofill', keycap: 'F', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Autofill' },
     { commandId: 'register.duplicateVoucher', keycap: '2', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Duplicate' },
     { commandId: 'register.cancelVoucher', keycap: 'X', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Cancel Vch' },
@@ -868,6 +895,60 @@ export class ErpShellComponent implements OnInit {
       ),
       this.shortcutRegistry.bindHandler('company.features', 'GLOBAL', () =>
         this.navigateToCompanyHub('features'),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.contra',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('CONTRA'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.payment',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('PAYMENT'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.receipt',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('RECEIPT'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.journal',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('JOURNAL'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.sales',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('SALES'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.purchase',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('PURCHASE'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.debitNote',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('DEBIT_NOTE'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.creditNote',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('CREDIT_NOTE'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.otherVouchers',
+        'GLOBAL',
+        () => this.navigateToNewVoucher('JOURNAL', true),
+        () => this.canJumpToGlobalVoucher(),
       ),
       this.shortcutRegistry.bindHandler('nav.escape', 'GLOBAL', () => this.handleGlobalEscape()),
     ];
@@ -937,6 +1018,24 @@ export class ErpShellComponent implements OnInit {
   navigateToCompanyHub(tab: 'create' | 'alter' | 'features'): void {
     this.companySwitcherOpen.set(false);
     void this.router.navigate(['/app/companies'], { queryParams: { mode: tab } });
+  }
+
+  private canJumpToGlobalVoucher(): boolean {
+    return (
+      !this.companyContext.hasUnsavedDraft() &&
+      !this.navStack.hasOverlays() &&
+      !this.goToOpen() &&
+      !this.smartFind.isOpen() &&
+      !this.workingDateModalOpen() &&
+      !this.periodModalOpen() &&
+      !this.companySwitcherOpen()
+    );
+  }
+
+  navigateToNewVoucher(category: VoucherBaseCategory, openOtherPicker = false): void {
+    void this.router.navigate(['/app/vouchers/new'], {
+      queryParams: openOtherPicker ? { category, other: '1' } : { category },
+    });
   }
 
   switchWorkspaceFromOverlay(route: string, params: Readonly<Record<string, string>>): void {

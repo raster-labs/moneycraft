@@ -44,39 +44,20 @@ public class RbacAuthorizationService {
     }
 
     public MoneyCraftPrincipal refreshPrincipal(MoneyCraftPrincipal base) {
-        List<MoneyCraftPrincipal> rows = authorityJdbcTemplate.query(
+        List<RawPrincipalRow> rows = authorityJdbcTemplate.query(
             """
             SELECT principal_id, kind, username::text AS username, display_name, status, system_roles::text AS roles_json
               FROM ma_principal
              WHERE principal_id = ?
             """,
-            (rs, rowNum) -> {
-                String status = rs.getString("status");
-                if (!"ENABLED".equals(status)) {
-                    throw new MoneyCraftException(
-                        HttpStatus.FORBIDDEN,
-                        "MC-PRINCIPAL-DISABLED",
-                        "Principal Disabled or Locked",
-                        "Principal status is " + status + "."
-                    );
-                }
-                UUID pid = rs.getObject("principal_id", UUID.class);
-                List<SystemRole> sysRoles = parseSystemRoles(rs.getString("roles_json"));
-                List<CompanyGrantInfo> grants = loadActiveGrants(pid);
-                boolean hasPasskey = hasActivePasskey(pid);
-                return new MoneyCraftPrincipal(
-                    pid,
-                    rs.getString("kind"),
-                    rs.getString("username"),
-                    rs.getString("display_name"),
-                    sysRoles,
-                    grants,
-                    hasPasskey,
-                    base.serviceKeyId(),
-                    base.serviceKeyCompanyAllowlist(),
-                    base.serviceKeyEndpointAllowlist()
-                );
-            },
+            (rs, rowNum) -> new RawPrincipalRow(
+                rs.getObject("principal_id", UUID.class),
+                rs.getString("kind"),
+                rs.getString("username"),
+                rs.getString("display_name"),
+                rs.getString("status"),
+                rs.getString("roles_json")
+            ),
             base.principalId()
         );
         if (rows.isEmpty()) {
@@ -87,7 +68,40 @@ public class RbacAuthorizationService {
                 "Authenticated principal no longer exists in Protected Authority DB."
             );
         }
-        return rows.getFirst();
+        RawPrincipalRow raw = rows.getFirst();
+        if (!"ENABLED".equals(raw.status())) {
+            throw new MoneyCraftException(
+                HttpStatus.FORBIDDEN,
+                "MC-PRINCIPAL-DISABLED",
+                "Principal Disabled or Locked",
+                "Principal status is " + raw.status() + "."
+            );
+        }
+        List<SystemRole> sysRoles = parseSystemRoles(raw.rolesJson());
+        List<CompanyGrantInfo> grants = loadActiveGrants(raw.principalId());
+        boolean hasPasskey = hasActivePasskey(raw.principalId());
+        return new MoneyCraftPrincipal(
+            raw.principalId(),
+            raw.kind(),
+            raw.username(),
+            raw.displayName(),
+            sysRoles,
+            grants,
+            hasPasskey,
+            base.serviceKeyId(),
+            base.serviceKeyCompanyAllowlist(),
+            base.serviceKeyEndpointAllowlist()
+        );
+    }
+
+    private record RawPrincipalRow(
+        UUID principalId,
+        String kind,
+        String username,
+        String displayName,
+        String status,
+        String rolesJson
+    ) {
     }
 
     public MoneyCraftPrincipal loadPrincipalProfile(UUID principalId) {

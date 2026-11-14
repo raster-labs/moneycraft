@@ -51,8 +51,24 @@ export const GATEWAY_MENU_ITEMS: readonly GatewayMenuItem[] = [
     panelId: 'chart-of-accounts',
     directRoute: '/app/coa',
   },
-  { key: 'V', section: 'TRANSACTIONS', prefixText: '', mnemonicChar: 'V', suffixText: 'ouchers', panelId: 'vouchers' },
-  { key: 'K', section: 'TRANSACTIONS', prefixText: 'Day Boo', mnemonicChar: 'K', suffixText: '', panelId: 'day-book' },
+  {
+    key: 'V',
+    section: 'TRANSACTIONS',
+    prefixText: '',
+    mnemonicChar: 'V',
+    suffixText: 'ouchers',
+    panelId: 'vouchers',
+    directRoute: '/app/vouchers/new',
+  },
+  {
+    key: 'K',
+    section: 'TRANSACTIONS',
+    prefixText: 'Day Boo',
+    mnemonicChar: 'K',
+    suffixText: '',
+    panelId: 'day-book',
+    directRoute: '/app/daybook',
+  },
   { key: 'N', section: 'UTILITIES', prefixText: 'Ba', mnemonicChar: 'N', suffixText: 'king', panelId: 'banking' },
   { key: 'B', section: 'REPORTS', prefixText: '', mnemonicChar: 'B', suffixText: 'alance Sheet', panelId: 'balance-sheet' },
   { key: 'P', section: 'REPORTS', prefixText: '', mnemonicChar: 'P', suffixText: 'rofit & Loss A/c', panelId: 'profit-loss' },
@@ -74,6 +90,8 @@ export const GATEWAY_MENU_ITEMS: readonly GatewayMenuItem[] = [
         <div class="mc-gateway-section-head">
           <h2>Active Books Context</h2>
           <div class="mc-gateway-quick-links">
+            <a routerLink="/app/vouchers/new" class="mc-btn">New Voucher</a>
+            <a routerLink="/app/approvals" class="mc-btn">Approvals</a>
             <a routerLink="/app/companies" class="mc-btn">Company Hub (F3)</a>
             <a routerLink="/app/admin" class="mc-btn">Security &amp; Audit</a>
           </div>

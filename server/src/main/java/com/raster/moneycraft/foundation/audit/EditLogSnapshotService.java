@@ -120,10 +120,24 @@ public class EditLogSnapshotService {
             }
             return;
         }
+        if (prev != null && curr != null && prev.isArray() && curr.isArray()) {
+            int maxLen = Math.max(prev.size(), curr.size());
+            for (int i = 0; i < maxLen; i++) {
+                JsonNode prevItem = i < prev.size() ? prev.get(i) : null;
+                JsonNode currItem = i < curr.size() ? curr.get(i) : null;
+                collectDiffs(prefix + "[" + i + "]", prevItem, currItem, diffs);
+            }
+            return;
+        }
+        String oldVal = prev == null || prev.isNull() ? null : jcsCanonicalizer.canonicalizeNode(prev);
+        String newVal = curr == null || curr.isNull() ? null : jcsCanonicalizer.canonicalizeNode(curr);
         Map<String, Object> diff = new LinkedHashMap<>();
+        diff.put("fieldPath", prefix);
+        diff.put("beforeValue", oldVal);
+        diff.put("afterValue", newVal);
         diff.put("field", prefix);
-        diff.put("oldValue", prev == null || prev.isNull() ? null : jcsCanonicalizer.canonicalizeNode(prev));
-        diff.put("newValue", curr == null || curr.isNull() ? null : jcsCanonicalizer.canonicalizeNode(curr));
+        diff.put("oldValue", oldVal);
+        diff.put("newValue", newVal);
         diffs.add(diff);
     }
 }

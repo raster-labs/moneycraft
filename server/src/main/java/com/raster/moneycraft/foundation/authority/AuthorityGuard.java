@@ -53,6 +53,7 @@ public class AuthorityGuard implements SmartLifecycle {
 
     private volatile Connection pinnedLeaseConnection;
     private volatile boolean running;
+    private volatile long lastLeaseValidatedAtNanos;
 
     public AuthorityGuard(
         MoneyCraftProperties properties,
@@ -117,17 +118,39 @@ public class AuthorityGuard implements SmartLifecycle {
         return snapshotRef.get();
     }
 
+    public GuardSnapshot reconcileFenceAndReceipts() {
+        if (properties.getMigrator().isOnly() || properties.getMigrator().isExitOnComplete()) {
+            return snapshotRef.get();
+        }
+        return reconcileInternal(false);
+    }
+
     public boolean isLeaseHealthy() {
         synchronized (leaseMonitor) {
             if (pinnedLeaseConnection == null) {
                 return false;
             }
             try {
-                return !pinnedLeaseConnection.isClosed() && pinnedLeaseConnection.isValid(2);
+                if (pinnedLeaseConnection.isClosed()) {
+                    return false;
+                }
+                long now = System.nanoTime();
+                if (now - lastLeaseValidatedAtNanos < 1_000_000_000L) {
+                    return true;
+                }
+                boolean valid = pinnedLeaseConnection.isValid(2);
+                if (valid) {
+                    lastLeaseValidatedAtNanos = now;
+                }
+                return valid;
             } catch (SQLException ex) {
                 return false;
             }
         }
+    }
+
+    public void assertActiveLease() {
+        assertWritable();
     }
 
     public void assertLeaseForBootstrap() {
@@ -157,7 +180,7 @@ public class AuthorityGuard implements SmartLifecycle {
                     "AuthorityGuard does not hold Business DB advisory writer lease."
                 );
             }
-            GuardSnapshot snap = reconcileAndVerify();
+            GuardSnapshot snap = reconcileInternal(false);
             if (snap.securityState() == InstallationSecurityState.QUARANTINED) {
                 throw quarantinedException(snap.quarantineReason());
             }
@@ -357,6 +380,10 @@ public class AuthorityGuard implements SmartLifecycle {
     }
 
     public GuardSnapshot reconcileAndVerify() {
+        return reconcileInternal(true);
+    }
+
+    private GuardSnapshot reconcileInternal(boolean verifyFullAuditStreams) {
         synchronized (leaseMonitor) {
             boolean leaseHeld = ensureLeaseHeld();
             List<AuthorityStateRow> authRows = readAuthorityState();
@@ -412,12 +439,14 @@ public class AuthorityGuard implements SmartLifecycle {
                 return transitionToQuarantineInternal(null, receiptDrift);
             }
 
-            AuditVerifyResult auditVerify = auditChainService.verifyAllStreams();
-            if (!auditVerify.verified()) {
-                return transitionToQuarantineInternal(
-                    null,
-                    "MC-AUDIT-2 hash chain tamper detected: " + auditVerify.failureDetail()
-                );
+            if (verifyFullAuditStreams) {
+                AuditVerifyResult auditVerify = auditChainService.verifyAllStreams();
+                if (!auditVerify.verified()) {
+                    return transitionToQuarantineInternal(
+                        null,
+                        "MC-AUDIT-2 hash chain tamper detected: " + auditVerify.failureDetail()
+                    );
+                }
             }
 
             GuardSnapshot active = new GuardSnapshot(

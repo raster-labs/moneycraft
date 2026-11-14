@@ -43,12 +43,14 @@ public class QuarantineEnforcementFilter extends OncePerRequestFilter {
         }
 
         String method = request.getMethod().toUpperCase(Locale.ROOT);
-        boolean synchronousReconcileRequired = MUTATING_METHODS.contains(method)
-            || "/api/v1/system/status".equals(path)
-            || "/api/v1/admin/audit/verify".equals(path);
-        AuthorityGuard.GuardSnapshot snap = synchronousReconcileRequired
-            ? authorityGuard.currentSnapshot()
-            : authorityGuard.cachedSnapshot();
+        AuthorityGuard.GuardSnapshot snap;
+        if ("/api/v1/system/status".equals(path) || "/api/v1/admin/audit/verify".equals(path)) {
+            snap = authorityGuard.currentSnapshot();
+        } else if (MUTATING_METHODS.contains(method)) {
+            snap = authorityGuard.reconcileFenceAndReceipts();
+        } else {
+            snap = authorityGuard.cachedSnapshot();
+        }
         if (snap.securityState() != InstallationSecurityState.QUARANTINED) {
             filterChain.doFilter(request, response);
             return;

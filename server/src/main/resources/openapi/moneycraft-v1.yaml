@@ -1227,6 +1227,333 @@ paths:
               schema:
                 $ref: '#/components/schemas/VoucherTypeResponse'
 
+  /companies/{companyId}/ledgers/{ledgerId}/open-bills:
+    get:
+      operationId: listOpenBills
+      tags: [AccountingVouchers]
+      summary: List open bill-wise pending balances and unadjusted forex deltas for a ledger
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: ledgerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: excludeVoucherId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Open bill-wise sub-ledger balances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenBillDto'
+
+  /companies/{companyId}/vouchers:
+    get:
+      operationId: listVouchers
+      tags: [AccountingVouchers]
+      summary: Day Book & filtered voucher register with TallyPrime 7.2 sort order and HS256 cursor pagination
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: fromDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: voucherTypeId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: voucherCategory
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: ledgerId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: includeOptional
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: includeCancelled
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Keyset-paginated Day Book voucher list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherCursorPage'
+    post:
+      operationId: createVoucher
+      tags: [AccountingVouchers]
+      summary: Create or post an ACID double-entry voucher with sub-ledger allocations and MCA Edit Log v1
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertVoucherRequest'
+      responses:
+        '201':
+          description: Created voucher
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherDetailDto'
+        '409':
+          $ref: '#/components/responses/ProblemConflict'
+
+  /companies/{companyId}/vouchers/next-number:
+    get:
+      operationId: previewNextVoucherNumber
+      tags: [AccountingVouchers]
+      summary: Preview expected next voucher number for a voucher type and date without burning the sequence
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherTypeId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: voucherTypeName
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: voucherDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Previewed next voucher number
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NextVoucherNumberResponse'
+
+  /companies/{companyId}/vouchers/{voucherId}:
+    get:
+      operationId: getVoucher
+      tags: [AccountingVouchers]
+      summary: Get full voucher detail with accounting lines and bill/cost/bank allocations
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Voucher detail
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherDetailDto'
+    put:
+      operationId: updateVoucher
+      tags: [AccountingVouchers]
+      summary: Alter an existing voucher with compensating GL batch reversal and MCA Edit Log vN+1 redline diff
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertVoucherRequest'
+      responses:
+        '200':
+          description: Altered voucher
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherDetailDto'
+        '412':
+          $ref: '#/components/responses/ProblemPreconditionFailed'
+
+  /companies/{companyId}/vouchers/{voucherId}/approve:
+    post:
+      operationId: approveVoucher
+      tags: [AccountingVouchers]
+      summary: Approve a DRAFT voucher under FOUR_EYES governance (distinct maker/checker principal required)
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveVoucherRequest'
+      responses:
+        '200':
+          description: Approved voucher
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherDetailDto'
+        '403':
+          $ref: '#/components/responses/ProblemForbidden'
+
+  /companies/{companyId}/vouchers/{voucherId}/post:
+    post:
+      operationId: postVoucher
+      tags: [AccountingVouchers]
+      summary: Post a DRAFT, APPROVED, or OPTIONAL voucher to active NORMAL General Ledger
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      responses:
+        '200':
+          description: Posted voucher
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherDetailDto'
+
+  /companies/{companyId}/vouchers/{voucherId}/reverse:
+    post:
+      operationId: reverseVoucher
+      tags: [AccountingVouchers]
+      summary: Mark original voucher REVERSED and post a linked compensating reversal journal
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReverseVoucherRequest'
+      responses:
+        '201':
+          description: Compensating reversal voucher created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherDetailDto'
+
+  /companies/{companyId}/vouchers/{voucherId}/cancel:
+    post:
+      operationId: cancelVoucher
+      tags: [AccountingVouchers]
+      summary: Tally-style Alt+X Cancel preserving voucher number for GSTR-1 Table 13 while zeroing GL & releasing bills
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelVoucherRequest'
+      responses:
+        '200':
+          description: Cancelled voucher
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherDetailDto'
+
   /events/stream:
     get:
       operationId: subscribeOperationalEvents
@@ -2665,3 +2992,554 @@ components:
         versionNo:
           type: integer
           format: int64
+
+    BillAllocationDto:
+      type: object
+      required: [allocationType, amount]
+      properties:
+        id:
+          type: [string, 'null']
+          format: uuid
+        allocationType:
+          type: string
+          enum: [NEW_REF, AGST_REF, ADVANCE, ON_ACCOUNT]
+        billName:
+          type: [string, 'null']
+        creditPeriodDays:
+          type: [integer, 'null']
+        dueDate:
+          type: [string, 'null']
+          format: date
+        side:
+          type: [string, 'null']
+          enum: [DR, CR, null]
+        amount:
+          type: string
+        forexCurrencyCode:
+          type: [string, 'null']
+        forexAmount:
+          type: [string, 'null']
+        forexRate:
+          type: [string, 'null']
+        unadjustedForexDelta:
+          type: [string, 'null']
+        allowOverSettlement:
+          type: [boolean, 'null']
+
+    CostAllocationDto:
+      type: object
+      required: [costCentreId, amount]
+      properties:
+        id:
+          type: [string, 'null']
+          format: uuid
+        costCategoryId:
+          type: [string, 'null']
+          format: uuid
+        costCategoryName:
+          type: [string, 'null']
+        costCentreId:
+          type: string
+          format: uuid
+        costCentreName:
+          type: [string, 'null']
+        side:
+          type: [string, 'null']
+          enum: [DR, CR, null]
+        amount:
+          type: string
+
+    BankAllocationDto:
+      type: object
+      properties:
+        id:
+          type: [string, 'null']
+          format: uuid
+        bankLedgerId:
+          type: [string, 'null']
+          format: uuid
+        transactionType:
+          type: string
+          enum: [CHEQUE, NEFT, RTGS, IMPS, UPI, CASH_DEPOSIT, CARD, ECS_NACH, BANK_CHARGES, OTHERS]
+        instrumentNo:
+          type: [string, 'null']
+        instrumentDate:
+          type: [string, 'null']
+          format: date
+        bankersDate:
+          type: [string, 'null']
+          format: date
+        favouringName:
+          type: [string, 'null']
+        transferModeRef:
+          type: [string, 'null']
+        side:
+          type: [string, 'null']
+          enum: [DR, CR, null]
+        amount:
+          type: [string, 'null']
+        reconciliationStatus:
+          type: [string, 'null']
+
+    VoucherLineRequest:
+      type: object
+      required: [ledgerId]
+      properties:
+        lineNo:
+          type: [integer, 'null']
+        lineRole:
+          type: [string, 'null']
+        ledgerId:
+          type: string
+          format: uuid
+        side:
+          type: [string, 'null']
+          enum: [DR, CR, null]
+        amount:
+          type: [string, 'null']
+        forexCurrencyCode:
+          type: [string, 'null']
+        forexAmount:
+          type: [string, 'null']
+        forexRate:
+          type: [string, 'null']
+        ratePct:
+          type: [string, 'null']
+        computedTaxAmount:
+          type: [string, 'null']
+        isGstOverridden:
+          type: [boolean, 'null']
+        gstOverrideReason:
+          type: [string, 'null']
+        lineNarration:
+          type: [string, 'null']
+        billAllocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillAllocationDto'
+        costAllocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/CostAllocationDto'
+        bankAllocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/BankAllocationDto'
+
+    UpsertVoucherRequest:
+      type: object
+      required: [voucherDate, lines]
+      properties:
+        voucherTypeId:
+          type: [string, 'null']
+          format: uuid
+        voucherTypeName:
+          type: [string, 'null']
+        voucherClassId:
+          type: [string, 'null']
+          format: uuid
+        voucherNumber:
+          type: [string, 'null']
+        voucherDate:
+          type: string
+          format: date
+        effectiveDate:
+          type: [string, 'null']
+          format: date
+        reversingApplicableUpto:
+          type: [string, 'null']
+          format: date
+        persistedView:
+          type: [string, 'null']
+        postingNature:
+          type: [string, 'null']
+        action:
+          type: [string, 'null']
+        supplierInvoiceNo:
+          type: [string, 'null']
+        supplierInvoiceDate:
+          type: [string, 'null']
+          format: date
+        partyLedgerId:
+          type: [string, 'null']
+          format: uuid
+        accountingLedgerId:
+          type: [string, 'null']
+          format: uuid
+        placeOfSupplyState:
+          type: [string, 'null']
+        companyGstinId:
+          type: [string, 'null']
+          format: uuid
+        partyGstin:
+          type: [string, 'null']
+        partyMailingName:
+          type: [string, 'null']
+        partyStateCode:
+          type: [string, 'null']
+        isReverseCharge:
+          type: [boolean, 'null']
+        exportType:
+          type: [string, 'null']
+        currencyCode:
+          type: [string, 'null']
+        exchangeRate:
+          type: [string, 'null']
+        narration:
+          type: [string, 'null']
+        sourceGuid:
+          type: [string, 'null']
+        versionNo:
+          type: [integer, 'null']
+          format: int64
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoucherLineRequest'
+
+    VoucherLineDetailDto:
+      type: object
+      required: [id, lineNo, lineRole, side, amount, billAllocations, costAllocations, bankAllocations]
+      properties:
+        id:
+          type: string
+          format: uuid
+        lineNo:
+          type: integer
+        lineRole:
+          type: string
+        ledgerId:
+          type: [string, 'null']
+          format: uuid
+        ledgerName:
+          type: [string, 'null']
+        side:
+          type: string
+        amount:
+          type: string
+        forexCurrencyCode:
+          type: [string, 'null']
+        forexAmount:
+          type: [string, 'null']
+        forexRate:
+          type: [string, 'null']
+        ratePct:
+          type: [string, 'null']
+        computedTaxAmount:
+          type: [string, 'null']
+        isGstOverridden:
+          type: boolean
+        gstOverrideReason:
+          type: [string, 'null']
+        lineNarration:
+          type: [string, 'null']
+        billAllocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillAllocationDto'
+        costAllocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/CostAllocationDto'
+        bankAllocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/BankAllocationDto'
+
+    VoucherDetailDto:
+      type: object
+      required:
+        - id
+        - companyId
+        - periodId
+        - fiscalYearId
+        - voucherTypeId
+        - voucherTypeName
+        - voucherTypeCategory
+        - status
+        - postingNature
+        - persistedView
+        - approvalPolicy
+        - voucherDate
+        - effectiveDate
+        - currencyCode
+        - exchangeRate
+        - totalDebit
+        - totalCredit
+        - narration
+        - masterSeqId
+        - alterId
+        - currentPostingBatchNo
+        - versionNo
+        - lines
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        periodId:
+          type: string
+          format: uuid
+        fiscalYearId:
+          type: string
+          format: uuid
+        voucherTypeId:
+          type: string
+          format: uuid
+        voucherTypeName:
+          type: string
+        voucherTypeCategory:
+          type: string
+        voucherClassId:
+          type: [string, 'null']
+          format: uuid
+        status:
+          type: string
+        postingNature:
+          type: string
+        persistedView:
+          type: string
+        approvalPolicy:
+          type: string
+        voucherNumber:
+          type: [string, 'null']
+        voucherSeqNo:
+          type: [integer, 'null']
+          format: int64
+        voucherDate:
+          type: string
+          format: date
+        effectiveDate:
+          type: string
+          format: date
+        reversingApplicableUpto:
+          type: [string, 'null']
+          format: date
+        supplierInvoiceNo:
+          type: [string, 'null']
+        supplierInvoiceDate:
+          type: [string, 'null']
+          format: date
+        partyLedgerId:
+          type: [string, 'null']
+          format: uuid
+        partyLedgerName:
+          type: [string, 'null']
+        accountingLedgerId:
+          type: [string, 'null']
+          format: uuid
+        accountingLedgerName:
+          type: [string, 'null']
+        placeOfSupplyState:
+          type: [string, 'null']
+        companyGstinId:
+          type: [string, 'null']
+          format: uuid
+        partyGstin:
+          type: [string, 'null']
+        partyMailingName:
+          type: [string, 'null']
+        partyStateCode:
+          type: [string, 'null']
+        isReverseCharge:
+          type: boolean
+        exportType:
+          type: [string, 'null']
+        currencyCode:
+          type: string
+        exchangeRate:
+          type: string
+        totalDebit:
+          type: string
+        totalCredit:
+          type: string
+        narration:
+          type: string
+        reversalOfJournalId:
+          type: [string, 'null']
+          format: uuid
+        masterSeqId:
+          type: integer
+          format: int64
+        alterId:
+          type: integer
+          format: int64
+        currentPostingBatchNo:
+          type: integer
+        versionNo:
+          type: integer
+          format: int64
+        createdBy:
+          type: [string, 'null']
+          format: uuid
+        approvedBy:
+          type: [string, 'null']
+          format: uuid
+        postedBy:
+          type: [string, 'null']
+          format: uuid
+        cancelledBy:
+          type: [string, 'null']
+          format: uuid
+        createdAt:
+          type: [string, 'null']
+          format: date-time
+        updatedAt:
+          type: [string, 'null']
+          format: date-time
+        approvedAt:
+          type: [string, 'null']
+          format: date-time
+        postedAt:
+          type: [string, 'null']
+          format: date-time
+        cancelledAt:
+          type: [string, 'null']
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoucherLineDetailDto'
+
+    VoucherSummaryDto:
+      type: object
+      required:
+        - id
+        - voucherDate
+        - effectiveDate
+        - voucherTypeId
+        - voucherTypeName
+        - voucherTypeCategory
+        - status
+        - postingNature
+        - persistedView
+        - primaryParticulars
+        - totalDebit
+        - totalCredit
+        - narration
+        - versionNo
+        - alterId
+      properties:
+        id:
+          type: string
+          format: uuid
+        voucherDate:
+          type: string
+          format: date
+        effectiveDate:
+          type: string
+          format: date
+        voucherTypeId:
+          type: string
+          format: uuid
+        voucherTypeName:
+          type: string
+        voucherTypeCategory:
+          type: string
+        voucherNumber:
+          type: [string, 'null']
+        status:
+          type: string
+        postingNature:
+          type: string
+        persistedView:
+          type: string
+        primaryParticulars:
+          type: string
+        totalDebit:
+          type: string
+        totalCredit:
+          type: string
+        narration:
+          type: string
+        versionNo:
+          type: integer
+          format: int64
+        alterId:
+          type: integer
+          format: int64
+
+    VoucherCursorPage:
+      type: object
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoucherSummaryDto'
+        nextCursor:
+          type: [string, 'null']
+        hasMore:
+          type: boolean
+
+    OpenBillDto:
+      type: object
+      required: [billName, totalDr, totalCr, pendingAmount, pendingSide, unadjustedForexDelta]
+      properties:
+        billName:
+          type: string
+        billDate:
+          type: [string, 'null']
+          format: date
+        dueDate:
+          type: [string, 'null']
+          format: date
+        totalDr:
+          type: string
+        totalCr:
+          type: string
+        pendingAmount:
+          type: string
+        pendingSide:
+          type: string
+          enum: [DR, CR]
+        unadjustedForexDelta:
+          type: string
+
+    NextVoucherNumberResponse:
+      type: object
+      required: [voucherTypeId, voucherTypeName, numberingMethod, manualRequired, automatic]
+      properties:
+        voucherTypeId:
+          type: string
+          format: uuid
+        voucherTypeName:
+          type: string
+        numberingMethod:
+          type: string
+        nextVoucherNumber:
+          type: [string, 'null']
+        expectedVoucherNumber:
+          type: [string, 'null']
+        nextSeqNo:
+          type: [integer, 'null']
+          format: int64
+        manualRequired:
+          type: boolean
+        automatic:
+          type: boolean
+
+    ApproveVoucherRequest:
+      type: object
+      properties:
+        postImmediately:
+          type: [boolean, 'null']
+        remarks:
+          type: [string, 'null']
+
+    ReverseVoucherRequest:
+      type: object
+      properties:
+        reversalDate:
+          type: [string, 'null']
+          format: date
+        narration:
+          type: [string, 'null']
+
+    CancelVoucherRequest:
+      type: object
+      properties:
+        reason:
+          type: [string, 'null']

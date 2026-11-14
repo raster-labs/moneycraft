@@ -302,6 +302,81 @@ public class GlobalProblemExceptionHandler {
                     )
                 );
             }
+            if (rawMsg.contains("MC-ACC-PERIOD-NOT-OPEN")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-PERIOD-NOT-OPEN",
+                        "Accounting Period Not Open",
+                        "Cannot post or alter accounting entries in a locked or closed period.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-PERIOD-NOT-FOUND") || rawMsg.contains("MC-ACC-ENTRY-DATE-OUT-OF-PERIOD")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-PERIOD-NOT-FOUND",
+                        "Accounting Period Not Found",
+                        "Voucher effective date does not fall within an active accounting period.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-UNBALANCED-JOURNAL")
+                || rawMsg.contains("MC-ACC-UNBALANCED-OPTIONAL")
+                || rawMsg.contains("MC-ACC-UNBALANCED-CANCEL")
+                || rawMsg.contains("MC-ACC-UNBALANCED-REVERSED")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-UNBALANCED-JOURNAL",
+                        "Unbalanced Double-Entry Voucher",
+                        "Total debit entries must equal total credit entries.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-MIN-TWO-ENTRIES")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-MIN-TWO-ENTRIES",
+                        "Minimum Two Ledger Entries Required",
+                        "A posted double-entry voucher requires at least two ledger entries.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-ZERO-SUM-JOURNAL")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-ZERO-SUM-JOURNAL",
+                        "Zero-Valued Voucher Forbidden",
+                        "Total debit and credit must be strictly positive unless zero-valued transactions are enabled.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("chk_mc_journal_four_eyes")) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.FORBIDDEN,
+                        "MC-ACC-FOUR-EYES-VIOLATION",
+                        "Four-Eyes Approval Required",
+                        "A distinct approver principal is required to approve or post a FOUR_EYES voucher.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
             if (ex instanceof org.springframework.dao.DataIntegrityViolationException
                 && (rawMsg.contains("violates foreign key constraint") || rawMsg.contains("still referenced"))) {
                 return ResponseEntity.status(HttpStatus.CONFLICT).contentType(PROBLEM_JSON).body(

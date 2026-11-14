@@ -2390,6 +2390,618 @@ paths:
               schema:
                 $ref: '#/components/schemas/BatchAgeingReportDto'
 
+  /companies/{companyId}/statutory/rule-packs:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listStatutoryRulePacks
+      tags: [StatutoryGst]
+      summary: List signed declarative statutory rule packs
+      parameters:
+        - name: asOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Signed statutory rule packs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StatutoryRulePackDto'
+
+  /companies/{companyId}/gst/registrations:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listGstRegistrations
+      tags: [StatutoryGst]
+      summary: List Multi-GSTIN registrations
+      responses:
+        '200':
+          description: GST registrations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GstRegistrationDto'
+    post:
+      operationId: createGstRegistration
+      tags: [StatutoryGst]
+      summary: Create Multi-GSTIN registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertGstRegistrationRequest'
+      responses:
+        '201':
+          description: Created GST registration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstRegistrationDto'
+
+  /companies/{companyId}/gst/registrations/{registrationId}:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: registrationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getGstRegistration
+      tags: [StatutoryGst]
+      summary: Get Multi-GSTIN registration
+      responses:
+        '200':
+          description: GST registration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstRegistrationDto'
+    put:
+      operationId: updateGstRegistration
+      tags: [StatutoryGst]
+      summary: Alter Multi-GSTIN registration
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertGstRegistrationRequest'
+      responses:
+        '200':
+          description: Updated GST registration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstRegistrationDto'
+
+  /companies/{companyId}/gst/compute-preview:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: computeGstPreview
+      tags: [StatutoryGst]
+      summary: Live 6-tier GST, Freight Apportionment & Rel 7.2 Tobacco Deemed MRP preview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertVoucherRequest'
+      responses:
+        '200':
+          description: Computed GST preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstComputePreviewResponse'
+
+  /companies/{companyId}/gst/uncertain-transactions:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listUncertainGstTransactions
+      tags: [StatutoryGst]
+      summary: List Uncertain Transactions (Ctrl+J)
+      parameters:
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: gstRegistrationId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Uncertain GST transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UncertainTransactionDto'
+
+  /companies/{companyId}/gst/uncertain-transactions/{voucherId}/accept-conflict:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: voucherId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: acceptUncertainGstConflict
+      tags: [StatutoryGst]
+      summary: Accept GST rate/amount conflict with audit reason
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptGstConflictRequest'
+      responses:
+        '200':
+          description: Conflict accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UncertainTransactionDto'
+
+  /companies/{companyId}/gst/gstr1:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: getGstr1Report
+      tags: [StatutoryGst]
+      summary: GSTR-1 return report with Phase III bifurcated HSN B2B/B2C & Table 13 Document Summary
+      parameters:
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: gstRegistrationId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: GSTR-1 report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gstr1ReportDto'
+
+  /companies/{companyId}/gst/gstr1/export:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: exportGstr1Json
+      tags: [StatutoryGst]
+      summary: Export GSTN portal-ready GSTR-1 JSON
+      responses:
+        '200':
+          description: GSTR-1 JSON attachment
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+
+  /companies/{companyId}/gst/ims/import-json:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: importImsJson
+      tags: [StatutoryIms]
+      summary: Import GSTR-2B / IMS JSON and reconcile against Purchase books
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImsImportRequest'
+      responses:
+        '200':
+          description: Imported & matched IMS invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ImsInvoiceDto'
+
+  /companies/{companyId}/gst/ims/invoices:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listImsInvoices
+      tags: [StatutoryIms]
+      summary: List IMS inward supplier invoices
+      parameters:
+        - name: returnPeriod
+          in: query
+          schema:
+            type: string
+        - name: gstRegistrationId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: IMS invoices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ImsInvoiceDto'
+
+  /companies/{companyId}/gst/ims/actions:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: applyImsAction
+      tags: [StatutoryIms]
+      summary: Apply Rel 7.2 IMS action (ACCEPT, REJECT, PENDING, NO_ACTION, partial ITC reduction & remarks)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImsActionRequest'
+      responses:
+        '200':
+          description: Updated IMS invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImsInvoiceDto'
+
+  /companies/{companyId}/gst/gstr3b:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: getGstr3bReport
+      tags: [StatutoryGst]
+      summary: GSTR-3B return with Books + IMS synthesis & Rule 88A cross-utilization
+      parameters:
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: returnPeriod
+          in: query
+          schema:
+            type: string
+        - name: gstRegistrationId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: GSTR-3B report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gstr3bReportDto'
+
+  /companies/{companyId}/gst/gstr9:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: getGstr9Report
+      tags: [StatutoryGst]
+      summary: Rel 7.2 One-Click GSTR-9 Annual Return preview
+      parameters:
+        - name: fiscalYearId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: GSTR-9 annual return report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gstr9ReportDto'
+
+  /companies/{companyId}/gst/gstr9/export:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: exportGstr9
+      tags: [StatutoryGst]
+      summary: One-Click GSTR-9 export (.xlsx or .json)
+      parameters:
+        - name: fiscalYearId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [XLSX, JSON]
+      responses:
+        '200':
+          description: GSTR-9 XLSX or JSON attachment
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+
+  /companies/{companyId}/gst/einvoice/{voucherId}/generate:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: voucherId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: generateEinvoice
+      tags: [StatutoryConnector]
+      summary: Generate NIC e-Invoice IRN via 30-day Tink-encrypted Outbound Connector SPI
+      responses:
+        '200':
+          description: Generated e-Invoice IRN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EinvoiceGenerateResponse'
+
+  /companies/{companyId}/gst/einvoice/{voucherId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: voucherId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: cancelEinvoice
+      tags: [StatutoryConnector]
+      summary: Cancel NIC e-Invoice IRN within statutory window
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EinvoiceCancelRequest'
+      responses:
+        '200':
+          description: Cancelled e-Invoice IRN
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EinvoiceGenerateResponse'
+
+  /companies/{companyId}/gst/einvoice/export-offline-json:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: exportEinvoiceOfflineJson
+      tags: [StatutoryConnector]
+      summary: Air-gapped offline NIC e-Invoice v1.1 bulk JSON export
+      responses:
+        '200':
+          description: Offline e-Invoice JSON
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+
+  /companies/{companyId}/gst/ewaybill/{voucherId}/generate:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: voucherId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: generateEwayBill
+      tags: [StatutoryConnector]
+      summary: Generate NIC e-Way Bill via 30-day Tink-encrypted Outbound Connector SPI
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EwayBillGenerateRequest'
+      responses:
+        '200':
+          description: Generated e-Way Bill
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EwayBillGenerateResponse'
+
+  /companies/{companyId}/gst/ewaybill/export-offline-json:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: exportEwayBillOfflineJson
+      tags: [StatutoryConnector]
+      summary: Air-gapped offline NIC e-Way Bill bulk JSON export
+      responses:
+        '200':
+          description: Offline e-Way Bill JSON
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+
+  /companies/{companyId}/tds/natures:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: listTdsNatures
+      tags: [StatutoryTds]
+      summary: List TDS/TCS natures (194C, 194J, 194H, 194I, 194Q, 206C)
+      responses:
+        '200':
+          description: TDS natures
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TdsNatureDto'
+
+  /companies/{companyId}/tds/challans:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: createTdsChallan
+      tags: [StatutoryTds]
+      summary: Record ITNS 281 TDS payment challan and link deductions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTdsChallanRequest'
+      responses:
+        '201':
+          description: Created ITNS 281 challan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TdsChallanDto'
+
+  /companies/{companyId}/tds/form26q:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    get:
+      operationId: getTdsForm26q
+      tags: [StatutoryTds]
+      summary: Quarterly Form 26Q return preview
+      parameters:
+        - name: quarter
+          in: query
+          schema:
+            type: string
+            enum: [Q1, Q2, Q3, Q4]
+        - name: fiscalYearId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Form 26Q report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TdsForm26qReportDto'
+
+  /companies/{companyId}/tds/export-fvu:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+    post:
+      operationId: exportTdsFvu
+      tags: [StatutoryTds]
+      summary: Export Protean (NSDL) FVU 1.2 caret-delimited Form 26Q file
+      parameters:
+        - name: quarter
+          in: query
+          schema:
+            type: string
+            enum: [Q1, Q2, Q3, Q4]
+        - name: fiscalYearId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Protean FVU 1.2 text file
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /companies/{companyId}/edit-log/{entityType}/{entityId}/versions:
+    parameters:
+      - $ref: '#/components/parameters/CompanyIdParam'
+      - name: entityType
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: entityId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listEditLogVersions
+      tags: [StatutoryAudit]
+      summary: Immutable MCA Rule 3(1) Edit Log (Alt+Q) version timeline & redline diffs
+      responses:
+        '200':
+          description: Ordered Edit Log versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EditLogVersionDto'
+
 components:
   securitySchemes:
     SessionCookie:
@@ -5087,3 +5699,569 @@ components:
           type: array
           items:
             type: object
+
+    StatutoryRulePackDto:
+      type: object
+      required: [id, packCode, countryCode, fiscalYearLabel, effectiveFrom, effectiveTo, packSha256, active]
+      properties:
+        id:
+          type: string
+          format: uuid
+        packCode:
+          type: string
+        countryCode:
+          type: string
+        fiscalYearLabel:
+          type: string
+        effectiveFrom:
+          type: string
+          format: date
+        effectiveTo:
+          type: string
+          format: date
+        schemaVersion:
+          type: string
+        gstSlabsPct:
+          type: array
+          items:
+            type: string
+        packSha256:
+          type: string
+        signatureAlg:
+          type: string
+        active:
+          type: boolean
+
+    GstRegistrationDto:
+      type: object
+      required: [id, registrationName, stateCode, registrationType, gstin, effectiveFrom, isDefault, active, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        registrationName:
+          type: string
+        stateCode:
+          type: string
+        stateName:
+          type: string
+        registrationType:
+          type: string
+        gstin:
+          type: string
+        effectiveFrom:
+          type: string
+          format: date
+        periodicity:
+          type: string
+        einvoiceApplicable:
+          type: boolean
+        ewayBillApplicable:
+          type: boolean
+        isDefault:
+          type: boolean
+        active:
+          type: boolean
+        versionNo:
+          type: integer
+          format: int64
+
+    UpsertGstRegistrationRequest:
+      type: object
+      required: [registrationName, stateCode, gstin]
+      properties:
+        registrationName:
+          type: string
+        stateCode:
+          type: string
+        stateName:
+          type: string
+        registrationType:
+          type: string
+        gstin:
+          type: string
+        effectiveFrom:
+          type: string
+          format: date
+        periodicity:
+          type: string
+        einvoiceApplicable:
+          type: boolean
+        ewayBillApplicable:
+          type: boolean
+        defaultGstRatePct:
+          type: string
+        defaultHsnSacCode:
+          type: string
+        isDefault:
+          type: boolean
+        active:
+          type: boolean
+
+    GstComputePreviewResponse:
+      type: object
+      required: [supplyNature, isReverseCharge, totalAssessableValue, totalIgst, totalCgst, totalSgst, totalCess, totalTaxAmount, invoiceTotal]
+      properties:
+        rulePackCode:
+          type: string
+        supplyNature:
+          type: string
+        isReverseCharge:
+          type: boolean
+        totalAssessableValue:
+          type: string
+        totalIgst:
+          type: string
+        totalCgst:
+          type: string
+        totalSgst:
+          type: string
+        totalCess:
+          type: string
+        totalTaxAmount:
+          type: string
+        invoiceTotal:
+          type: string
+        allocations:
+          type: array
+          items:
+            type: object
+
+    UncertainTransactionDto:
+      type: object
+      required: [voucherId, voucherNumber, voucherDate, uncertaintyCode]
+      properties:
+        voucherId:
+          type: string
+          format: uuid
+        voucherNumber:
+          type: string
+        voucherDate:
+          type: string
+          format: date
+        partyName:
+          type: string
+        uncertaintyCode:
+          type: string
+        uncertaintyReason:
+          type: string
+        computedTaxAmount:
+          type: string
+        voucherTaxAmount:
+          type: string
+        differenceAmount:
+          type: string
+        conflictAccepted:
+          type: boolean
+
+    AcceptGstConflictRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+
+    Gstr1ReportDto:
+      type: object
+      required: [b2b, b2cl, b2cs, cdnr, exp, hsnB2b, hsnB2c, documentSummary, totalTaxableValue, totalIgst, totalCgst, totalSgst, totalCess, totalTax]
+      properties:
+        fromDate:
+          type: string
+          format: date
+        toDate:
+          type: string
+          format: date
+        gstin:
+          type: string
+        b2b:
+          type: array
+          items:
+            type: object
+        b2cl:
+          type: array
+          items:
+            type: object
+        b2cs:
+          type: array
+          items:
+            type: object
+        cdnr:
+          type: array
+          items:
+            type: object
+        exp:
+          type: array
+          items:
+            type: object
+        hsnB2b:
+          type: array
+          items:
+            type: object
+        hsnB2c:
+          type: array
+          items:
+            type: object
+        documentSummary:
+          type: array
+          items:
+            type: object
+        totalTaxableValue:
+          type: string
+        totalIgst:
+          type: string
+        totalCgst:
+          type: string
+        totalSgst:
+          type: string
+        totalCess:
+          type: string
+        totalTax:
+          type: string
+
+    Gstr3bReportDto:
+      type: object
+      required: [outwardTaxable, inwardRcm, eligibleItc, itcReversed, netTaxPayable]
+      properties:
+        fromDate:
+          type: string
+          format: date
+        toDate:
+          type: string
+          format: date
+        returnPeriod:
+          type: string
+        outwardTaxable:
+          type: object
+        inwardRcm:
+          type: object
+        eligibleItc:
+          type: object
+        itcReversed:
+          type: object
+        netTaxPayable:
+          type: object
+
+    Gstr9ReportDto:
+      type: object
+      required: [table4Outward, table6ItcAvailed, table17HsnOutward, totalOutwardTaxable, totalOutwardTax, totalItcAvailed, netTaxPayable]
+      properties:
+        fiscalYearId:
+          type: string
+          format: uuid
+        financialYearLabel:
+          type: string
+        gstin:
+          type: string
+        table4Outward:
+          type: array
+          items:
+            type: object
+        table6ItcAvailed:
+          type: array
+          items:
+            type: object
+        table17HsnOutward:
+          type: array
+          items:
+            type: object
+        totalOutwardTaxable:
+          type: string
+        totalOutwardTax:
+          type: string
+        totalItcAvailed:
+          type: string
+        totalItcReversed:
+          type: string
+        netTaxPayable:
+          type: string
+        reconciliationDifference:
+          type: string
+
+    ImsImportRequest:
+      type: object
+      required: [invoices]
+      properties:
+        returnPeriod:
+          type: string
+        gstRegistrationId:
+          type: string
+          format: uuid
+        invoices:
+          type: array
+          items:
+            type: object
+
+    ImsInvoiceDto:
+      type: object
+      required: [id, supplierGstin, invoiceNumber, invoiceDate, matchStatus, imsStatus, portalItcAmount, itcReductionAmount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        supplierGstin:
+          type: string
+        supplierName:
+          type: string
+        invoiceNumber:
+          type: string
+        invoiceDate:
+          type: string
+          format: date
+        returnPeriod:
+          type: string
+        effectiveFilingPeriod:
+          type: string
+        taxableValue:
+          type: string
+        portalItcAmount:
+          type: string
+        itcReductionAmount:
+          type: string
+        imsStatus:
+          type: string
+        remarks:
+          type: string
+        matchStatus:
+          type: string
+
+    ImsActionRequest:
+      type: object
+      required: [imsInvoiceId, action]
+      properties:
+        imsInvoiceId:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum: [NO_ACTION, ACCEPT, REJECT, PENDING]
+        itcReductionAmount:
+          type: string
+        remarks:
+          type: string
+        effectiveFilingPeriod:
+          type: string
+
+    EinvoiceGenerateResponse:
+      type: object
+      required: [voucherId, status, irn, ackNo, ackDate]
+      properties:
+        voucherId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        irn:
+          type: string
+        ackNo:
+          type: string
+        ackDate:
+          type: string
+          format: date-time
+        signedQrCode:
+          type: string
+        sessionValidUntil:
+          type: string
+          format: date-time
+
+    EinvoiceCancelRequest:
+      type: object
+      required: [cancelReasonCode, cancelRemarks]
+      properties:
+        cancelReasonCode:
+          type: string
+        cancelRemarks:
+          type: string
+
+    EwayBillGenerateRequest:
+      type: object
+      properties:
+        transporterId:
+          type: string
+        transporterName:
+          type: string
+        transportMode:
+          type: string
+        distanceKm:
+          type: integer
+        vehicleNo:
+          type: string
+        transportDocNo:
+          type: string
+        transportDocDate:
+          type: string
+          format: date
+
+    EwayBillGenerateResponse:
+      type: object
+      required: [voucherId, ewbNo, ewbDate, ewbValidUpto, status]
+      properties:
+        voucherId:
+          type: string
+          format: uuid
+        ewbNo:
+          type: string
+        ewbDate:
+          type: string
+          format: date-time
+        ewbValidUpto:
+          type: string
+          format: date-time
+        status:
+          type: string
+
+    TdsNatureDto:
+      type: object
+      required: [id, sectionCode, paymentCode, name, rateIndividualHufPct, rateOtherDeducteePct, noPanHigherRatePct]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sectionCode:
+          type: string
+        paymentCode:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        singleBillThreshold:
+          type: string
+        annualAggregateThreshold:
+          type: string
+        rateIndividualHufPct:
+          type: string
+        rateOtherDeducteePct:
+          type: string
+        noPanHigherRatePct:
+          type: string
+
+    CreateTdsChallanRequest:
+      type: object
+      required: [quarter, sectionCode, bsrCode, challanSerialNo, depositDate, tdsAmount]
+      properties:
+        quarter:
+          type: string
+          enum: [Q1, Q2, Q3, Q4]
+        fiscalYearId:
+          type: string
+          format: uuid
+        sectionCode:
+          type: string
+        bsrCode:
+          type: string
+        challanSerialNo:
+          type: string
+        depositDate:
+          type: string
+          format: date
+        bankLedgerId:
+          type: string
+          format: uuid
+        tdsAmount:
+          type: string
+        surchargeAmount:
+          type: string
+        cessAmount:
+          type: string
+        interestAmount:
+          type: string
+        feeSec234eAmount:
+          type: string
+
+    TdsChallanDto:
+      type: object
+      required: [id, quarter, sectionCode, bsrCode, challanSerialNo, depositDate, tdsAmount, totalAmount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        quarter:
+          type: string
+        sectionCode:
+          type: string
+        bsrCode:
+          type: string
+        challanSerialNo:
+          type: string
+        depositDate:
+          type: string
+          format: date
+        tdsAmount:
+          type: string
+        totalAmount:
+          type: string
+
+    TdsForm26qReportDto:
+      type: object
+      required: [quarter, deductions, challans, totalGrossAmount, totalTdsDeducted, totalTdsDeposited, unpaidTdsAmount]
+      properties:
+        quarter:
+          type: string
+        fiscalYearId:
+          type: string
+          format: uuid
+        assessmentYear:
+          type: string
+        deductions:
+          type: array
+          items:
+            type: object
+        challans:
+          type: array
+          items:
+            type: object
+        totalGrossAmount:
+          type: string
+        totalTdsDeducted:
+          type: string
+        totalTdsDeposited:
+          type: string
+        unpaidTdsAmount:
+          type: string
+
+    EditLogVersionDto:
+      type: object
+      required: [id, entityType, entityId, versionNo, masterId, alterId, operation, actorUsername, occurredAt, canonicalSnapshot, changedFields, snapshotSha256Hex]
+      properties:
+        id:
+          type: string
+          format: uuid
+        entityType:
+          type: string
+        entityId:
+          type: string
+          format: uuid
+        versionNo:
+          type: integer
+          format: int64
+        masterId:
+          type: integer
+          format: int64
+        alterId:
+          type: integer
+          format: int64
+        operation:
+          type: string
+        actorPrincipalId:
+          type: string
+          format: uuid
+          nullable: true
+        actorUsername:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+        voucherNumberSnapshot:
+          type: string
+          nullable: true
+        voucherDateSnapshot:
+          type: string
+          format: date
+          nullable: true
+        canonicalSnapshot:
+          type: object
+        changedFields:
+          type: array
+          items:
+            type: object
+        snapshotSha256Hex:
+          type: string

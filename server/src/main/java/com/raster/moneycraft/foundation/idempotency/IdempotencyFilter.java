@@ -18,6 +18,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -29,6 +32,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StreamUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingResponseWrapper;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 public class IdempotencyFilter extends OncePerRequestFilter {
@@ -145,9 +149,19 @@ public class IdempotencyFilter extends OncePerRequestFilter {
                 response.setHeader("Location", receipt.responseLocation());
             }
             if (receipt.responseBodyJson() != null) {
-                response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-                response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-                response.getOutputStream().write(receipt.responseBodyJson().getBytes(StandardCharsets.UTF_8));
+                String storedJson = receipt.responseBodyJson();
+                if (storedJson.contains("\"_mcBinaryBase64\"")) {
+                    JsonNode env = objectMapper.readTree(storedJson);
+                    if (env.has("_mcContentType") && !env.get("_mcContentType").isNull()) {
+                        response.setContentType(env.get("_mcContentType").asString());
+                    }
+                    byte[] decoded = Base64.getDecoder().decode(env.get("_mcBinaryBase64").asString());
+                    response.getOutputStream().write(decoded);
+                } else {
+                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                    response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+                    response.getOutputStream().write(storedJson.getBytes(StandardCharsets.UTF_8));
+                }
             }
             return;
         }
@@ -158,7 +172,20 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         int status = responseWrapper.getStatus();
         if (status >= 200 && status < 300) {
             byte[] respBytes = responseWrapper.getContentAsByteArray();
-            String respJson = respBytes.length == 0 ? null : new String(respBytes, StandardCharsets.UTF_8);
+            String respContentType = responseWrapper.getContentType();
+            String respJson = null;
+            if (respBytes.length > 0) {
+                if (isJsonMediaType(respContentType)) {
+                    respJson = new String(respBytes, StandardCharsets.UTF_8);
+                } else {
+                    respJson = objectMapper.writeValueAsString(
+                        Map.of(
+                            "_mcBinaryBase64", Base64.getEncoder().encodeToString(respBytes),
+                            "_mcContentType", respContentType == null ? "application/octet-stream" : respContentType
+                        )
+                    );
+                }
+            }
             idempotencyService.saveReceipt(
                 companyScope,
                 principal.principalId(),
@@ -173,6 +200,14 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             );
         }
         responseWrapper.copyBodyToResponse();
+    }
+
+    private static boolean isJsonMediaType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return true;
+        }
+        String lower = contentType.toLowerCase(Locale.ROOT);
+        return lower.contains("application/json") || lower.contains("+json");
     }
 
     private void writeProblem(

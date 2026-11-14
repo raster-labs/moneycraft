@@ -3,6 +3,7 @@ package com.raster.moneycraft.accounting.service;
 import com.raster.moneycraft.accounting.dto.CursorPage;
 import com.raster.moneycraft.accounting.dto.VoucherDtos;
 import com.raster.moneycraft.accounting.spi.VoucherInventoryBridge;
+import com.raster.moneycraft.accounting.spi.VoucherStatutoryBridge;
 import com.raster.moneycraft.foundation.audit.AuditChainService;
 import com.raster.moneycraft.foundation.audit.EditLogSnapshotService;
 import com.raster.moneycraft.foundation.authority.AuthorityGuard;
@@ -98,6 +99,7 @@ public class VoucherService {
     private final JdbcTemplate businessJdbcTemplate;
     private final TransactionTemplate businessTxTemplate;
     private final ObjectProvider<VoucherInventoryBridge> inventoryBridgeProvider;
+    private final ObjectProvider<VoucherStatutoryBridge> statutoryBridgeProvider;
 
     public VoucherService(
         AuthorityGuard authorityGuard,
@@ -111,7 +113,8 @@ public class VoucherService {
         ObjectMapper objectMapper,
         @Qualifier("businessJdbcTemplate") JdbcTemplate businessJdbcTemplate,
         @Qualifier("transactionManager") PlatformTransactionManager businessTransactionManager,
-        ObjectProvider<VoucherInventoryBridge> inventoryBridgeProvider
+        ObjectProvider<VoucherInventoryBridge> inventoryBridgeProvider,
+        ObjectProvider<VoucherStatutoryBridge> statutoryBridgeProvider
     ) {
         this.authorityGuard = authorityGuard;
         this.rbacGuard = rbacGuard;
@@ -125,6 +128,7 @@ public class VoucherService {
         this.businessJdbcTemplate = businessJdbcTemplate;
         this.businessTxTemplate = new TransactionTemplate(businessTransactionManager);
         this.inventoryBridgeProvider = inventoryBridgeProvider;
+        this.statutoryBridgeProvider = statutoryBridgeProvider;
     }
 
     public VoucherDtos.VoucherDetailDto createVoucher(
@@ -222,6 +226,10 @@ public class VoucherService {
             BigDecimal totalCr = sumSide(preparedLines, "CR");
 
             UUID journalId = UUID.randomUUID();
+            VoucherStatutoryBridge statBridge = statutoryBridgeProvider.getIfAvailable();
+            UUID resolvedCompanyGstinId = header.companyGstinId() != null
+                ? header.companyGstinId()
+                : (statBridge != null ? statBridge.resolveDefaultCompanyGstinId(companyId, effectiveDate) : null);
 
             // 7. MCJ1-TXN-01 step: lock mc_number_series FOR UPDATE & allocate gap-free voucher number
             VoucherNumberingService.AllocatedVoucherNumber allocatedNumber = numberingService.allocateNumber(
@@ -231,7 +239,7 @@ public class VoucherService {
                 vt.numberingMethod(),
                 vt.preventDuplicateNumbers(),
                 period.fiscalYearId(),
-                header.companyGstinId(),
+                resolvedCompanyGstinId,
                 request.voucherNumber()
             );
 
@@ -288,7 +296,7 @@ public class VoucherService {
                 request.partyLedgerId(),
                 request.accountingLedgerId(),
                 header.placeOfSupplyState(),
-                header.companyGstinId(),
+                resolvedCompanyGstinId,
                 header.partyGstin(),
                 header.partyMailingName(),
                 header.partyStateCode(),
@@ -331,6 +339,10 @@ public class VoucherService {
                         invCtx
                     )
                 );
+            }
+
+            if (statBridge != null && "POSTED".equals(header.status()) && "NORMAL".equals(header.postingNature())) {
+                statBridge.computeAndPersistJournalStatutory(companyId, journalId);
             }
 
             VoucherDtos.VoucherDetailDto created = loadVoucherDetail(companyId, journalId, seq.currencyScale());
@@ -478,6 +490,11 @@ public class VoucherService {
                 );
             }
 
+            VoucherStatutoryBridge statBridge = statutoryBridgeProvider.getIfAvailable();
+            if (statBridge != null) {
+                statBridge.clearJournalStatutoryAllocations(companyId, voucherId);
+            }
+
             Set<UUID> priorInventoryItems = Set.of();
             if (invBridge != null) {
                 invBridge.lockJournalStockItemsAndBatches(companyId, voucherId);
@@ -542,6 +559,12 @@ public class VoucherService {
             BigDecimal totalDr = sumSide(preparedLines, "DR");
             BigDecimal totalCr = sumSide(preparedLines, "CR");
 
+            UUID resolvedCompanyGstinId = header.companyGstinId() != null
+                ? header.companyGstinId()
+                : (beforeSnapshot.companyGstinId() != null
+                    ? beforeSnapshot.companyGstinId()
+                    : (statBridge != null ? statBridge.resolveDefaultCompanyGstinId(companyId, effectiveDate) : null));
+
             // Retain existing voucher_number unless MANUAL updated or previously unnumbered
             String resolvedNumber = existing.voucherNumber();
             Long resolvedSeqNo = existing.voucherSeqNo();
@@ -567,7 +590,7 @@ public class VoucherService {
                     vt.numberingMethod(),
                     vt.preventDuplicateNumbers(),
                     newPeriod.fiscalYearId(),
-                    header.companyGstinId(),
+                    resolvedCompanyGstinId,
                     request.voucherNumber()
                 );
                 resolvedSeriesId = alloc.numberSeriesId();
@@ -657,7 +680,7 @@ public class VoucherService {
                 request.partyLedgerId(),
                 request.accountingLedgerId(),
                 header.placeOfSupplyState(),
-                header.companyGstinId(),
+                resolvedCompanyGstinId,
                 header.partyGstin(),
                 header.partyMailingName(),
                 header.partyStateCode(),
@@ -706,6 +729,10 @@ public class VoucherService {
                         mergedCtx
                     )
                 );
+            }
+
+            if (statBridge != null && "POSTED".equals(header.status()) && "NORMAL".equals(header.postingNature())) {
+                statBridge.computeAndPersistJournalStatutory(companyId, voucherId);
             }
 
             VoucherDtos.VoucherDetailDto afterSnapshot = loadVoucherDetail(companyId, voucherId, seq.currencyScale());
@@ -850,6 +877,10 @@ public class VoucherService {
                     beforeSnapshot.partyLedgerId(),
                     existing.voucherNumber()
                 );
+            }
+            VoucherStatutoryBridge statBridge = statutoryBridgeProvider.getIfAvailable();
+            if (postImmediately && "NORMAL".equals(existing.postingNature()) && statBridge != null) {
+                statBridge.computeAndPersistJournalStatutory(companyId, voucherId);
             }
 
             VoucherDtos.VoucherDetailDto afterSnapshot = loadVoucherDetail(companyId, voucherId, seq.currencyScale());
@@ -1016,6 +1047,10 @@ public class VoucherService {
                     existing.voucherNumber()
                 );
             }
+            VoucherStatutoryBridge statBridge = statutoryBridgeProvider.getIfAvailable();
+            if ("NORMAL".equals(targetNature) && statBridge != null) {
+                statBridge.computeAndPersistJournalStatutory(companyId, voucherId);
+            }
 
             VoucherDtos.VoucherDetailDto afterSnapshot = loadVoucherDetail(companyId, voucherId, seq.currencyScale());
             editLogSnapshotService.recordVersion(
@@ -1118,7 +1153,11 @@ public class VoucherService {
                     : null
             );
 
-            // 1. Mark original journal status = REVERSED
+            // 1. Clear statutory allocations on original before marking status = REVERSED
+            VoucherStatutoryBridge statBridge = statutoryBridgeProvider.getIfAvailable();
+            if (statBridge != null) {
+                statBridge.clearJournalStatutoryAllocations(companyId, voucherId);
+            }
             businessJdbcTemplate.update(
                 """
                 UPDATE mc_journal
@@ -1313,6 +1352,11 @@ public class VoucherService {
             Set<UUID> ledgerIds = collectSnapshotLedgerIds(beforeSnapshot);
             ledgerIds.addAll(findPriorEntryLedgerIds(companyId, voucherId));
             lockLedgersInCanonicalOrder(companyId, ledgerIds);
+
+            VoucherStatutoryBridge statBridge = statutoryBridgeProvider.getIfAvailable();
+            if (statBridge != null) {
+                statBridge.clearJournalStatutoryAllocations(companyId, voucherId);
+            }
 
             VoucherInventoryBridge invBridge = inventoryBridgeProvider.getIfAvailable();
             Set<UUID> touchedInventoryItems = Set.of();

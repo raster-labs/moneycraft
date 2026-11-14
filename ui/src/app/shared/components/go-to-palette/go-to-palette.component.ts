@@ -51,9 +51,13 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
   { id: 'rpt-godown', group: 'Financial Reports', title: 'Godown / Location Summary', route: '/app/reports/godown-summary' },
   { id: 'rpt-batch-ageing', group: 'Financial Reports', title: 'Batch / Expiry Ageing', route: '/app/reports/batch-ageing' },
   { id: 'rpt-ratios', group: 'Financial Reports', title: 'Ratio Analysis', route: '/app/gateway', params: { panel: 'ratios' } },
-  { id: 'stat-gstr1', group: 'Statutory & Admin', title: 'GSTR-1 Outward Supplies', route: '/app/gateway', params: { panel: 'gstr-1' } },
-  { id: 'stat-gstr3b', group: 'Statutory & Admin', title: 'GSTR-3B Monthly Return', route: '/app/gateway', params: { panel: 'gstr-3b' } },
-  { id: 'stat-ims', group: 'Statutory & Admin', title: 'IMS Reconciliation Workbench', route: '/app/gateway', params: { panel: 'ims' } },
+  { id: 'stat-gstr1', group: 'Statutory & Admin', title: 'GSTR-1 Outward Supplies', route: '/app/statutory/gstr1' },
+  { id: 'stat-gstr3b', group: 'Statutory & Admin', title: 'GSTR-3B Monthly Return', route: '/app/statutory/gstr3b' },
+  { id: 'stat-gstr9', group: 'Statutory & Admin', title: 'GSTR-9 Annual Return (One-Click)', route: '/app/statutory/gstr9' },
+  { id: 'stat-ims', group: 'Statutory & Admin', title: 'IMS Reconciliation Workbench', route: '/app/statutory/ims' },
+  { id: 'stat-einvoice', group: 'Statutory & Admin', title: 'e-Invoice & e-Way Bill Exchange', route: '/app/statutory/einvoice' },
+  { id: 'stat-tds-26q', group: 'Statutory & Admin', title: 'TDS Form 26Q & ITNS 281 Challans', route: '/app/statutory/tds-26q' },
+  { id: 'stat-gst-reg', group: 'Statutory & Admin', title: 'GST Registrations (Multi-GSTIN)', route: '/app/statutory/gst-registrations' },
   { id: 'adm-security', group: 'Statutory & Admin', title: 'Administration, RBAC & Audit Chain', route: '/app/admin' },
 ];
 

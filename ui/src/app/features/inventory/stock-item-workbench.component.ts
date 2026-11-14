@@ -26,6 +26,7 @@ import { NavigationStackStore } from '../../state/navigation-stack.store';
 import { ChartOfAccountsStore } from '../masters/chart-of-accounts.store';
 import { GstApplicability, GstSupplyType } from '../masters/masters.models';
 import { SecondaryMasterModalService } from '../masters/secondary-master-modal.service';
+import { EditLogModalService } from '../statutory/edit-log-modal.service';
 import {
   BomAdditionalCostRuleDto,
   BomComponentDto,
@@ -140,6 +141,16 @@ interface EditableBomCostRuleRow {
         <header class="mc-si-card-head">
           <span>{{ editingId() ? 'Stock Item Alteration' : 'Stock Item Creation' }}</span>
           <div class="mc-si-head-actions">
+            @if (editingId(); as edItemId) {
+              <button
+                type="button"
+                class="mc-btn"
+                data-testid="stock-item-edit-log-btn"
+                (click)="openStockItemEditLog(edItemId)"
+              >
+                Edit Log (<span class="mc-key-alt">Q</span>)
+              </button>
+            }
             <button
               type="button"
               class="mc-btn"
@@ -1231,6 +1242,7 @@ export class StockItemWorkbenchComponent implements OnInit {
   readonly coaStore = inject(ChartOfAccountsStore);
   readonly companyContext = inject(CompanyContextStore);
   private readonly secondaryModal = inject(SecondaryMasterModalService);
+  private readonly editLogModal = inject(EditLogModalService);
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
   private readonly navStack = inject(NavigationStackStore);
   private readonly route = inject(ActivatedRoute);
@@ -1426,7 +1438,29 @@ export class StockItemWorkbenchComponent implements OnInit {
         !this.secondaryModal.isOpen() &&
         (!this.navStack.hasOverlays() || this.embeddedOverlay()),
     );
-    this.destroyRef.onDestroy(dispose);
+    const disposeEditLog = this.shortcutRegistry.bindHandler(
+      'audit.editLog',
+      'SCREEN',
+      () => {
+        const itemId = this.editingId();
+        if (itemId) {
+          this.openStockItemEditLog(itemId);
+        }
+      },
+      () => Boolean(this.editingId()) && !this.bomModalOpen(),
+    );
+    this.destroyRef.onDestroy(() => {
+      dispose();
+      disposeEditLog();
+    });
+  }
+
+  openStockItemEditLog(itemId: string): void {
+    this.editLogModal.open({
+      entityType: 'STOCK_ITEM',
+      entityId: itemId,
+      entityLabel: this.name.trim() || itemId,
+    });
   }
 
   onStockGroupSelected(opt: TypeaheadOption): void {

@@ -82,8 +82,23 @@ export const GATEWAY_MENU_ITEMS: readonly GatewayMenuItem[] = [
     directRoute: '/app/reports/stock-summary',
   },
   { key: 'R', section: 'REPORTS', prefixText: '', mnemonicChar: 'R', suffixText: 'atio Analysis', panelId: 'ratios' },
-  { key: 'D', section: 'REPORTS', prefixText: '', mnemonicChar: 'D', suffixText: 'isplay More Reports', panelId: 'more-reports' },
-  { key: 'O', section: 'REPORTS', prefixText: 'Dashb', mnemonicChar: 'O', suffixText: 'ard', panelId: 'dashboard' },
+  {
+    key: 'D',
+    section: 'REPORTS',
+    prefixText: '',
+    mnemonicChar: 'D',
+    suffixText: 'isplay More Reports',
+    panelId: 'more-reports',
+  },
+  {
+    key: 'O',
+    section: 'REPORTS',
+    prefixText: 'Statut',
+    mnemonicChar: 'O',
+    suffixText: 'ry Reports (GST / IMS / TDS)',
+    panelId: 'statutory-reports',
+    directRoute: '/app/statutory/gstr1',
+  },
 ];
 
 @Component({
@@ -99,6 +114,9 @@ export const GATEWAY_MENU_ITEMS: readonly GatewayMenuItem[] = [
           <h2>Active Books Context</h2>
           <div class="mc-gateway-quick-links">
             <a routerLink="/app/vouchers/new" class="mc-btn">New Voucher</a>
+            <a routerLink="/app/statutory/gstr1" class="mc-btn">GSTR-1</a>
+            <a routerLink="/app/statutory/gstr3b" class="mc-btn">GSTR-3B</a>
+            <a routerLink="/app/statutory/ims" class="mc-btn">IMS</a>
             <a routerLink="/app/approvals" class="mc-btn">Approvals</a>
             <a routerLink="/app/companies" class="mc-btn">Company Hub (F3)</a>
             <a routerLink="/app/admin" class="mc-btn">Security &amp; Audit</a>

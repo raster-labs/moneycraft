@@ -27,6 +27,7 @@ import {
   CreateOrUpdateAccountGroupPayload,
   PurchaseAllocationMethod,
 } from './masters.models';
+import { EditLogModalService } from '../statutory/edit-log-modal.service';
 import { SecondaryMasterModalService } from './secondary-master-modal.service';
 
 @Component({
@@ -57,6 +58,16 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
             }
           </div>
           <div class="mc-workbench-header-btns">
+            @if (editingGroup(); as edGrp) {
+              <button
+                type="button"
+                class="mc-btn"
+                data-testid="group-edit-log-btn"
+                (click)="openGroupEditLog(edGrp)"
+              >
+                Edit Log (<span class="mc-key-alt">Q</span>)
+              </button>
+            }
             <button type="button" class="mc-btn" (click)="startCreateGroup()">+ New Group</button>
             <a routerLink="/app/coa" class="mc-btn">Chart of Accounts</a>
           </div>
@@ -503,6 +514,7 @@ export class GroupWorkbenchComponent implements OnInit {
 
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
   private readonly secondaryMasterModal = inject(SecondaryMasterModalService);
+  private readonly editLogModal = inject(EditLogModalService);
   private readonly navStack = inject(NavigationStackStore);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
@@ -568,6 +580,17 @@ export class GroupWorkbenchComponent implements OnInit {
         },
         () => Boolean(this.editingGroup() && !this.editingGroup()!.isSystemGroup),
       ),
+      this.shortcutRegistry.bindHandler(
+        'audit.editLog',
+        scope,
+        () => {
+          const grp = this.editingGroup();
+          if (grp) {
+            this.openGroupEditLog(grp);
+          }
+        },
+        () => Boolean(this.editingGroup()),
+      ),
       this.navStack.registerDraftLifecycleHooks(
         () => ({
           name: this.formName(),
@@ -613,6 +636,14 @@ export class GroupWorkbenchComponent implements OnInit {
     }
 
     this.startCreateGroup();
+  }
+
+  openGroupEditLog(group: AccountGroup): void {
+    this.editLogModal.open({
+      entityType: 'ACCOUNT_GROUP',
+      entityId: group.id,
+      entityLabel: group.name,
+    });
   }
 
   onFieldEdit(field: 'name' | 'alias', value: string): void {

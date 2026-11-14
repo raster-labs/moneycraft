@@ -138,6 +138,63 @@ const REPORTS_CHILD_ROUTES: Routes = [
   },
 ];
 
+const STATUTORY_CHILD_ROUTES: Routes = [
+  {
+    path: 'gstr1',
+    loadComponent: () =>
+      import('./features/statutory/gstr1-dashboard.component').then(
+        (m) => m.Gstr1DashboardComponent,
+      ),
+  },
+  {
+    path: 'gstr3b',
+    loadComponent: () =>
+      import('./features/statutory/gstr3b-dashboard.component').then(
+        (m) => m.Gstr3bDashboardComponent,
+      ),
+  },
+  {
+    path: 'gstr9',
+    loadComponent: () =>
+      import('./features/statutory/gstr9-dashboard.component').then(
+        (m) => m.Gstr9DashboardComponent,
+      ),
+  },
+  {
+    path: 'ims',
+    loadComponent: () =>
+      import('./features/statutory/ims-workbench.component').then(
+        (m) => m.ImsWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'einvoice',
+    loadComponent: () =>
+      import('./features/statutory/einvoice-workbench.component').then(
+        (m) => m.EinvoiceWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'tds-26q',
+    loadComponent: () =>
+      import('./features/statutory/tds-26q-workbench.component').then(
+        (m) => m.Tds26qWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'gst-registrations',
+    loadComponent: () =>
+      import('./features/statutory/gst-registration-workbench.component').then(
+        (m) => m.GstRegistrationWorkbenchComponent,
+      ),
+  },
+  {
+    path: '',
+    pathMatch: 'full',
+    redirectTo: 'gstr1',
+  },
+];
+
 export const APP_ROUTES: Routes = [
   {
     path: 'setup',
@@ -225,6 +282,13 @@ export const APP_ROUTES: Routes = [
     children: REPORTS_CHILD_ROUTES,
   },
   {
+    path: 'statutory',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: STATUTORY_CHILD_ROUTES,
+  },
+  {
     path: 'companies',
     canActivate: [authenticatedGuard],
     loadComponent: () =>
@@ -298,6 +362,10 @@ export const APP_ROUTES: Routes = [
       {
         path: 'reports',
         children: REPORTS_CHILD_ROUTES,
+      },
+      {
+        path: 'statutory',
+        children: STATUTORY_CHILD_ROUTES,
       },
       {
         path: 'companies',

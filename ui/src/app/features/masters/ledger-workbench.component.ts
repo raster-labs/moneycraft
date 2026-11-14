@@ -41,6 +41,7 @@ import {
   TDS_NATURE_SECTIONS,
   resolveGroupLineageFlags,
 } from './masters.models';
+import { EditLogModalService } from '../statutory/edit-log-modal.service';
 import { SecondaryMasterModalService } from './secondary-master-modal.service';
 
 @Component({
@@ -74,6 +75,16 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
             }
           </div>
           <div class="mc-ledger-header-btns">
+            @if (editingLedger(); as edLed) {
+              <button
+                type="button"
+                class="mc-btn"
+                data-testid="ledger-edit-log-btn"
+                (click)="openLedgerEditLog(edLed)"
+              >
+                Edit Log (<span class="mc-key-alt">Q</span>)
+              </button>
+            }
             <button type="button" class="mc-btn" (click)="startCreateLedger()">+ New Ledger</button>
             <a routerLink="/app/coa" class="mc-btn">Chart of Accounts</a>
           </div>
@@ -1085,6 +1096,7 @@ export class LedgerWorkbenchComponent implements OnInit {
 
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
   private readonly secondaryMasterModal = inject(SecondaryMasterModalService);
+  private readonly editLogModal = inject(EditLogModalService);
   private readonly navStack = inject(NavigationStackStore);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
@@ -1202,6 +1214,17 @@ export class LedgerWorkbenchComponent implements OnInit {
         },
         () => Boolean(this.editingLedger() && !this.editingLedger()!.isSystemLedger),
       ),
+      this.shortcutRegistry.bindHandler(
+        'audit.editLog',
+        scope,
+        () => {
+          const led = this.editingLedger();
+          if (led) {
+            this.openLedgerEditLog(led);
+          }
+        },
+        () => Boolean(this.editingLedger()),
+      ),
       this.navStack.registerDraftLifecycleHooks(
         () => ({
           name: this.formName(),
@@ -1252,6 +1275,14 @@ export class LedgerWorkbenchComponent implements OnInit {
     }
 
     this.startCreateLedger();
+  }
+
+  openLedgerEditLog(ledger: Ledger): void {
+    this.editLogModal.open({
+      entityType: 'LEDGER',
+      entityId: ledger.id,
+      entityLabel: ledger.name,
+    });
   }
 
   groupNameById(groupId: string | null, fallback?: string | null): string {

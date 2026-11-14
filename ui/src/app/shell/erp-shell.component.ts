@@ -30,6 +30,15 @@ import { VoucherBaseCategory } from '../features/masters/masters.models';
 import { SecondaryMasterModalComponent } from '../features/masters/secondary-master-modal.component';
 import { SECONDARY_MASTER_ROUTE_TOKEN } from '../features/masters/secondary-master-modal.service';
 import { VoucherTypeWorkbenchComponent } from '../features/masters/voucher-type-workbench.component';
+import { EDIT_LOG_ROUTE_TOKEN } from '../features/statutory/edit-log-modal.service';
+import { EditLogRedlineModalComponent } from '../features/statutory/edit-log-redline-modal.component';
+import { EinvoiceWorkbenchComponent } from '../features/statutory/einvoice-workbench.component';
+import { GstRegistrationWorkbenchComponent } from '../features/statutory/gst-registration-workbench.component';
+import { Gstr1DashboardComponent } from '../features/statutory/gstr1-dashboard.component';
+import { Gstr3bDashboardComponent } from '../features/statutory/gstr3b-dashboard.component';
+import { Gstr9DashboardComponent } from '../features/statutory/gstr9-dashboard.component';
+import { ImsWorkbenchComponent } from '../features/statutory/ims-workbench.component';
+import { Tds26qWorkbenchComponent } from '../features/statutory/tds-26q-workbench.component';
 import { ApprovalQueueComponent } from '../features/vouchers/approval-queue.component';
 import { DayBookComponent } from '../features/vouchers/day-book.component';
 import { VoucherGridComponent } from '../features/vouchers/voucher-grid.component';
@@ -56,6 +65,7 @@ import { SmartFindStore } from '../state/smart-find.store';
     GoToPaletteComponent,
     SmartFindModalComponent,
     SecondaryMasterModalComponent,
+    EditLogRedlineModalComponent,
     CoaExplorerComponent,
     MastersHubComponent,
     GroupWorkbenchComponent,
@@ -69,6 +79,13 @@ import { SmartFindStore } from '../state/smart-find.store';
     StockItemWorkbenchComponent,
     PriceListWorkbenchComponent,
     StockSummaryComponent,
+    Gstr1DashboardComponent,
+    Gstr3bDashboardComponent,
+    Gstr9DashboardComponent,
+    ImsWorkbenchComponent,
+    EinvoiceWorkbenchComponent,
+    Tds26qWorkbenchComponent,
+    GstRegistrationWorkbenchComponent,
     VoucherGridComponent,
     DayBookComponent,
     ApprovalQueueComponent,
@@ -340,6 +357,48 @@ import { SmartFindStore } from '../state/smart-find.store';
                   @case ('/approvals') {
                     <mc-approval-queue [embeddedOverlay]="true" />
                   }
+                  @case ('/app/statutory/gstr1') {
+                    <mc-gstr1-dashboard />
+                  }
+                  @case ('/statutory/gstr1') {
+                    <mc-gstr1-dashboard />
+                  }
+                  @case ('/app/statutory/gstr3b') {
+                    <mc-gstr3b-dashboard />
+                  }
+                  @case ('/statutory/gstr3b') {
+                    <mc-gstr3b-dashboard />
+                  }
+                  @case ('/app/statutory/gstr9') {
+                    <mc-gstr9-dashboard />
+                  }
+                  @case ('/statutory/gstr9') {
+                    <mc-gstr9-dashboard />
+                  }
+                  @case ('/app/statutory/ims') {
+                    <mc-ims-workbench />
+                  }
+                  @case ('/statutory/ims') {
+                    <mc-ims-workbench />
+                  }
+                  @case ('/app/statutory/einvoice') {
+                    <mc-einvoice-workbench />
+                  }
+                  @case ('/statutory/einvoice') {
+                    <mc-einvoice-workbench />
+                  }
+                  @case ('/app/statutory/tds-26q') {
+                    <mc-tds-26q-workbench />
+                  }
+                  @case ('/statutory/tds-26q') {
+                    <mc-tds-26q-workbench />
+                  }
+                  @case ('/app/statutory/gst-registrations') {
+                    <mc-gst-registration-workbench />
+                  }
+                  @case ('/statutory/gst-registrations') {
+                    <mc-gst-registration-workbench />
+                  }
                   @default {
                     <p>
                       Non-destructive <strong>Go To</strong> view suspended above your previous screen
@@ -380,6 +439,7 @@ import { SmartFindStore } from '../state/smart-find.store';
       />
       <mc-smart-find-modal />
       <mc-secondary-master-modal />
+      <mc-edit-log-redline-modal />
 
       @if (workingDateModalOpen()) {
         <div class="mc-modal-backdrop" role="dialog" aria-modal="true" aria-label="Change Current Date (F2)">
@@ -910,7 +970,11 @@ export class ErpShellComponent implements OnInit {
   draftPeriodTo = '2026-03-31';
 
   readonly goToOverlayFrames = computed(() =>
-    this.navStack.frames().filter((f) => f.route !== SECONDARY_MASTER_ROUTE_TOKEN),
+    this.navStack
+      .frames()
+      .filter(
+        (f) => f.route !== SECONDARY_MASTER_ROUTE_TOKEN && f.route !== EDIT_LOG_ROUTE_TOKEN,
+      ),
   );
 
   readonly rightRailItems = computed<readonly FunctionBarButtonItem[]>(() => [
@@ -940,6 +1004,8 @@ export class ErpShellComponent implements OnInit {
     { commandId: 'voucher.autofill', keycap: 'F', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Autofill' },
     { commandId: 'register.duplicateVoucher', keycap: '2', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Duplicate' },
     { commandId: 'register.cancelVoucher', keycap: 'X', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Cancel Vch' },
+    { commandId: 'voucher.taxAnalysis', keycap: 'I', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Tax Analysis' },
+    { commandId: 'report.exceptions', keycap: 'J', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Exceptions' },
     { commandId: 'audit.editLog', keycap: 'Q', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Edit Log' },
     { commandId: 'report.toggleDetailed', keycap: 'F1', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Detailed' },
   ]);

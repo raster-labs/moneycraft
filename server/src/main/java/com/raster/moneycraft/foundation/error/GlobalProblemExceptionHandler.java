@@ -425,6 +425,30 @@ public class GlobalProblemExceptionHandler {
                     )
                 );
             }
+            if (rawMsg.contains("MC-EDITLOG-IMMUTABLE") || rawMsg.contains("trg_mc_edit_log_immutable")) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.FORBIDDEN,
+                        "MC-EDITLOG-IMMUTABLE",
+                        "MCA Edit Log Version Immutable",
+                        "MCA Rule 3(1) edit log versions are strictly append-only and cannot be modified or deleted.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("chk_mc_ims_inward_rel72_remarks")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-IMS-REMARKS-REQUIRED",
+                        "IMS Remarks Mandatory",
+                        "Remarks are mandatory when rejecting an IMS invoice or reducing eligible ITC.",
+                        request.getRequestURI(),
+                        Map.of("remarks", "Remarks required for REJECT or partial ITC reduction")
+                    )
+                );
+            }
             if (ex instanceof org.springframework.dao.DataIntegrityViolationException
                 && (rawMsg.contains("violates foreign key constraint") || rawMsg.contains("still referenced"))) {
                 return ResponseEntity.status(HttpStatus.CONFLICT).contentType(PROBLEM_JSON).body(

@@ -73,6 +73,20 @@ class ArchUnitModuleBoundaryTest {
     }
 
     @Test
+    void statutoryMustNotDependOnDownstreamBankingReportingMigrationOrExchangeContexts() {
+        ArchRule rule = ArchRuleDefinition.noClasses()
+            .that().resideInAPackage("com.raster.moneycraft.statutory..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage(
+                "com.raster.moneycraft.banking..",
+                "com.raster.moneycraft.reporting..",
+                "com.raster.moneycraft.migration..",
+                "com.raster.moneycraft.exchange.."
+            );
+        rule.check(serverClasses);
+    }
+
+    @Test
     void opsMustNotDependOnBusinessAccountingContexts() {
         ArchRule rule = ArchRuleDefinition.noClasses()
             .that().resideInAPackage("com.raster.moneycraft.ops..")

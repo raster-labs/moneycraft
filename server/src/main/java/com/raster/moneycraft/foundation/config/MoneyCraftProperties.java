@@ -245,6 +245,12 @@ public class MoneyCraftProperties {
     public static class Connector {
         private boolean enabled;
         private List<String> egressHostnameAllowlist = new ArrayList<>();
+        private boolean allowLoopbackHttp;
+        private String einvoiceBaseUrl = "https://einvoice1.gst.gov.in";
+        private String ewayBillBaseUrl = "https://ewaybillgst.gov.in";
+        private String imsBaseUrl = "https://services.gst.gov.in";
+        private String clientId = "MC-STATUTORY-CLIENT";
+        private String clientSecret = "MC-STATUTORY-SECRET";
 
         public boolean isEnabled() {
             return enabled;
@@ -260,6 +266,54 @@ public class MoneyCraftProperties {
 
         public void setEgressHostnameAllowlist(List<String> egressHostnameAllowlist) {
             this.egressHostnameAllowlist = egressHostnameAllowlist;
+        }
+
+        public boolean isAllowLoopbackHttp() {
+            return allowLoopbackHttp;
+        }
+
+        public void setAllowLoopbackHttp(boolean allowLoopbackHttp) {
+            this.allowLoopbackHttp = allowLoopbackHttp;
+        }
+
+        public String getEinvoiceBaseUrl() {
+            return einvoiceBaseUrl;
+        }
+
+        public void setEinvoiceBaseUrl(String einvoiceBaseUrl) {
+            this.einvoiceBaseUrl = einvoiceBaseUrl;
+        }
+
+        public String getEwayBillBaseUrl() {
+            return ewayBillBaseUrl;
+        }
+
+        public void setEwayBillBaseUrl(String ewayBillBaseUrl) {
+            this.ewayBillBaseUrl = ewayBillBaseUrl;
+        }
+
+        public String getImsBaseUrl() {
+            return imsBaseUrl;
+        }
+
+        public void setImsBaseUrl(String imsBaseUrl) {
+            this.imsBaseUrl = imsBaseUrl;
+        }
+
+        public String getClientId() {
+            return clientId;
+        }
+
+        public void setClientId(String clientId) {
+            this.clientId = clientId;
+        }
+
+        public String getClientSecret() {
+            return clientSecret;
+        }
+
+        public void setClientSecret(String clientSecret) {
+            this.clientSecret = clientSecret;
         }
     }
 }

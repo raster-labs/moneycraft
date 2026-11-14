@@ -20,6 +20,7 @@ export interface MasterCatalogEntry {
   readonly category:
     | 'Accounting Masters'
     | 'Inventory Masters'
+    | 'Statutory Masters'
     | 'Cost & Multi-Currency'
     | 'Chart & Hierarchy';
   readonly label: string;
@@ -136,6 +137,14 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'Hierarchical profit/cost units under Primary or custom Cost Categories',
     route: '/app/masters/cost-centres',
     badge: 'CENTRE',
+  },
+  {
+    id: 'gst-registration',
+    category: 'Statutory Masters',
+    label: 'GST Registration (Multi-GSTIN)',
+    description: 'State-wise GSTIN registrations, LUT/Bond validity, e-Invoice & e-Way Bill thresholds',
+    route: '/app/statutory/gst-registrations',
+    badge: 'MULTI-GSTIN',
   },
   {
     id: 'coa-explorer',

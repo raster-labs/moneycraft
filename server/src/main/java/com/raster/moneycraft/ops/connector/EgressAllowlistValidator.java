@@ -38,7 +38,11 @@ public class EgressAllowlistValidator {
                 "Outbound connector target URI must contain a valid hostname."
             );
         }
-        if (!"https".equalsIgnoreCase(targetUri.getScheme())) {
+        String normalizedHost = targetUri.getHost().trim().toLowerCase(Locale.ROOT);
+        boolean permittedLoopbackHttp = "http".equalsIgnoreCase(targetUri.getScheme())
+            && properties.getConnector().isAllowLoopbackHttp()
+            && ("127.0.0.1".equals(normalizedHost) || "localhost".equals(normalizedHost));
+        if (!"https".equalsIgnoreCase(targetUri.getScheme()) && !permittedLoopbackHttp) {
             throw new MoneyCraftException(
                 HttpStatus.FORBIDDEN,
                 "MC-CONNECTOR-TLS-REQUIRED",
@@ -47,7 +51,6 @@ public class EgressAllowlistValidator {
             );
         }
 
-        String normalizedHost = targetUri.getHost().trim().toLowerCase(Locale.ROOT);
         Set<String> allowlist = properties.getConnector().getEgressHostnameAllowlist().stream()
             .filter(h -> h != null && !h.isBlank())
             .map(h -> h.trim().toLowerCase(Locale.ROOT))

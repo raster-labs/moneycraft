@@ -43,6 +43,14 @@ import {
 import { InventoryService } from '../inventory/inventory.service';
 import { InventoryStore } from '../inventory/inventory.store';
 import { SecondaryMasterModalService } from '../masters/secondary-master-modal.service';
+import { EditLogModalService } from '../statutory/edit-log-modal.service';
+import {
+  GstComputePreviewResponse,
+  GstLineBreakupDto,
+  GstSlabTotalDto,
+  GstSuggestedTaxLineDto,
+} from '../statutory/statutory.models';
+import { StatutoryService } from '../statutory/statutory.service';
 import { BankAllocationPopoverComponent } from './bank-allocation-popover.component';
 import { BillWisePopoverComponent } from './bill-wise-popover.component';
 import { CostAllocationPopoverComponent } from './cost-allocation-popover.component';
@@ -281,6 +289,24 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
             >
               <span class="mc-key-ctrl">L</span>: {{ postingNature() === 'OPTIONAL' ? 'Regular' : 'Optional' }}
             </button>
+            <button
+              type="button"
+              class="mc-btn"
+              data-testid="btn-tax-analysis"
+              (click)="openTaxAnalysisModal()"
+            >
+              <span class="mc-key-ctrl">I</span>: Tax Analysis
+            </button>
+            @if (editingVoucherId()) {
+              <button
+                type="button"
+                class="mc-btn"
+                data-testid="btn-voucher-edit-log"
+                (click)="openVoucherEditLog()"
+              >
+                <span class="mc-key-alt">Q</span>: Edit Log
+              </button>
+            }
             <button
               type="button"
               class="mc-btn"
@@ -1549,6 +1575,120 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
           </div>
         </div>
       }
+
+      <!-- ======================================================================= -->
+      <!-- Ctrl+I GST — Tax Analysis & Auto-GST Helper Modal                       -->
+      <!-- ======================================================================= -->
+      @if (taxAnalysisModalOpen()) {
+        <div
+          class="mc-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="tax-analysis-modal"
+          aria-label="GST Tax Analysis (Ctrl+I)"
+          (keydown.escape)="taxAnalysisModalOpen.set(false)"
+        >
+          <div class="mc-modal-dialog mc-vch-tax-modal">
+            <div class="mc-modal-header">
+              <span>
+                GST — Tax Analysis (<span class="mc-key-ctrl">I</span>)
+                @if (taxAnalysisResult(); as tx) {
+                  &bull; {{ tx.supplyNature }} ({{ tx.companyStateCode }} &#x2192; {{ tx.placeOfSupplyState }})
+                }
+              </span>
+              <button type="button" class="mc-btn" (click)="taxAnalysisModalOpen.set(false)">
+                Esc
+              </button>
+            </div>
+
+            @if (taxAnalysisLoading()) {
+              <div class="mc-vch-tax-state">Computing 6-tier HSN &amp; GST slab breakup...</div>
+            } @else if (taxAnalysisResult(); as tx) {
+              <div class="mc-vch-tax-body">
+                <div class="mc-vch-tax-kpis">
+                  <div>
+                    <span>Assessable Value:</span>
+                    <strong class="mc-amount">{{ tx.totalAssessableValue | mcIndianCurrency }}</strong>
+                  </div>
+                  <div>
+                    <span>CGST:</span>
+                    <strong class="mc-amount">{{ tx.totalCgst | mcIndianCurrency }}</strong>
+                  </div>
+                  <div>
+                    <span>SGST:</span>
+                    <strong class="mc-amount">{{ tx.totalSgst | mcIndianCurrency }}</strong>
+                  </div>
+                  <div>
+                    <span>IGST:</span>
+                    <strong class="mc-amount">{{ tx.totalIgst | mcIndianCurrency }}</strong>
+                  </div>
+                  <div>
+                    <span>Total GST:</span>
+                    <strong class="mc-amount" data-testid="tax-analysis-total-tax">
+                      {{ tx.totalTax | mcIndianCurrency }}
+                    </strong>
+                  </div>
+                </div>
+
+                <table class="mc-table" data-testid="tax-analysis-breakup-table">
+                  <thead>
+                    <tr>
+                      <th>Particulars</th>
+                      <th>HSN / SAC</th>
+                      <th class="mc-text-right">Rate %</th>
+                      <th class="mc-text-right">Assessable</th>
+                      <th class="mc-text-right">CGST</th>
+                      <th class="mc-text-right">SGST</th>
+                      <th class="mc-text-right">IGST</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (b of tx.lineBreakups; track b.description + (b.hsnSacCode ?? '')) {
+                      <tr>
+                        <td>{{ b.description }}</td>
+                        <td>
+                          @if (b.hsnSacCode) {
+                            <mc-code-badge [code]="b.hsnSacCode" />
+                          } @else {
+                            —
+                          }
+                        </td>
+                        <td class="mc-amount mc-text-right">{{ b.gstRatePct }}%</td>
+                        <td class="mc-amount mc-text-right">{{ b.assessableValue | mcIndianCurrency }}</td>
+                        <td class="mc-amount mc-text-right">{{ b.cgstAmount | mcIndianCurrency }}</td>
+                        <td class="mc-amount mc-text-right">{{ b.sgstAmount | mcIndianCurrency }}</td>
+                        <td class="mc-amount mc-text-right">{{ b.igstAmount | mcIndianCurrency }}</td>
+                      </tr>
+                    } @empty {
+                      <tr>
+                        <td colspan="7" class="mc-vch-tax-empty">
+                          Enter taxable item or ledger lines to preview GST computation.
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="mc-modal-footer">
+                @if (tx.suggestedTaxLines.length > 0) {
+                  <button
+                    type="button"
+                    class="mc-btn mc-btn-primary"
+                    data-testid="apply-suggested-gst-btn"
+                    (click)="applySuggestedGstLines(tx)"
+                  >
+                    Auto-Fill GST Duty Lines
+                  </button>
+                }
+                <button type="button" class="mc-btn" (click)="taxAnalysisModalOpen.set(false)">
+                  Close (Esc)
+                </button>
+              </div>
+            }
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: `
@@ -2120,6 +2260,39 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
       font-size: var(--mc-font-size-xs);
       font-weight: 700;
     }
+
+    .mc-vch-tax-modal {
+      width: min(760px, 95vw);
+    }
+
+    .mc-vch-tax-state,
+    .mc-vch-tax-empty {
+      padding: 1.1rem;
+      text-align: center;
+      font-size: var(--mc-font-size-sm);
+      color: var(--mc-color-slate-600);
+      font-weight: 500;
+    }
+
+    .mc-vch-tax-body {
+      padding: var(--mc-space-3);
+      display: flex;
+      flex-direction: column;
+      gap: var(--mc-space-3);
+      max-height: 62vh;
+      overflow-y: auto;
+    }
+
+    .mc-vch-tax-kpis {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--mc-space-4);
+      padding: var(--mc-space-2) var(--mc-space-3);
+      background: var(--mc-color-canvas);
+      border: var(--mc-border-subtle);
+      border-radius: var(--mc-radius-xs);
+      font-size: var(--mc-font-size-xs);
+    }
   `,
 })
 export class VoucherGridComponent implements OnInit {
@@ -2127,6 +2300,8 @@ export class VoucherGridComponent implements OnInit {
   readonly coaStore = inject(ChartOfAccountsStore);
   readonly inventoryStore = inject(InventoryStore);
   private readonly inventoryService = inject(InventoryService);
+  private readonly statutoryService = inject(StatutoryService);
+  private readonly editLogModal = inject(EditLogModalService);
   private readonly voucherService = inject(VoucherService);
   private readonly secondaryMasterModal = inject(SecondaryMasterModalService);
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
@@ -2220,6 +2395,9 @@ export class VoucherGridComponent implements OnInit {
   readonly otherVouchersModalOpen = signal<boolean>(false);
   readonly otherVouchersQuery = signal<string>('');
   readonly otherVouchersHighlightIdx = signal<number>(0);
+  readonly taxAnalysisModalOpen = signal<boolean>(false);
+  readonly taxAnalysisLoading = signal<boolean>(false);
+  readonly taxAnalysisResult = signal<GstComputePreviewResponse | null>(null);
 
   readonly saving = signal<boolean>(false);
   readonly errorBanner = signal<string | null>(null);
@@ -2597,6 +2775,7 @@ export class VoucherGridComponent implements OnInit {
       !this.acceptPromptOpen() &&
       !this.changeModeModalOpen() &&
       !this.otherVouchersModalOpen() &&
+      !this.taxAnalysisModalOpen() &&
       (!this.navStack.hasOverlays() || this.embeddedOverlay());
 
     const disposers: (() => void)[] = [
@@ -2723,6 +2902,22 @@ export class VoucherGridComponent implements OnInit {
         'SCREEN',
         () => {
           void this.cancelLoadedVoucher();
+        },
+        () => noModalGuard() && Boolean(this.editingVoucherId()),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.taxAnalysis',
+        'SCREEN',
+        () => {
+          void this.openTaxAnalysisModal();
+        },
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'audit.editLog',
+        'SCREEN',
+        () => {
+          this.openVoucherEditLog();
         },
         () => noModalGuard() && Boolean(this.editingVoucherId()),
       ),
@@ -4998,5 +5193,315 @@ export class VoucherGridComponent implements OnInit {
     if (typeof s['bomManufacturingMode'] === 'boolean') {
       this.bomManufacturingMode.set(s['bomManufacturingMode']);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phase 5: MCA Edit Log (`Alt+Q`) & Live GST Tax Analysis (`Ctrl+I`)
+  // ---------------------------------------------------------------------------
+
+  openVoucherEditLog(): void {
+    const vid = this.editingVoucherId();
+    if (!vid) {
+      return;
+    }
+    this.editLogModal.open({
+      entityType: 'VOUCHER',
+      entityId: vid,
+      entityLabel: `${this.activeVoucherTypeName()} #${this.voucherNumber() || '1'}`,
+    });
+  }
+
+  async openTaxAnalysisModal(): Promise<void> {
+    this.taxAnalysisModalOpen.set(true);
+    this.taxAnalysisLoading.set(true);
+    const companyId = this.companyContext.activeCompany()?.id;
+
+    try {
+      if (companyId) {
+        const previewReq = this.buildSafePreviewRequest();
+        const res = await this.statutoryService.computeGstPreview(companyId, previewReq);
+        this.taxAnalysisResult.set(res);
+      } else {
+        this.taxAnalysisResult.set(this.computeClientSideGstFallback());
+      }
+    } catch {
+      this.taxAnalysisResult.set(this.computeClientSideGstFallback());
+    } finally {
+      this.taxAnalysisLoading.set(false);
+    }
+  }
+
+  private buildSafePreviewRequest(): UpsertVoucherRequest {
+    try {
+      return this.buildUpsertRequest('SAVE_DRAFT');
+    } catch {
+      return {
+        voucherTypeId: this.activeVoucherTypeId() ?? undefined,
+        voucherTypeName: this.activeVoucherTypeName(),
+        voucherNumber: this.voucherNumber().trim() || null,
+        voucherDate: this.voucherDate(),
+        persistedView: this.persistedView(),
+        postingNature: this.postingNature(),
+        action: 'SAVE_DRAFT',
+        partyLedgerId: this.partyLedgerId(),
+        accountingLedgerId: this.accountingLedgerId(),
+        placeOfSupplyState: this.placeOfSupplyState() || null,
+        partyGstin: this.partyGstin(),
+        partyStateCode: this.partyStateCode(),
+        isReverseCharge: this.isReverseCharge(),
+        narration: this.narration().trim(),
+        lines: [],
+      };
+    }
+  }
+
+  private computeClientSideGstFallback(): GstComputePreviewResponse {
+    const companyState = this.companyContext.activeCompany()?.stateCode || '33';
+    const posState = this.placeOfSupplyState() || this.partyStateCode() || companyState;
+    const isIntra = posState === companyState;
+    const hundred = ExactDecimal.fromInt(100, 4);
+    const two = ExactDecimal.fromInt(2, 4);
+
+    const accLedger = this.coaStore
+      .ledgers()
+      .find((l) => l.id === this.accountingLedgerId());
+
+    const breakups: GstLineBreakupDto[] = [];
+    const slabAcc = new Map<
+      string,
+      {
+        assessable: ExactDecimal;
+        cgst: ExactDecimal;
+        sgst: ExactDecimal;
+        igst: ExactDecimal;
+        cess: ExactDecimal;
+      }
+    >();
+
+    if (this.persistedView() === 'ITEM_INVOICE') {
+      for (const row of this.itemHookRows()) {
+        if (!row.stockItemId) continue;
+        const item = this.inventoryStore.stockItems().find((i) => i.id === row.stockItemId);
+        const grp = item?.stockGroupId
+          ? this.inventoryStore.stockGroups().find((g) => g.id === item.stockGroupId)
+          : undefined;
+
+        const rateStr =
+          item?.gstRatePct ?? grp?.gstRatePct ?? accLedger?.gstRatePct ?? '0';
+        const cessStr = item?.cessRatePct ?? grp?.cessRatePct ?? '0';
+        const hsn = item?.hsnSacCode ?? grp?.hsnSacCode ?? accLedger?.hsnSacCode ?? null;
+        const rateDec = ExactDecimal.tryParse(rateStr, 4, 'HALF_UP') ?? ExactDecimal.zero(4);
+        const cessDec = ExactDecimal.tryParse(cessStr, 4, 'HALF_UP') ?? ExactDecimal.zero(4);
+
+        let assessable = ExactDecimal.tryParse(row.amount || '0', 2, 'HALF_UP') ?? ExactDecimal.zero(2);
+        let deemedMrp = false;
+        const effectiveMrp = row.declaredMrp || item?.mrpPerUnit || null;
+        if ((row.isTobaccoMrpItem || item?.isTobaccoMrpItem) && effectiveMrp) {
+          const mrp = ExactDecimal.tryParse(effectiveMrp, 4, 'HALF_UP');
+          const qty = ExactDecimal.tryParse(row.billedQty || row.actualQty || row.quantity || '0', 4, 'HALF_UP');
+          if (mrp && qty && mrp.isPositive() && qty.isPositive()) {
+            const denom = hundred.add(rateDec, 4).add(cessDec, 4);
+            assessable = mrp.mulScaled(qty, 6, 'HALF_UP').mulScaled(hundred, 6, 'HALF_UP').divHalfUp(denom, 2);
+            deemedMrp = true;
+          }
+        }
+
+        const totalGstRateAmt = assessable.mulScaled(rateDec, 6, 'HALF_UP').divHalfUp(hundred, 2);
+        const halfRate = rateDec.divHalfUp(two, 4);
+        const cgst = isIntra
+          ? assessable.mulScaled(halfRate, 6, 'HALF_UP').divHalfUp(hundred, 2)
+          : ExactDecimal.zero(2);
+        const sgst = isIntra ? cgst : ExactDecimal.zero(2);
+        const igst = isIntra ? ExactDecimal.zero(2) : totalGstRateAmt;
+        const cess = assessable.mulScaled(cessDec, 6, 'HALF_UP').divHalfUp(hundred, 2);
+        const lineTax = cgst.add(sgst, 2).add(igst, 2).add(cess, 2);
+
+        const rateKey = rateDec.toWireString(2);
+        breakups.push({
+          description: row.stockItemName || item?.name || 'Item',
+          hsnSacCode: hsn,
+          gstRatePct: rateKey,
+          cessRatePct: cessDec.toWireString(2),
+          assessableValue: assessable.toWireString(2),
+          cgstAmount: cgst.toWireString(2),
+          sgstAmount: sgst.toWireString(2),
+          igstAmount: igst.toWireString(2),
+          cessAmount: cess.toWireString(2),
+          totalTaxAmount: lineTax.toWireString(2),
+          isDeemedMrpValuation: deemedMrp,
+        });
+
+        const existing = slabAcc.get(rateKey) ?? {
+          assessable: ExactDecimal.zero(2),
+          cgst: ExactDecimal.zero(2),
+          sgst: ExactDecimal.zero(2),
+          igst: ExactDecimal.zero(2),
+          cess: ExactDecimal.zero(2),
+        };
+        slabAcc.set(rateKey, {
+          assessable: existing.assessable.add(assessable, 2),
+          cgst: existing.cgst.add(cgst, 2),
+          sgst: existing.sgst.add(sgst, 2),
+          igst: existing.igst.add(igst, 2),
+          cess: existing.cess.add(cess, 2),
+        });
+      }
+    } else {
+      for (const line of this.gridLines()) {
+        if (!line.ledgerId || line.lineRole === 'TAX' || line.lineRole === 'PARTY') continue;
+        const led = this.coaStore.ledgers().find((l) => l.id === line.ledgerId);
+        if (!led || led.taxType !== 'NONE') continue;
+        const rateStr = led.gstRatePct ?? '0';
+        const rateDec = ExactDecimal.tryParse(rateStr, 4, 'HALF_UP') ?? ExactDecimal.zero(4);
+        const assessable =
+          ExactDecimal.tryParse(line.amount || '0', 2, 'HALF_UP') ?? ExactDecimal.zero(2);
+        const halfRate = rateDec.divHalfUp(two, 4);
+        const cgst = isIntra
+          ? assessable.mulScaled(halfRate, 6, 'HALF_UP').divHalfUp(hundred, 2)
+          : ExactDecimal.zero(2);
+        const sgst = isIntra ? cgst : ExactDecimal.zero(2);
+        const igst = isIntra
+          ? ExactDecimal.zero(2)
+          : assessable.mulScaled(rateDec, 6, 'HALF_UP').divHalfUp(hundred, 2);
+        const rateKey = rateDec.toWireString(2);
+        breakups.push({
+          description: led.name,
+          hsnSacCode: led.hsnSacCode ?? null,
+          gstRatePct: rateKey,
+          assessableValue: assessable.toWireString(2),
+          cgstAmount: cgst.toWireString(2),
+          sgstAmount: sgst.toWireString(2),
+          igstAmount: igst.toWireString(2),
+          cessAmount: '0.00',
+          totalTaxAmount: cgst.add(sgst, 2).add(igst, 2).toWireString(2),
+        });
+        const existing = slabAcc.get(rateKey) ?? {
+          assessable: ExactDecimal.zero(2),
+          cgst: ExactDecimal.zero(2),
+          sgst: ExactDecimal.zero(2),
+          igst: ExactDecimal.zero(2),
+          cess: ExactDecimal.zero(2),
+        };
+        slabAcc.set(rateKey, {
+          assessable: existing.assessable.add(assessable, 2),
+          cgst: existing.cgst.add(cgst, 2),
+          sgst: existing.sgst.add(sgst, 2),
+          igst: existing.igst.add(igst, 2),
+          cess: existing.cess,
+        });
+      }
+    }
+
+    const slabTotals: GstSlabTotalDto[] = [];
+    let totAss = ExactDecimal.zero(2);
+    let totCgst = ExactDecimal.zero(2);
+    let totSgst = ExactDecimal.zero(2);
+    let totIgst = ExactDecimal.zero(2);
+    let totCess = ExactDecimal.zero(2);
+
+    for (const [rateKey, bucket] of slabAcc.entries()) {
+      const slabTax = bucket.cgst.add(bucket.sgst, 2).add(bucket.igst, 2).add(bucket.cess, 2);
+      slabTotals.push({
+        gstRatePct: rateKey,
+        assessableValue: bucket.assessable.toWireString(2),
+        cgstAmount: bucket.cgst.toWireString(2),
+        sgstAmount: bucket.sgst.toWireString(2),
+        igstAmount: bucket.igst.toWireString(2),
+        cessAmount: bucket.cess.toWireString(2),
+        totalTaxAmount: slabTax.toWireString(2),
+      });
+      totAss = totAss.add(bucket.assessable, 2);
+      totCgst = totCgst.add(bucket.cgst, 2);
+      totSgst = totSgst.add(bucket.sgst, 2);
+      totIgst = totIgst.add(bucket.igst, 2);
+      totCess = totCess.add(bucket.cess, 2);
+    }
+
+    const totTax = totCgst.add(totSgst, 2).add(totIgst, 2).add(totCess, 2);
+    const suggested: GstSuggestedTaxLineDto[] = [];
+    const findDutyLedger = (head: 'CGST' | 'SGST_UTGST' | 'IGST' | 'CESS'): Ledger | undefined =>
+      this.coaStore.ledgers().find((l) => l.taxType === 'GST' && l.dutyHead === head);
+
+    if (totCgst.isPositive()) {
+      const led = findDutyLedger('CGST');
+      suggested.push({
+        dutyHead: 'CGST',
+        ledgerId: led?.id ?? null,
+        ledgerName: led?.name ?? 'CGST',
+        ratePct: '',
+        amount: totCgst.toWireString(2),
+      });
+    }
+    if (totSgst.isPositive()) {
+      const led = findDutyLedger('SGST_UTGST');
+      suggested.push({
+        dutyHead: 'SGST_UTGST',
+        ledgerId: led?.id ?? null,
+        ledgerName: led?.name ?? 'SGST',
+        ratePct: '',
+        amount: totSgst.toWireString(2),
+      });
+    }
+    if (totIgst.isPositive()) {
+      const led = findDutyLedger('IGST');
+      suggested.push({
+        dutyHead: 'IGST',
+        ledgerId: led?.id ?? null,
+        ledgerName: led?.name ?? 'IGST',
+        ratePct: '',
+        amount: totIgst.toWireString(2),
+      });
+    }
+    if (totCess.isPositive()) {
+      const led = findDutyLedger('CESS');
+      suggested.push({
+        dutyHead: 'CESS',
+        ledgerId: led?.id ?? null,
+        ledgerName: led?.name ?? 'GST Cess',
+        ratePct: '',
+        amount: totCess.toWireString(2),
+      });
+    }
+
+    return {
+      supplyNature: isIntra ? 'INTRA_STATE' : 'INTER_STATE',
+      companyStateCode: companyState,
+      placeOfSupplyState: posState,
+      lineBreakups: breakups,
+      slabTotals,
+      totalAssessableValue: totAss.toWireString(2),
+      totalCgst: totCgst.toWireString(2),
+      totalSgst: totSgst.toWireString(2),
+      totalIgst: totIgst.toWireString(2),
+      totalCess: totCess.toWireString(2),
+      totalTax: totTax.toWireString(2),
+      suggestedTaxLines: suggested,
+    };
+  }
+
+  applySuggestedGstLines(preview: GstComputePreviewResponse): void {
+    const revSide: BalanceSide =
+      this.activeCategory() === 'PURCHASE' || this.activeCategory() === 'DEBIT_NOTE' ? 'DR' : 'CR';
+    const kept = this.gridLines().filter((l) => l.lineRole !== 'TAX' && l.ledgerId !== null);
+    const added: EditableVoucherLine[] = preview.suggestedTaxLines
+      .filter((s) => Boolean(s.ledgerId))
+      .map((s) => ({
+        rowId: `row-${this.rowCounter++}`,
+        side: s.side ?? revSide,
+        lineRole: 'TAX' as VoucherLineRole,
+        ledgerId: s.ledgerId ?? null,
+        ledgerName: s.ledgerName,
+        ratePct: s.ratePct || '',
+        computedTaxAmount: s.amount,
+        isGstOverridden: false,
+        amount: s.amount,
+        lineNarration: '',
+        billAllocations: [],
+        costAllocations: [],
+        bankAllocations: [],
+      }));
+    this.gridLines.set([...kept, ...added]);
+    this.markDirty();
+    this.taxAnalysisModalOpen.set(false);
   }
 }

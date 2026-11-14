@@ -23,6 +23,7 @@ import { CompanyContextStore } from '../../state/company-context.store';
 import { NavigationStackStore } from '../../state/navigation-stack.store';
 import { ChartOfAccountsStore } from '../masters/chart-of-accounts.store';
 import { VoucherBaseCategory } from '../masters/masters.models';
+import { EditLogModalService } from '../statutory/edit-log-modal.service';
 import { VoucherService } from './voucher.service';
 import { PREDEFINED_24_VOUCHER_SPECS, VoucherSummaryDto } from './vouchers.models';
 
@@ -138,6 +139,15 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
             (click)="openCancelConfirmation()"
           >
             Cancel Vch (<span class="mc-key-alt">X</span>)
+          </button>
+          <button
+            type="button"
+            class="mc-btn"
+            data-testid="daybook-edit-log-btn"
+            [disabled]="!selectedVoucher()"
+            (click)="openSelectedEditLog()"
+          >
+            Edit Log (<span class="mc-key-alt">Q</span>)
           </button>
           <a routerLink="/app/approvals" class="mc-btn">Approval Queue</a>
         </div>
@@ -821,6 +831,7 @@ export class DayBookComponent implements OnInit {
   private readonly voucherService = inject(VoucherService);
   private readonly coaStore = inject(ChartOfAccountsStore);
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
+  private readonly editLogModal = inject(EditLogModalService);
   private readonly navStack = inject(NavigationStackStore);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -1065,12 +1076,30 @@ export class DayBookComponent implements OnInit {
         () => this.restoreLastRemovedLine(),
         screenActive,
       ),
+      this.shortcutRegistry.bindHandler(
+        'audit.editLog',
+        'SCREEN',
+        () => this.openSelectedEditLog(),
+        () => screenActive() && Boolean(this.selectedVoucher()),
+      ),
     ];
 
     this.destroyRef.onDestroy(() => {
       for (const dispose of disposers) {
         dispose();
       }
+    });
+  }
+
+  openSelectedEditLog(): void {
+    const vch = this.selectedVoucher();
+    if (!vch) {
+      return;
+    }
+    this.editLogModal.open({
+      entityType: 'VOUCHER',
+      entityId: vch.id,
+      entityLabel: `${vch.voucherTypeName} #${vch.voucherNumber}`,
     });
   }
 

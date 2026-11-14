@@ -34,6 +34,9 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.statutory..",
                 "com.raster.moneycraft.banking..",
                 "com.raster.moneycraft.reporting..",
+                "com.raster.moneycraft.migration..",
+                "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.print..",
                 "com.raster.moneycraft.ops.."
             );
         rule.check(serverClasses);
@@ -51,6 +54,7 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.reporting..",
                 "com.raster.moneycraft.migration..",
                 "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.print..",
                 "com.raster.moneycraft.ops.."
             );
         rule.check(serverClasses);
@@ -67,13 +71,14 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.reporting..",
                 "com.raster.moneycraft.migration..",
                 "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.print..",
                 "com.raster.moneycraft.ops.."
             );
         rule.check(serverClasses);
     }
 
     @Test
-    void statutoryMustNotDependOnDownstreamBankingReportingMigrationOrExchangeContexts() {
+    void statutoryMustNotDependOnDownstreamBankingReportingMigrationExchangeOrPrintContexts() {
         ArchRule rule = ArchRuleDefinition.noClasses()
             .that().resideInAPackage("com.raster.moneycraft.statutory..")
             .should().dependOnClassesThat()
@@ -81,7 +86,8 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.banking..",
                 "com.raster.moneycraft.reporting..",
                 "com.raster.moneycraft.migration..",
-                "com.raster.moneycraft.exchange.."
+                "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.print.."
             );
         rule.check(serverClasses);
     }
@@ -96,7 +102,10 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.inventory..",
                 "com.raster.moneycraft.statutory..",
                 "com.raster.moneycraft.banking..",
-                "com.raster.moneycraft.reporting.."
+                "com.raster.moneycraft.reporting..",
+                "com.raster.moneycraft.migration..",
+                "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.print.."
             );
         rule.check(serverClasses);
     }

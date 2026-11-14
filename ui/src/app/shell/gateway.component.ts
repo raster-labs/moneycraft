@@ -69,9 +69,42 @@ export const GATEWAY_MENU_ITEMS: readonly GatewayMenuItem[] = [
     panelId: 'day-book',
     directRoute: '/app/daybook',
   },
-  { key: 'N', section: 'UTILITIES', prefixText: 'Ba', mnemonicChar: 'N', suffixText: 'king', panelId: 'banking' },
-  { key: 'B', section: 'REPORTS', prefixText: '', mnemonicChar: 'B', suffixText: 'alance Sheet', panelId: 'balance-sheet' },
-  { key: 'P', section: 'REPORTS', prefixText: '', mnemonicChar: 'P', suffixText: 'rofit & Loss A/c', panelId: 'profit-loss' },
+  {
+    key: 'N',
+    section: 'UTILITIES',
+    prefixText: 'Ba',
+    mnemonicChar: 'N',
+    suffixText: 'king & Auto-BRS',
+    panelId: 'banking',
+    directRoute: '/app/banking/brs',
+  },
+  {
+    key: 'M',
+    section: 'UTILITIES',
+    prefixText: '',
+    mnemonicChar: 'M',
+    suffixText: 'igrate .1800 & Data Exchange',
+    panelId: 'migration-exchange',
+    directRoute: '/app/exchange/migrate-1800',
+  },
+  {
+    key: 'B',
+    section: 'REPORTS',
+    prefixText: '',
+    mnemonicChar: 'B',
+    suffixText: 'alance Sheet',
+    panelId: 'balance-sheet',
+    directRoute: '/app/reports/balance-sheet',
+  },
+  {
+    key: 'P',
+    section: 'REPORTS',
+    prefixText: '',
+    mnemonicChar: 'P',
+    suffixText: 'rofit & Loss A/c',
+    panelId: 'profit-loss',
+    directRoute: '/app/reports/pnl',
+  },
   {
     key: 'S',
     section: 'REPORTS',
@@ -81,14 +114,23 @@ export const GATEWAY_MENU_ITEMS: readonly GatewayMenuItem[] = [
     panelId: 'stock-summary',
     directRoute: '/app/reports/stock-summary',
   },
-  { key: 'R', section: 'REPORTS', prefixText: '', mnemonicChar: 'R', suffixText: 'atio Analysis', panelId: 'ratios' },
+  {
+    key: 'R',
+    section: 'REPORTS',
+    prefixText: '',
+    mnemonicChar: 'R',
+    suffixText: 'atio Analysis',
+    panelId: 'ratios',
+    directRoute: '/app/reports/ratios',
+  },
   {
     key: 'D',
     section: 'REPORTS',
     prefixText: '',
     mnemonicChar: 'D',
-    suffixText: 'isplay More Reports',
+    suffixText: 'isplay More Reports (Trial Balance / Schedule III)',
     panelId: 'more-reports',
+    directRoute: '/app/reports/trial-balance',
   },
   {
     key: 'O',
@@ -114,12 +156,17 @@ export const GATEWAY_MENU_ITEMS: readonly GatewayMenuItem[] = [
           <h2>Active Books Context</h2>
           <div class="mc-gateway-quick-links">
             <a routerLink="/app/vouchers/new" class="mc-btn">New Voucher</a>
+            <a routerLink="/app/reports/balance-sheet" class="mc-btn">Balance Sheet</a>
+            <a routerLink="/app/reports/pnl" class="mc-btn">Profit &amp; Loss</a>
+            <a routerLink="/app/reports/trial-balance" class="mc-btn">Trial Balance</a>
+            <a routerLink="/app/reports/schedule-iii" class="mc-btn">Schedule III</a>
+            <a routerLink="/app/reports/cash-flow" class="mc-btn">Cash Flow</a>
+            <a routerLink="/app/reports/bills-receivable" class="mc-btn">Bills Receivable</a>
+            <a routerLink="/app/banking/brs" class="mc-btn">Auto-BRS</a>
+            <a routerLink="/app/exchange/import-export" class="mc-btn">Import / Export</a>
+            <a routerLink="/app/exchange/migrate-1800" class="mc-btn">Migrate .1800</a>
             <a routerLink="/app/statutory/gstr1" class="mc-btn">GSTR-1</a>
-            <a routerLink="/app/statutory/gstr3b" class="mc-btn">GSTR-3B</a>
-            <a routerLink="/app/statutory/ims" class="mc-btn">IMS</a>
-            <a routerLink="/app/approvals" class="mc-btn">Approvals</a>
             <a routerLink="/app/companies" class="mc-btn">Company Hub (F3)</a>
-            <a routerLink="/app/admin" class="mc-btn">Security &amp; Audit</a>
           </div>
         </div>
 
@@ -254,6 +301,7 @@ export const GATEWAY_MENU_ITEMS: readonly GatewayMenuItem[] = [
 
     .mc-gateway-quick-links {
       display: flex;
+      flex-wrap: wrap;
       gap: var(--mc-space-2);
     }
 

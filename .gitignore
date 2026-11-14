@@ -34,6 +34,7 @@ blob-report/
 !.env.staging.example
 !.env.prod.example
 .local-secrets/
+.deploy-state/
 secrets/
 *.pem
 *.key

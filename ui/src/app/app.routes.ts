@@ -114,6 +114,65 @@ const INVENTORY_CHILD_ROUTES: Routes = [
 
 const REPORTS_CHILD_ROUTES: Routes = [
   {
+    path: 'trial-balance',
+    loadComponent: () =>
+      import('./features/reports/trial-balance.component').then((m) => m.TrialBalanceComponent),
+  },
+  {
+    path: 'pnl',
+    loadComponent: () =>
+      import('./features/reports/profit-and-loss.component').then((m) => m.ProfitAndLossComponent),
+  },
+  {
+    path: 'profit-and-loss',
+    loadComponent: () =>
+      import('./features/reports/profit-and-loss.component').then((m) => m.ProfitAndLossComponent),
+  },
+  {
+    path: 'balance-sheet',
+    loadComponent: () =>
+      import('./features/reports/balance-sheet.component').then((m) => m.BalanceSheetComponent),
+  },
+  {
+    path: 'schedule-iii',
+    loadComponent: () =>
+      import('./features/reports/schedule-iii.component').then((m) => m.ScheduleIiiComponent),
+  },
+  {
+    path: 'ageing',
+    data: { ageingType: 'RECEIVABLES' },
+    loadComponent: () =>
+      import('./features/reports/bills-ageing.component').then((m) => m.BillsAgeingComponent),
+  },
+  {
+    path: 'bills-receivable',
+    data: { ageingType: 'RECEIVABLES' },
+    loadComponent: () =>
+      import('./features/reports/bills-ageing.component').then((m) => m.BillsAgeingComponent),
+  },
+  {
+    path: 'bills-payable',
+    data: { ageingType: 'PAYABLES' },
+    loadComponent: () =>
+      import('./features/reports/bills-ageing.component').then((m) => m.BillsAgeingComponent),
+  },
+  {
+    path: 'cash-flow',
+    data: { viewMode: 'CASH_FLOW' },
+    loadComponent: () =>
+      import('./features/reports/cash-flow-and-ratios.component').then(
+        (m) => m.CashFlowAndRatiosComponent,
+      ),
+  },
+  {
+    path: 'ratios',
+    data: { viewMode: 'RATIOS' },
+    loadComponent: () =>
+      import('./features/reports/cash-flow-and-ratios.component').then(
+        (m) => m.CashFlowAndRatiosComponent,
+      ),
+  },
+  {
     path: 'stock-summary',
     data: { reportTab: 'STOCK_SUMMARY' },
     loadComponent: () =>
@@ -134,7 +193,63 @@ const REPORTS_CHILD_ROUTES: Routes = [
   {
     path: '',
     pathMatch: 'full',
-    redirectTo: 'stock-summary',
+    redirectTo: 'balance-sheet',
+  },
+];
+
+const BANKING_CHILD_ROUTES: Routes = [
+  {
+    path: 'brs',
+    data: { bankingTab: 'BRS' },
+    loadComponent: () =>
+      import('./features/banking/banking-brs-workbench.component').then(
+        (m) => m.BankingBrsWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'cheque-books',
+    data: { bankingTab: 'CHEQUE_BOOKS' },
+    loadComponent: () =>
+      import('./features/banking/banking-brs-workbench.component').then(
+        (m) => m.BankingBrsWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'ocr-queue',
+    data: { bankingTab: 'OCR_QUEUE' },
+    loadComponent: () =>
+      import('./features/banking/banking-brs-workbench.component').then(
+        (m) => m.BankingBrsWorkbenchComponent,
+      ),
+  },
+  {
+    path: '',
+    pathMatch: 'full',
+    redirectTo: 'brs',
+  },
+];
+
+const EXCHANGE_CHILD_ROUTES: Routes = [
+  {
+    path: 'migrate-1800',
+    data: { exchangeTab: 'MIGRATE_1800' },
+    loadComponent: () =>
+      import('./features/exchange/migration-and-exchange.component').then(
+        (m) => m.MigrationAndExchangeComponent,
+      ),
+  },
+  {
+    path: 'import-export',
+    data: { exchangeTab: 'IMPORT_EXPORT' },
+    loadComponent: () =>
+      import('./features/exchange/migration-and-exchange.component').then(
+        (m) => m.MigrationAndExchangeComponent,
+      ),
+  },
+  {
+    path: '',
+    pathMatch: 'full',
+    redirectTo: 'migrate-1800',
   },
 ];
 
@@ -289,6 +404,20 @@ export const APP_ROUTES: Routes = [
     children: STATUTORY_CHILD_ROUTES,
   },
   {
+    path: 'banking',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: BANKING_CHILD_ROUTES,
+  },
+  {
+    path: 'exchange',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: EXCHANGE_CHILD_ROUTES,
+  },
+  {
     path: 'companies',
     canActivate: [authenticatedGuard],
     loadComponent: () =>
@@ -366,6 +495,14 @@ export const APP_ROUTES: Routes = [
       {
         path: 'statutory',
         children: STATUTORY_CHILD_ROUTES,
+      },
+      {
+        path: 'banking',
+        children: BANKING_CHILD_ROUTES,
+      },
+      {
+        path: 'exchange',
+        children: EXCHANGE_CHILD_ROUTES,
       },
       {
         path: 'companies',

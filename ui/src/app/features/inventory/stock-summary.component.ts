@@ -30,6 +30,7 @@ import {
   StockSummaryReportDto,
 } from './inventory.models';
 import { InventoryService } from './inventory.service';
+import { ReportsService } from '../reports/reports.service';
 
 export type InventoryReportTab =
   | 'STOCK_SUMMARY'
@@ -968,6 +969,7 @@ export interface GroupedStockSummarySection {
 export class StockSummaryComponent implements OnInit {
   readonly companyContext = inject(CompanyContextStore);
   private readonly inventoryService = inject(InventoryService);
+  private readonly reportsService = inject(ReportsService);
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
   private readonly navStack = inject(NavigationStackStore);
   private readonly router = inject(Router);
@@ -1179,6 +1181,14 @@ export class StockSummaryComponent implements OnInit {
         },
         () => !this.anyModalOpen(),
       ),
+      this.shortcutRegistry.bindHandler(
+        'menu.print',
+        'SCREEN',
+        () => {
+          void this.printStockSummaryPdf();
+        },
+        () => !this.anyModalOpen(),
+      ),
     ];
 
     this.destroyRef.onDestroy(() => {
@@ -1202,6 +1212,19 @@ export class StockSummaryComponent implements OnInit {
 
   toggleDetailedMode(): void {
     this.detailedMode.update((v) => !v);
+  }
+
+  async printStockSummaryPdf(): Promise<void> {
+    const cid = this.companyContext.activeCompany()?.id;
+    if (!cid) return;
+    try {
+      await this.reportsService.exportReportPdf(cid, 'stock-summary', {
+        fromDate: this.fromDate(),
+        toDate: this.toDate(),
+      });
+    } catch (err: unknown) {
+      this.errorBanner.set(err instanceof Error ? err.message : 'Unable to export Stock Summary PDF');
+    }
   }
 
   switchTab(tab: InventoryReportTab): void {

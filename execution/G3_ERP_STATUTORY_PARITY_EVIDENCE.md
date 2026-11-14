@@ -1,0 +1,38 @@
+# Gate G3 — Supply Chain Valuation, Statutory GST/IMS/TDS Compliance, MCA Edit Log & ERP Financial Parity Evidence
+
+- **Verification Timestamp**: `2026-11-15T04:20:59+05:30`
+- **Target Repository Root**: `/Users/pushparaj/projects/Money_Craft/moneycraft-target`
+- **Immutable Oracles Root**: `/Users/pushparaj/projects/Money_Craft/argon_workspace/windows_lab_oracles` (`127` SHA-256 pinned files)
+- **PostgreSQL 18 Container Digest**: `postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5`
+- **Gate G3 Status**: `PASS` (`0.00` Paisa Variance Across All Supply Chain, GST/IMS/TDS, Financial Statement & PDFBox 3 Oracles)
+
+---
+
+## 1. Penny-Exact ERP & Golden Vector Oracle Reconciliation Summary
+
+| Oracle / Benchmark | Verified Exact Figures (`BigDecimal` String Precision) | Verification Suite | Variance | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| **`Company 100000` (`ABC & Co`, Rel 7.0 & 7.2 `.1800` + PostgreSQL 18)** | `28` groups, `24` ledgers, `24` voucher types, `13` vouchers; Gross Period Turnover `Dr 365376.00 == Cr 365376.00`; Net Closing TB `Dr 338580.00 == Cr 338580.00`; Gross Profit `80155.70`; Net Profit `80155.41` | `Company100000AndParityGoldenReconciliationTest`, `ReportingBankingMigrationExchangeAndPdfTest` | `0.00` | `PASS` |
+| **Golden Vector B — Back-Dated Inward + Purchase Return (`Debit Note`)** | `Widget-FIFO` Closing Stock `INR 1340.00`; `Widget-AVG` (`scale >= 10` intermediate Weighted Average, `HALF_UP` on closing value) `INR 1143.04`; all `8` TallyPrime costing methods verified | `Company100000AndParityGoldenReconciliationTest`, `InventoryAndValuationIntegrationTest#goldenVectorBBackDatedInsertPurchaseReturnAndAll8CostingMethods` | `0.00` | `PASS` |
+| **Golden Vector C — Multi-BOM Manufacturing Stock Journal** | Component consumption + `%` and fixed additional manufacturing expense ledger landed-cost capitalization | `InventoryAndValuationIntegrationTest#multiBomManufacturingPreviewAndStockJournalGoldenVectorC` | `0.00` | `PASS` |
+| **MoneyCraft Medical Devices Parity Benchmark (`TALLY_PARITY_BENCHMARK.md`)** | Trial Balance, P&L, Balance Sheet (`610949.71`, `Assets == Liabilities + Equity + Net Profit`), Schedule III Division I/II, Cash/Funds Flow, Ratio Analysis, Bill-Wise Ageing, Stock Summary | `InventoryAndValuationIntegrationTest`, `ReportingBankingMigrationExchangeAndPdfTest#parityBenchmarkFinancialStatementsScheduleIiiCashFlowRatiosAndAgeing` | `0.00` | `PASS` |
+| **Rel 7.2 Tobacco Deemed MRP Valuation (Golden Vector A)** | `Taxable = (Qty * Retail MRP * 100) / (100 + Total GST Rate %)` (`HALF_UP` to `2` decimals) + slab tax split | `StatutoryGstImsTdsAndEditLogTest#sixTierInheritanceFreightApportionmentTobaccoDeemedMrpRcmAndUncertainTransactions` | `0.00` | `PASS` |
+| **GSTR-1, GSTR-3B & Rel 7.2 One-Click GSTR-9 (`.xlsx` + `.json`)** | Intra/inter-state `CGST`/`SGST`/`IGST`, Phase III B2B vs. B2C HSN summary bifurcation, Table 13 cancelled voucher retention (`Alt+X`), GSTR-3B Table 3.1/3.2/4, One-Click Annual GSTR-9 export | `StatutoryGstImsTdsAndEditLogTest#moneyCraftParityBenchmarkGstr1Gstr3bAndOneClickGstr9XlsxJson` | `0.00` | `PASS` |
+| **Rel 7.2 IMS Reconciliation (`Accept`, `Reject`, `Pending`, `ITC Reduction`)** | Mandatory remarks enforcement on `REJECT`/`PENDING`/reduced ITC, ITC reduction propagation to GSTR-3B Table 4(A)(5), `PENDING` carryover across tax periods | `StatutoryGstImsTdsAndEditLogTest#rel72ImsReconciliationMandatoryRemarksItcReductionAndPendingCarryover` | `0.00` | `PASS` |
+| **TDS `194J` / `206AA` No-PAN `20%` / `ITNS 281` / Protean `FVU 1.2`** | Threshold & lower-deduction certificate checks, `Sec 206AA` `20%` higher rate when PAN absent, `ITNS 281` challan linkage, Form `26Q` `^`-delimited Protean `FVU 1.2` file generation | `StatutoryGstImsTdsAndEditLogTest#tdsForm26qSec206aaNoPanChallanItns281ProteanFvu12AndImmutableMcaEditLog` | `0.00` | `PASS` |
+
+---
+
+## 2. Gate G3 Acceptance Criteria Matrix (`QUAL-005` Honest Reporting)
+
+| Acceptance ID | Requirement Summary | Verification Suite & Method | Status |
+| :--- | :--- | :--- | :--- |
+| `AT-INV-001..004` | Simple & Compound UOMs (`6`-decimal exact `numeric`), hierarchical Godowns with protected `Main Location`, Stock Groups/Categories, Stock Items, Batches (`mfg_date`/`expiry_date`), and staggered Price Lists | `InventoryAndValuationIntegrationTest` (`Order(1)..Order(2)`) | `PASS` |
+| `AT-INV-005..007` | Full O2C (`Sales Order` -> `Delivery Note` -> `Sales` -> `Rejection In` -> `Credit Note`) & P2P (`Purchase Order` -> `Receipt Note` -> `Purchase` -> `Rejection Out` -> `Debit Note`) tracking lifecycle without double-counting physical stock; Multi-BOM manufacturing preview & Stock Journal | `InventoryAndValuationIntegrationTest` (`Order(3)..Order(4)`) | `PASS` |
+| `AT-INV-008..010` | All `8` TallyPrime costing methods (`AVG_COST`, `FIFO`, `FIFO_PERPETUAL`, `LIFO_ANNUAL`, `LIFO_PERPETUAL`, `LAST_PURCHASE_COST`, `MONTHLY_AVG_COST`, `STD_COST`, `AT_ZERO`) + back-dated insert deterministic recomputation + Purchase Return inward layer reduction (`1340.00` FIFO / `1143.04` Avg) | `InventoryAndValuationIntegrationTest` (`Order(5)..Order(6)`), `Company100000AndParityGoldenReconciliationTest` | `PASS` |
+| `AT-TAX-001..005` | Multi-GSTIN Mod-36 check-digit validation, signed Rule Pack (`IN-FY2025-26-V1`), `6`-tier GST rate/HSN inheritance, `appropriate_for = 'GST'` proportional freight apportionment, RCM self-liability + ITC, Tobacco Deemed MRP, and *Uncertain Transactions* workbench (`is_gst_overridden` + unclassified `Duties & Taxes`) | `StatutoryGstImsTdsAndEditLogTest` (`Order(1)..Order(2)`) | `PASS` |
+| `AT-TAX-006..010` | `GSTR-1`, `GSTR-2B`, Rel 7.2 `IMS` (`ACCEPT`/`REJECT`/`PENDING`/ITC reduction + mandatory remarks), `GSTR-3B`, and One-Click `GSTR-9` `.xlsx` & `.json` exports | `StatutoryGstImsTdsAndEditLogTest` (`Order(3)..Order(4)`) | `PASS` |
+| `AT-TAX-011..012` | `30`-day Tink AES-256-GCM encrypted NIC e-Invoice / e-Way Bill session reuse behind disabled-by-default Outbound Connector SPI + offline JSON export; TDS `194C`/`194J`/`206AA`, `ITNS 281`, Form `26Q` Protean `FVU 1.2` | `StatutoryGstImsTdsAndEditLogTest` (`Order(5)..Order(6)`), `OutboundConnectorRegistryTest` | `PASS` |
+| `AT-AUDIT-MCA-01` | Immutable MCA Companies (Accounts) Rule 3(1) `Edit Log`: `CREATE` (`v1`) -> `ALTER` (`v2`) -> `CANCEL` (`v3`) over stable `master_id`, preserving `voucher_number` on `Alt+X` cancellation; `403 MC-EDITLOG-MANDATORY` guard; PostgreSQL `MC-IMMUTABLE-RECORD` trigger & runtime privilege revocation on `mc_edit_log_version` | `StatutoryGstImsTdsAndEditLogTest#tdsForm26qSec206aaNoPanChallanItns281ProteanFvu12AndImmutableMcaEditLog`, `FaultProxyIdempotencyAndAuditInvariantIT#updateAndDeleteAgainstMcEntryMcAuditEventAndMcEditLogVersionFailClosedAtPrivilegeAndTriggerBoundaries` | `PASS` |
+| `AT-RPT-001..008` | Trial Balance, P&L, Balance Sheet, Schedule III, Cash/Funds Flow, Ratio Analysis, Bill-Wise Ageing, Banking Auto-BRS (`CAMT.053` + CSV), Payroll Tink masking, SmartFind global search, and Docs-by-Ira OCR mandatory human review gate (`EXTRACTED_PENDING_REVIEW` -> `APPROVED_CONVERTED`) | `ReportingBankingMigrationExchangeAndPdfTest` (`Order(1)`, `Order(4)`) | `PASS` |
+| `AT-PDF-001..004` | Deterministic Brand Identity `v0.2.0` PDF generation across Tax Invoice and `7` financial/inventory reports verified via **Apache PDFBox 3**: embedded `Manrope` + `JetBrains Mono` subsets, `U+20B9 ₹` glyph rendering, `SHA256:` footer verification digest, and `0` programming ligatures | `ReportingBankingMigrationExchangeAndPdfTest#deterministicBrandV020PdfRenderingVoucherAndFinancialReportsVerifiedByPdfBox` | `PASS` |

@@ -1,0 +1,162 @@
+{
+  "manifestVersion": "1.0.0",
+  "gate": "G4",
+  "releaseCandidate": "MoneyCraft 1.0.0-SNAPSHOT",
+  "qualifiedAt": "2026-11-15T04:20:59+05:30",
+  "overallDualWarQualificationStatus": "PASS",
+  "warArtifact": {
+    "path": "/Users/pushparaj/projects/Money_Craft/moneycraft-target/server/target/moneycraft.war",
+    "sizeBytes": 333775426,
+    "sha256BeforeQualification": "4aecb4c6fd92f3fe1e01345b199ec13e15605b00f261a8936c6280edc6c5d6c9",
+    "sha256AfterQualification": "4aecb4c6fd92f3fe1e01345b199ec13e15605b00f261a8936c6280edc6c5d6c9",
+    "immutableAcrossBothServletContainers": true,
+    "jakartaServletSpec": "6.1",
+    "verifiedArchiveEntries": [
+      "WEB-INF/web.xml",
+      "WEB-INF/jboss-deployment-structure.xml",
+      "WEB-INF/classes/com/raster/moneycraft/MoneyCraftServletInitializer.class",
+      "WEB-INF/lib-provided/tomcat-embed-core-11.0.27.jar",
+      "WEB-INF/lib-provided/spring-boot-web-server-4.1.2.jar"
+    ],
+    "embeddedTomcatIsolatedFromWebInfLib": true
+  },
+  "infrastructureDigests": {
+    "postgresql18": {
+      "image": "postgres:18.6-bookworm",
+      "repoDigest": "postgres@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5",
+      "serverVersion": "18.6",
+      "topology": "Dual-Cluster (moneycraft_authority + moneycraft_business)"
+    },
+    "toxiproxy": {
+      "image": "ghcr.io/shopify/toxiproxy:2.11.0",
+      "repoDigest": "ghcr.io/shopify/toxiproxy@sha256:cfdb2ca7ac7131a650d09db49782cc33e5c5d97fd3be5b3a6e27cd13d0ee8d57",
+      "version": "2.11.0"
+    },
+    "apacheTomcat11": {
+      "image": "tomcat:11.0-jre25-temurin",
+      "repoDigest": "tomcat@sha256:ef9f5b86711fb4b9776919b718778fceaac69a6f2dfe9d20d405540f11957cdd",
+      "serverVersion": "Apache Tomcat/11.0.29",
+      "jvmVersion": "Eclipse Temurin 25.0.5+8",
+      "warMountPath": "/usr/local/tomcat/webapps/ROOT.war",
+      "mountMode": "READ_ONLY",
+      "startupTimeSeconds": 5.32,
+      "status": "PASS"
+    },
+    "wildFly42": {
+      "image": "quay.io/wildfly/wildfly:42.0.0.Final-jdk25",
+      "repoDigest": "quay.io/wildfly/wildfly@sha256:3fc71f6c4fe1075ac942dbb652799840ecd5424458def6039f829bf3221a8daf",
+      "serverVersion": "WildFly 42.0.0.Final (WildFly Core 34.0.0.Final, Undertow 2.4.4.Final)",
+      "jvmVersion": "OpenJDK 25.0.4.1+1",
+      "warMountPath": "/opt/jboss/wildfly/standalone/deployments/ROOT.war",
+      "mountMode": "READ_ONLY",
+      "serverProfileNotes": "standalone-servlet.xml (Servlet/Undertow profile without Weld CDI interception) + jboss-cli deployment-overlay exposing WEB-INF/lib-provided/spring-boot-web-server-4.1.2.jar",
+      "startupTimeSeconds": 7.80,
+      "status": "PASS"
+    }
+  },
+  "dualWarLiveWorkflowParity": {
+    "systemStatusHttp200": true,
+    "actuatorReadinessUpOnPort8080": true,
+    "cspNoncePresentAndAirGapped": true,
+    "initialOwnerBootstrapHttp201": true,
+    "companyCreationInrScale2Http201": true,
+    "salesVoucherPostedAndJcsKeyReorderedReplayVerified": true,
+    "receiptBillWiseAgstRefVoucherPosted": true,
+    "trialBalance": {
+      "apacheTomcat11": {
+        "isBalanced": true,
+        "differenceAmount": "0.00",
+        "totalPeriodDebit": "168000.00",
+        "totalPeriodCredit": "168000.00",
+        "totalClosingDebit": "118000.00",
+        "totalClosingCredit": "118000.00"
+      },
+      "wildFly42": {
+        "isBalanced": true,
+        "differenceAmount": "0.00",
+        "totalPeriodDebit": "168000.00",
+        "totalPeriodCredit": "168000.00",
+        "totalClosingDebit": "118000.00",
+        "totalClosingCredit": "118000.00"
+      },
+      "crossContainerVariance": "0.00"
+    },
+    "mcAudit2ChainVerified": true
+  },
+  "automatedTestSummary": {
+    "readerSurefire": {
+      "suites": 3,
+      "testsRun": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "status": "PASS"
+    },
+    "serverSurefire": {
+      "suites": 10,
+      "testsRun": 52,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "status": "PASS"
+    },
+    "qaFailsafe": {
+      "command": "mvn -B verify -pl qa",
+      "suites": 2,
+      "testsRun": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "elapsedSeconds": 44.881,
+      "status": "PASS",
+      "suiteBreakdown": [
+        {
+          "className": "com.raster.moneycraft.qa.FaultProxyIdempotencyAndAuditInvariantIT",
+          "testsRun": 5,
+          "failures": 0,
+          "errors": 0,
+          "elapsedSeconds": 19.593,
+          "status": "PASS"
+        },
+        {
+          "className": "com.raster.moneycraft.qa.DualWarServletContainerQualificationIT",
+          "testsRun": 3,
+          "failures": 0,
+          "errors": 0,
+          "elapsedSeconds": 19.136,
+          "status": "PASS"
+        }
+      ]
+    },
+    "totalAutomatedJvmTests": {
+      "suites": 15,
+      "testsRun": 69,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "status": "PASS"
+    }
+  },
+  "staticGovernanceGates": {
+    "checkstyle": {
+      "config": "tools/checkstyle/moneycraft-checkstyle.xml",
+      "violations": 0,
+      "status": "PASS"
+    },
+    "verifyManifest": {
+      "command": "python3 tools/verify_manifest.py",
+      "filesScanned": 338,
+      "stubsOrTodos": 0,
+      "h2OrSqliteRefs": 0,
+      "floatOrDoubleViolations": 0,
+      "status": "PASS"
+    },
+    "checkZeroLicensing": {
+      "command": "python3 tools/check_zero_licensing.py",
+      "filesScanned": 353,
+      "licenseOrTelemetryViolations": 0,
+      "externalFontCdnViolations": 0,
+      "status": "PASS"
+    }
+  }
+}

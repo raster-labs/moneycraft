@@ -13,6 +13,8 @@ import { Router, RouterLink, RouterOutlet } from '@angular/router';
 import { AuthStore } from '../core/auth/auth.store';
 import { SseStreamService } from '../core/http/sse-stream.service';
 import { ShortcutCommandRegistry } from '../core/keyboard/shortcut-command.registry';
+import { BankingBrsWorkbenchComponent } from '../features/banking/banking-brs-workbench.component';
+import { MigrationAndExchangeComponent } from '../features/exchange/migration-and-exchange.component';
 import { GodownWorkbenchComponent } from '../features/inventory/godown-workbench.component';
 import { InventoryStore } from '../features/inventory/inventory.store';
 import { PriceListWorkbenchComponent } from '../features/inventory/price-list-workbench.component';
@@ -30,6 +32,15 @@ import { VoucherBaseCategory } from '../features/masters/masters.models';
 import { SecondaryMasterModalComponent } from '../features/masters/secondary-master-modal.component';
 import { SECONDARY_MASTER_ROUTE_TOKEN } from '../features/masters/secondary-master-modal.service';
 import { VoucherTypeWorkbenchComponent } from '../features/masters/voucher-type-workbench.component';
+import { BalanceSheetComponent } from '../features/reports/balance-sheet.component';
+import { BillsAgeingComponent } from '../features/reports/bills-ageing.component';
+import { CashFlowAndRatiosComponent } from '../features/reports/cash-flow-and-ratios.component';
+import { ProfitAndLossComponent } from '../features/reports/profit-and-loss.component';
+import { ScheduleIiiComponent } from '../features/reports/schedule-iii.component';
+import {
+  TB_GROUP_DRILL_ROUTE_TOKEN,
+  TrialBalanceComponent,
+} from '../features/reports/trial-balance.component';
 import { EDIT_LOG_ROUTE_TOKEN } from '../features/statutory/edit-log-modal.service';
 import { EditLogRedlineModalComponent } from '../features/statutory/edit-log-redline-modal.component';
 import { EinvoiceWorkbenchComponent } from '../features/statutory/einvoice-workbench.component';
@@ -86,6 +97,14 @@ import { SmartFindStore } from '../state/smart-find.store';
     EinvoiceWorkbenchComponent,
     Tds26qWorkbenchComponent,
     GstRegistrationWorkbenchComponent,
+    BalanceSheetComponent,
+    ProfitAndLossComponent,
+    TrialBalanceComponent,
+    ScheduleIiiComponent,
+    BillsAgeingComponent,
+    CashFlowAndRatiosComponent,
+    BankingBrsWorkbenchComponent,
+    MigrationAndExchangeComponent,
     VoucherGridComponent,
     DayBookComponent,
     ApprovalQueueComponent,
@@ -130,7 +149,7 @@ import { SmartFindStore } from '../state/smart-find.store';
             <button type="button" class="mc-omni-btn" (click)="showTopMenuToast('Data Backup & Restore (Alt+Y)')">
               <span class="mc-key-alt">Y</span>: Data
             </button>
-            <button type="button" class="mc-omni-btn" (click)="showTopMenuToast('Data Exchange (Alt+Z)')">
+            <button type="button" class="mc-omni-btn" (click)="navigateToExchange('MIGRATE_1800')">
               <span class="mc-key-alt">Z</span>: Exchange
             </button>
           </nav>
@@ -160,13 +179,13 @@ import { SmartFindStore } from '../state/smart-find.store';
         </div>
 
         <div class="mc-omni-right">
-          <button type="button" class="mc-omni-btn" (click)="showTopMenuToast('Import Masters / Vouchers (Alt+O)')">
+          <button type="button" class="mc-omni-btn" (click)="navigateToExchange('IMPORT_EXPORT')">
             <span class="mc-key-alt">O</span>: Import
           </button>
-          <button type="button" class="mc-omni-btn" (click)="showTopMenuToast('Export XML / JSONEx / Excel (Alt+E)')">
+          <button type="button" class="mc-omni-btn" (click)="navigateToExchange('IMPORT_EXPORT')">
             <span class="mc-key-alt">E</span>: Export
           </button>
-          <button type="button" class="mc-omni-btn" (click)="showTopMenuToast('Print / PDF Preview (Alt+P)')">
+          <button type="button" class="mc-omni-btn" (click)="triggerPrintFromTopBar()">
             <span class="mc-key-alt">P</span>: Print
           </button>
 
@@ -346,10 +365,108 @@ import { SmartFindStore } from '../state/smart-find.store';
                     <mc-voucher-grid [embeddedOverlay]="true" />
                   }
                   @case ('/app/daybook') {
-                    <mc-day-book [embeddedOverlay]="true" />
+                    <mc-day-book
+                      [embeddedOverlay]="true"
+                      [initialLedgerId]="frame.params['ledgerId'] ?? null"
+                      [initialLedgerName]="frame.params['ledgerName'] ?? null"
+                    />
                   }
                   @case ('/daybook') {
-                    <mc-day-book [embeddedOverlay]="true" />
+                    <mc-day-book
+                      [embeddedOverlay]="true"
+                      [initialLedgerId]="frame.params['ledgerId'] ?? null"
+                      [initialLedgerName]="frame.params['ledgerName'] ?? null"
+                    />
+                  }
+                  @case ('/app/reports/trial-balance') {
+                    <mc-trial-balance [embeddedOverlay]="true" />
+                  }
+                  @case ('/reports/trial-balance') {
+                    <mc-trial-balance [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/reports/pnl') {
+                    <mc-profit-and-loss [embeddedOverlay]="true" />
+                  }
+                  @case ('/reports/pnl') {
+                    <mc-profit-and-loss [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/reports/profit-and-loss') {
+                    <mc-profit-and-loss [embeddedOverlay]="true" />
+                  }
+                  @case ('/reports/profit-and-loss') {
+                    <mc-profit-and-loss [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/reports/balance-sheet') {
+                    <mc-balance-sheet [embeddedOverlay]="true" />
+                  }
+                  @case ('/reports/balance-sheet') {
+                    <mc-balance-sheet [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/reports/schedule-iii') {
+                    <mc-schedule-iii [embeddedOverlay]="true" />
+                  }
+                  @case ('/reports/schedule-iii') {
+                    <mc-schedule-iii [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/reports/ageing') {
+                    <mc-bills-ageing [embeddedOverlay]="true" initialType="RECEIVABLES" />
+                  }
+                  @case ('/reports/ageing') {
+                    <mc-bills-ageing [embeddedOverlay]="true" initialType="RECEIVABLES" />
+                  }
+                  @case ('/app/reports/bills-receivable') {
+                    <mc-bills-ageing [embeddedOverlay]="true" initialType="RECEIVABLES" />
+                  }
+                  @case ('/reports/bills-receivable') {
+                    <mc-bills-ageing [embeddedOverlay]="true" initialType="RECEIVABLES" />
+                  }
+                  @case ('/app/reports/bills-payable') {
+                    <mc-bills-ageing [embeddedOverlay]="true" initialType="PAYABLES" />
+                  }
+                  @case ('/reports/bills-payable') {
+                    <mc-bills-ageing [embeddedOverlay]="true" initialType="PAYABLES" />
+                  }
+                  @case ('/app/reports/cash-flow') {
+                    <mc-cash-flow-and-ratios [embeddedOverlay]="true" initialTab="CASH_FLOW" />
+                  }
+                  @case ('/reports/cash-flow') {
+                    <mc-cash-flow-and-ratios [embeddedOverlay]="true" initialTab="CASH_FLOW" />
+                  }
+                  @case ('/app/reports/ratios') {
+                    <mc-cash-flow-and-ratios [embeddedOverlay]="true" initialTab="RATIOS" />
+                  }
+                  @case ('/reports/ratios') {
+                    <mc-cash-flow-and-ratios [embeddedOverlay]="true" initialTab="RATIOS" />
+                  }
+                  @case ('/app/banking/brs') {
+                    <mc-banking-brs-workbench [embeddedOverlay]="true" initialTab="BRS" />
+                  }
+                  @case ('/banking/brs') {
+                    <mc-banking-brs-workbench [embeddedOverlay]="true" initialTab="BRS" />
+                  }
+                  @case ('/app/banking/cheque-books') {
+                    <mc-banking-brs-workbench [embeddedOverlay]="true" initialTab="CHEQUE_BOOKS" />
+                  }
+                  @case ('/banking/cheque-books') {
+                    <mc-banking-brs-workbench [embeddedOverlay]="true" initialTab="CHEQUE_BOOKS" />
+                  }
+                  @case ('/app/banking/ocr-queue') {
+                    <mc-banking-brs-workbench [embeddedOverlay]="true" initialTab="OCR_QUEUE" />
+                  }
+                  @case ('/banking/ocr-queue') {
+                    <mc-banking-brs-workbench [embeddedOverlay]="true" initialTab="OCR_QUEUE" />
+                  }
+                  @case ('/app/exchange/migrate-1800') {
+                    <mc-migration-and-exchange [embeddedOverlay]="true" initialTab="MIGRATE_1800" />
+                  }
+                  @case ('/exchange/migrate-1800') {
+                    <mc-migration-and-exchange [embeddedOverlay]="true" initialTab="MIGRATE_1800" />
+                  }
+                  @case ('/app/exchange/import-export') {
+                    <mc-migration-and-exchange [embeddedOverlay]="true" initialTab="IMPORT_EXPORT" />
+                  }
+                  @case ('/exchange/import-export') {
+                    <mc-migration-and-exchange [embeddedOverlay]="true" initialTab="IMPORT_EXPORT" />
                   }
                   @case ('/app/approvals') {
                     <mc-approval-queue [embeddedOverlay]="true" />
@@ -400,16 +517,23 @@ import { SmartFindStore } from '../state/smart-find.store';
                     <mc-gst-registration-workbench />
                   }
                   @default {
-                    <p>
-                      Non-destructive <strong>Go To</strong> view suspended above your previous screen
-                      (active focus anchor:
-                      <mc-code-badge [code]="frame.activeElementId ?? 'root'" />).
-                    </p>
-                    <p>
-                      Press <strong>Esc</strong> at any time to pop this overlay and restore exact
-                      scroll position, cell focus, and unsaved draft state in &lt; 16 ms, or press
-                      <strong>Alt+G</strong> to stack another report on top (up to 8 levels).
-                    </p>
+                    @if (extractVoucherIdFromRoute(frame.route); as overlayVoucherId) {
+                      <mc-voucher-grid
+                        [embeddedOverlay]="true"
+                        [initialVoucherId]="overlayVoucherId"
+                      />
+                    } @else {
+                      <p>
+                        Non-destructive <strong>Go To</strong> view suspended above your previous screen
+                        (active focus anchor:
+                        <mc-code-badge [code]="frame.activeElementId ?? 'root'" />).
+                      </p>
+                      <p>
+                        Press <strong>Esc</strong> at any time to pop this overlay and restore exact
+                        scroll position, cell focus, and unsaved draft state in &lt; 16 ms, or press
+                        <strong>Alt+G</strong> to stack another report on top (up to 8 levels).
+                      </p>
+                    }
                   }
                 }
               </div>
@@ -973,7 +1097,11 @@ export class ErpShellComponent implements OnInit {
     this.navStack
       .frames()
       .filter(
-        (f) => f.route !== SECONDARY_MASTER_ROUTE_TOKEN && f.route !== EDIT_LOG_ROUTE_TOKEN,
+        (f) =>
+          f.route !== SECONDARY_MASTER_ROUTE_TOKEN &&
+          f.route !== EDIT_LOG_ROUTE_TOKEN &&
+          f.route !== TB_GROUP_DRILL_ROUTE_TOKEN &&
+          f.params['viaSmartFind'] !== '1',
       ),
   );
 
@@ -1039,6 +1167,24 @@ export class ErpShellComponent implements OnInit {
       ),
       this.shortcutRegistry.bindHandler('company.features', 'GLOBAL', () =>
         this.navigateToCompanyHub('features'),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'menu.exchange',
+        'GLOBAL',
+        () => this.navigateToExchange('MIGRATE_1800'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'menu.import',
+        'GLOBAL',
+        () => this.navigateToExchange('IMPORT_EXPORT'),
+        () => this.canJumpToGlobalVoucher(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'menu.export',
+        'GLOBAL',
+        () => this.navigateToExchange('IMPORT_EXPORT'),
+        () => this.canJumpToGlobalVoucher(),
       ),
       this.shortcutRegistry.bindHandler(
         'voucher.contra',
@@ -1253,6 +1399,43 @@ export class ErpShellComponent implements OnInit {
 
   showTopMenuToast(message: string): void {
     this.statusToast.set(message);
+  }
+
+  navigateToExchange(tab: 'MIGRATE_1800' | 'IMPORT_EXPORT'): void {
+    const targetRoute =
+      tab === 'MIGRATE_1800' ? '/app/exchange/migrate-1800' : '/app/exchange/import-export';
+    if (this.companyContext.hasUnsavedDraft()) {
+      this.navStack.push({
+        title: tab === 'MIGRATE_1800' ? 'Migrate .1800 Company' : 'Import / Export Data',
+        route: targetRoute,
+      });
+      return;
+    }
+    void this.router.navigateByUrl(targetRoute);
+  }
+
+  triggerPrintFromTopBar(): void {
+    const handled = this.shortcutRegistry.triggerCommand('menu.print');
+    if (!handled) {
+      this.showTopMenuToast(
+        'Open any Financial Statement, Register, or Saved Voucher and press Ctrl+P / Alt+P to generate PDF.',
+      );
+    }
+  }
+
+  extractVoucherIdFromRoute(route: string): string | null {
+    const clean = route.split('?')[0];
+    const prefixApp = '/app/vouchers/';
+    const prefixRoot = '/vouchers/';
+    if (clean.startsWith(prefixApp)) {
+      const id = clean.slice(prefixApp.length);
+      return id && id !== 'new' ? id : null;
+    }
+    if (clean.startsWith(prefixRoot)) {
+      const id = clean.slice(prefixRoot.length);
+      return id && id !== 'new' ? id : null;
+    }
+    return null;
   }
 
   async signOut(): Promise<void> {

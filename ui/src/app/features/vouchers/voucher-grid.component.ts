@@ -44,6 +44,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { InventoryStore } from '../inventory/inventory.store';
 import { SecondaryMasterModalService } from '../masters/secondary-master-modal.service';
 import { EditLogModalService } from '../statutory/edit-log-modal.service';
+import { ReportsService } from '../reports/reports.service';
 import {
   GstComputePreviewResponse,
   GstLineBreakupDto,
@@ -298,6 +299,14 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
               <span class="mc-key-ctrl">I</span>: Tax Analysis
             </button>
             @if (editingVoucherId()) {
+              <button
+                type="button"
+                class="mc-btn"
+                data-testid="btn-voucher-print"
+                (click)="printSavedVoucher()"
+              >
+                <span class="mc-key-ctrl">P</span>: Print PDF
+              </button>
               <button
                 type="button"
                 class="mc-btn"
@@ -2301,6 +2310,7 @@ export class VoucherGridComponent implements OnInit {
   readonly inventoryStore = inject(InventoryStore);
   private readonly inventoryService = inject(InventoryService);
   private readonly statutoryService = inject(StatutoryService);
+  private readonly reportsService = inject(ReportsService);
   private readonly editLogModal = inject(EditLogModalService);
   private readonly voucherService = inject(VoucherService);
   private readonly secondaryMasterModal = inject(SecondaryMasterModalService);
@@ -2918,6 +2928,14 @@ export class VoucherGridComponent implements OnInit {
         'SCREEN',
         () => {
           this.openVoucherEditLog();
+        },
+        () => noModalGuard() && Boolean(this.editingVoucherId()),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'menu.print',
+        'SCREEN',
+        () => {
+          void this.printSavedVoucher();
         },
         () => noModalGuard() && Boolean(this.editingVoucherId()),
       ),
@@ -5503,5 +5521,25 @@ export class VoucherGridComponent implements OnInit {
     this.gridLines.set([...kept, ...added]);
     this.markDirty();
     this.taxAnalysisModalOpen.set(false);
+  }
+
+  async printSavedVoucher(): Promise<void> {
+    const cid = this.companyContext.activeCompany()?.id;
+    const voucherId = this.editingVoucherId();
+    if (!cid || !voucherId) return;
+
+    this.errorBanner.set(null);
+    try {
+      await this.reportsService.printVoucherPdf(
+        cid,
+        voucherId,
+        `Voucher_${this.voucherNumber() || voucherId}.pdf`,
+      );
+      this.savedBanner.set(
+        `Generated Print PDF for ${this.activeVoucherTypeName()} #${this.voucherNumber()}.`,
+      );
+    } catch (err: unknown) {
+      this.errorBanner.set(err instanceof Error ? err.message : 'Unable to generate voucher PDF');
+    }
   }
 }

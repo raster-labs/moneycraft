@@ -12,13 +12,18 @@ import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -104,8 +109,14 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             return;
         }
 
-        byte[] bodyBytes = StreamUtils.copyToByteArray(request.getInputStream());
-        CachedBodyHttpServletRequest cachedRequest = new CachedBodyHttpServletRequest(request, bodyBytes);
+        String reqContentType = request.getContentType();
+        boolean isMultipart = isMultipartMediaType(reqContentType);
+        byte[] bodyBytes = null;
+        HttpServletRequest downstreamRequest = request;
+        if (!isMultipart) {
+            bodyBytes = StreamUtils.copyToByteArray(request.getInputStream());
+            downstreamRequest = new CachedBodyHttpServletRequest(request, bodyBytes);
+        }
 
         UUID companyScope = null;
         if (TenantContextHolder.current() instanceof TenantScope.Company company) {
@@ -118,7 +129,13 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         TinkCryptoService.HmacDigestResult hmac;
         Optional<IdempotencyService.StoredIdempotencyReceipt> existing;
         try {
-            hmac = idempotencyService.computeRequestJcsHmac(bodyBytes);
+            if (isMultipart) {
+                hmac = idempotencyService.computeRawPayloadHmac(extractMultipartCanonicalBytes(request));
+            } else if (isJsonMediaType(reqContentType) || bodyBytes == null || bodyBytes.length == 0) {
+                hmac = idempotencyService.computeRequestJcsHmac(bodyBytes);
+            } else {
+                hmac = idempotencyService.computeRawPayloadHmac(bodyBytes);
+            }
             existing = idempotencyService.checkExistingReceipt(
                 companyScope,
                 principal.principalId(),
@@ -167,7 +184,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         }
 
         ContentCachingResponseWrapper responseWrapper = new ContentCachingResponseWrapper(response);
-        filterChain.doFilter(cachedRequest, responseWrapper);
+        filterChain.doFilter(downstreamRequest, responseWrapper);
 
         int status = responseWrapper.getStatus();
         if (status >= 200 && status < 300) {
@@ -208,6 +225,30 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         }
         String lower = contentType.toLowerCase(Locale.ROOT);
         return lower.contains("application/json") || lower.contains("+json");
+    }
+
+    private static boolean isMultipartMediaType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return false;
+        }
+        return contentType.toLowerCase(Locale.ROOT).startsWith("multipart/");
+    }
+
+    private static byte[] extractMultipartCanonicalBytes(HttpServletRequest request)
+        throws IOException, ServletException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        List<Part> parts = new ArrayList<>(request.getParts());
+        parts.sort(Comparator.comparing(Part::getName));
+        for (Part part : parts) {
+            out.write(("part:" + part.getName() + ":").getBytes(StandardCharsets.UTF_8));
+            if (part.getSubmittedFileName() != null) {
+                out.write(("file:" + part.getSubmittedFileName() + ":").getBytes(StandardCharsets.UTF_8));
+            }
+            byte[] partBytes = StreamUtils.copyToByteArray(part.getInputStream());
+            out.write(partBytes);
+            out.write('\n');
+        }
+        return out.toByteArray();
     }
 
     private void writeProblem(

@@ -54,6 +54,11 @@ public class IdempotencyService {
         return tinkCryptoService.computeIdempotencyHmac(canonicalJson.getBytes(StandardCharsets.UTF_8));
     }
 
+    public TinkCryptoService.HmacDigestResult computeRawPayloadHmac(byte[] rawPayloadBytes) {
+        byte[] payload = rawPayloadBytes == null ? new byte[0] : rawPayloadBytes;
+        return tinkCryptoService.computeIdempotencyHmac(payload);
+    }
+
     public Optional<StoredIdempotencyReceipt> checkExistingReceipt(
         UUID companyScope,
         UUID principalId,

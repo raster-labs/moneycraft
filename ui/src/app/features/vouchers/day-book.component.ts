@@ -13,7 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { isEditableTextElement } from '../../core/keyboard/collision-guard';
 import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
@@ -24,6 +24,7 @@ import { NavigationStackStore } from '../../state/navigation-stack.store';
 import { ChartOfAccountsStore } from '../masters/chart-of-accounts.store';
 import { VoucherBaseCategory } from '../masters/masters.models';
 import { EditLogModalService } from '../statutory/edit-log-modal.service';
+import { ReportsService } from '../reports/reports.service';
 import { VoucherService } from './voucher.service';
 import { PREDEFINED_24_VOUCHER_SPECS, VoucherSummaryDto } from './vouchers.models';
 
@@ -64,6 +65,9 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
           <div class="mc-daybook-heading-row">
             <h1 class="mc-daybook-title">Day Book</h1>
             <mc-code-badge [code]="periodBadgeText()" />
+            @if (activeLedgerLabel(); as ledgerLabel) {
+              <span class="mc-badge mc-badge-jade">Ledger: {{ ledgerLabel }}</span>
+            }
             @if (activeTypeLabel(); as typeLabel) {
               <span class="mc-badge mc-badge-jade">{{ typeLabel }}</span>
             }
@@ -148,6 +152,14 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
             (click)="openSelectedEditLog()"
           >
             Edit Log (<span class="mc-key-alt">Q</span>)
+          </button>
+          <button
+            type="button"
+            class="mc-btn"
+            data-testid="daybook-print-btn"
+            (click)="printDayBookPdf()"
+          >
+            Print PDF (<span class="mc-key-ctrl">P</span>)
           </button>
           <a routerLink="/app/approvals" class="mc-btn">Approval Queue</a>
         </div>
@@ -826,14 +838,18 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
 })
 export class DayBookComponent implements OnInit {
   readonly embeddedOverlay = input<boolean>(false);
+  readonly initialLedgerId = input<string | null>(null);
+  readonly initialLedgerName = input<string | null>(null);
 
   readonly companyContext = inject(CompanyContextStore);
   private readonly voucherService = inject(VoucherService);
+  private readonly reportsService = inject(ReportsService);
   private readonly coaStore = inject(ChartOfAccountsStore);
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
   private readonly editLogModal = inject(EditLogModalService);
   private readonly navStack = inject(NavigationStackStore);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute, { optional: true });
   private readonly destroyRef = inject(DestroyRef);
 
   private readonly periodFromInputRef = viewChild<ElementRef<HTMLInputElement>>('periodFromInput');
@@ -846,6 +862,8 @@ export class DayBookComponent implements OnInit {
   readonly toDate = signal<string>(this.companyContext.periodTo());
   readonly filterVoucherTypeId = signal<string | null>(null);
   readonly filterVoucherCategory = signal<VoucherBaseCategory | null>(null);
+  readonly filterLedgerId = signal<string | null>(null);
+  readonly activeLedgerLabel = signal<string | null>(null);
   readonly activeTypeLabel = signal<string | null>(null);
 
   readonly includeOptional = signal<boolean>(true);
@@ -989,6 +1007,15 @@ export class DayBookComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    const queryLedgerId =
+      this.initialLedgerId() ?? this.route?.snapshot.queryParamMap.get('ledgerId') ?? null;
+    const queryLedgerName =
+      this.initialLedgerName() ?? this.route?.snapshot.queryParamMap.get('ledgerName') ?? null;
+    if (queryLedgerId) {
+      this.filterLedgerId.set(queryLedgerId);
+      this.activeLedgerLabel.set(queryLedgerName ?? queryLedgerId);
+    }
+
     const cid = this.companyContext.activeCompany()?.id ?? null;
     if (cid && this.lastLoadedCompanyId !== cid) {
       this.lastLoadedCompanyId = cid;
@@ -1082,6 +1109,14 @@ export class DayBookComponent implements OnInit {
         () => this.openSelectedEditLog(),
         () => screenActive() && Boolean(this.selectedVoucher()),
       ),
+      this.shortcutRegistry.bindHandler(
+        'menu.print',
+        'SCREEN',
+        () => {
+          void this.printDayBookPdf();
+        },
+        screenActive,
+      ),
     ];
 
     this.destroyRef.onDestroy(() => {
@@ -1101,6 +1136,21 @@ export class DayBookComponent implements OnInit {
       entityId: vch.id,
       entityLabel: `${vch.voucherTypeName} #${vch.voucherNumber}`,
     });
+  }
+
+  async printDayBookPdf(): Promise<void> {
+    const cid = this.companyContext.activeCompany()?.id;
+    if (!cid) return;
+    try {
+      await this.reportsService.exportReportPdf(cid, 'day-book', {
+        fromDate: this.fromDate(),
+        toDate: this.toDate(),
+        includeOptional: this.includeOptional(),
+      });
+      this.statusBanner.set(`Exported Day Book PDF (${this.fromDate()} to ${this.toDate()}).`);
+    } catch (err: unknown) {
+      this.errorBanner.set(err instanceof Error ? err.message : 'Unable to export Day Book PDF');
+    }
   }
 
   @HostListener('document:keydown', ['$event'])
@@ -1177,6 +1227,7 @@ export class DayBookComponent implements OnInit {
         toDate: this.toDate(),
         voucherTypeId: this.filterVoucherTypeId() ?? undefined,
         voucherCategory: this.filterVoucherCategory() ?? undefined,
+        ledgerId: this.filterLedgerId() ?? undefined,
         includeOptional: this.includeOptional(),
         includeCancelled: this.includeCancelled(),
         limit: 250,
@@ -1205,6 +1256,7 @@ export class DayBookComponent implements OnInit {
         toDate: this.toDate(),
         voucherTypeId: this.filterVoucherTypeId() ?? undefined,
         voucherCategory: this.filterVoucherCategory() ?? undefined,
+        ledgerId: this.filterLedgerId() ?? undefined,
         includeOptional: this.includeOptional(),
         includeCancelled: this.includeCancelled(),
         limit: 250,

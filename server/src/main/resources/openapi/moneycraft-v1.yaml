@@ -3002,6 +3002,822 @@ paths:
                 items:
                   $ref: '#/components/schemas/EditLogVersionDto'
 
+  /companies/{companyId}/reports/trial-balance:
+    get:
+      operationId: getTrialBalanceReport
+      tags: [Reporting]
+      summary: Penny-exact hierarchical and ledger-wise Trial Balance statement
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: includeOptional
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Trial Balance report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialBalanceReportDto'
+
+  /companies/{companyId}/reports/profit-and-loss:
+    get:
+      operationId: getProfitAndLossReport
+      tags: [Reporting]
+      summary: Two-stage Trading & Profit and Loss Account integrated with 8-method inventory valuation
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: includeOptional
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Profit & Loss report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfitAndLossReportDto'
+
+  /companies/{companyId}/reports/balance-sheet:
+    get:
+      operationId: getBalanceSheetReport
+      tags: [Reporting]
+      summary: Horizontal or Vertical Balance Sheet reconciled to 0.00 difference
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: asOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [HORIZONTAL, VERTICAL]
+        - name: includeOptional
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Balance Sheet report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceSheetReportDto'
+
+  /companies/{companyId}/reports/schedule-iii:
+    get:
+      operationId: getScheduleIiiReport
+      tags: [Reporting]
+      summary: MCA Schedule III Division I (Corporate) & ICAI Non-Corporate Entity (NCE) Statements & Notes
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: asOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: comparativeAsOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: entityFormat
+          in: query
+          schema:
+            type: string
+            enum: [DIVISION_I, NCE]
+        - name: roundingScale
+          in: query
+          schema:
+            type: string
+            enum: [ACTUAL, HUNDREDS, THOUSANDS, LAKHS, CRORES]
+      responses:
+        '200':
+          description: Schedule III report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleIiiReportDto'
+
+  /companies/{companyId}/reports/cash-flow:
+    get:
+      operationId: getCashFlowReport
+      tags: [Reporting]
+      summary: Operating, Investing & Financing Cash Flow Statement with monthly breakdown
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Cash Flow report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CashFlowReportDto'
+
+  /companies/{companyId}/reports/ratios:
+    get:
+      operationId: getRatioAnalysisReport
+      tags: [Reporting]
+      summary: Tally-equivalent Principal Groups & Financial Ratio Analysis
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: fromDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Ratio Analysis report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RatioAnalysisReportDto'
+
+  /companies/{companyId}/reports/ageing:
+    get:
+      operationId: getBillsAgeingReport
+      tags: [Reporting]
+      summary: Bills Receivable / Bills Payable 0-30 / 31-60 / 61-90 / >90 Ageing Statement
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [RECEIVABLES, PAYABLES]
+        - name: asOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Bills Ageing report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillsAgeingReportDto'
+
+  /companies/{companyId}/search/smartfind:
+    get:
+      operationId: smartFindGlobalSearch
+      tags: [SmartFind]
+      summary: TallyPrime 7.2 Alt+F / Ctrl+F sub-50ms trigram & exact-token SmartFind across active or authorized companies
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, ALL_OPEN_COMPANIES]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: SmartFind results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmartFindResponseDto'
+
+  /companies/{companyId}/banking/cheque-books:
+    get:
+      operationId: listChequeBooks
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Cheque books
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChequeBookDto'
+    post:
+      operationId: createChequeBook
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created cheque book with generated leaves
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChequeBookDto'
+
+  /companies/{companyId}/banking/cheque-books/{bookId}/leaves:
+    get:
+      operationId: listChequeBookLeaves
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cheque leaves
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /companies/{companyId}/banking/statements/import:
+    post:
+      operationId: importBankStatement
+      tags: [Banking]
+      summary: Import CSV, MT940, or CAMT.053 bank statement lines
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Imported bank statement batch
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/banking/brs:
+    get:
+      operationId: getBankReconciliationSummary
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: bankLedgerId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: asOfDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: BRS summary
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/banking/brs/auto-match:
+    post:
+      operationId: autoMatchBankReconciliation
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Auto-BRS match outcome
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/banking/brs/reconcile:
+    put:
+      operationId: manualReconcileBankAllocation
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated BRS summary
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/banking/payroll/heads:
+    get:
+      operationId: listPayrollHeads
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Payroll heads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      operationId: createPayrollHead
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created payroll head
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/banking/payroll/employees:
+    get:
+      operationId: listPayrollEmployees
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Payroll employees
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      operationId: createPayrollEmployee
+      tags: [Banking]
+      summary: Create employee with Tink AES256_SIV / AES256_GCM PAN, UAN & bank account protection
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created employee
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/banking/ocr-staging/documents:
+    get:
+      operationId: listOcrStagedDocuments
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Docs-by-Ira OCR staging documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      operationId: stageOcrDocument
+      tags: [Banking]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Staged OCR document awaiting mandatory human review
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/banking/ocr-staging/documents/{docId}/approve-convert:
+    post:
+      operationId: approveAndConvertOcrDocument
+      tags: [Banking]
+      summary: Human-verified conversion of staged OCR document into a posted voucher
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: docId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Approved & converted OCR document
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/imports:
+    get:
+      operationId: listMigrationImportJobs
+      tags: [Migration]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Staged and committed migration/import jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ImportJobSummaryDto'
+
+  /companies/{companyId}/imports/tally-1800/stage:
+    post:
+      operationId: stageTally1800Snapshot
+      tags: [Migration]
+      summary: Read-only clean-room .1800 snapshot staging into mc_stg_* with Sector-0 & CmpSave parity check
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StageTally1800Request'
+      responses:
+        '201':
+          description: Staged .1800 job and reconciliation proof
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportJobProofDto'
+
+  /companies/{companyId}/imports/{jobId}/proof:
+    get:
+      operationId: getMigrationReconciliationProof
+      tags: [Migration]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cryptographic reconciliation proof
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportJobProofDto'
+
+  /companies/{companyId}/imports/{jobId}/commit:
+    post:
+      operationId: commitMigrationImportJob
+      tags: [Migration]
+      summary: Atomic ACID promotion of staged .1800 entities with MIGRATE_IN Edit Log v1 and 0.00 TB check
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      responses:
+        '200':
+          description: Committed migration proof
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportJobProofDto'
+
+  /companies/{companyId}/exchange/templates:
+    get:
+      operationId: listExchangeMappingTemplates
+      tags: [DataExchange]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Saved Excel column mapping templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      operationId: createExchangeMappingTemplate
+      tags: [DataExchange]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created Excel column mapping template
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/exports/xml:
+    post:
+      operationId: exportTallyEnvelopeXml
+      tags: [DataExchange]
+      summary: Export Tally <ENVELOPE> XML with universal -Dr / +Cr sign convention and pure-ASCII comments
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Exported XML envelope
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/imports/xml:
+    post:
+      operationId: importTallyEnvelopeXml
+      tags: [DataExchange]
+      summary: XXE-hardened Tally <ENVELOPE> XML import stripping &#4; control refs with idempotent GUID upsert
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+          application/xml:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: XML import summary
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/exports/jsonex:
+    post:
+      operationId: exportTallyRel72JsonEx
+      tags: [DataExchange]
+      summary: Export TallyPrime Release 7.2 JSONEx (version 1) payload
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Exported JSONEx payload
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/imports/jsonex:
+    post:
+      operationId: importTallyRel72JsonEx
+      tags: [DataExchange]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: JSONEx import summary
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/exports/excel:
+    post:
+      operationId: exportExcelWorkbook
+      tags: [DataExchange]
+      summary: Export multi-sheet or custom-template .xlsx workbook via Apache POI 5.4.1
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Binary XLSX workbook
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /companies/{companyId}/imports/excel:
+    post:
+      operationId: importExcelWorkbook
+      tags: [DataExchange]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+          multipart/form-data:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Excel import summary
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/vouchers/{voucherId}/print-pdf:
+    post:
+      operationId: printVoucherPdf
+      tags: [PrintPdf]
+      summary: Render deterministic Brand v0.2.0 Tax Invoice / Voucher PDF with embedded Manrope & JetBrains Mono subsets
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Deterministic PDF document
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /companies/{companyId}/reports/{reportType}/pdf:
+    post:
+      operationId: printReportPdf
+      tags: [PrintPdf]
+      summary: Render deterministic Brand v0.2.0 Financial / Ageing / Stock Summary statement PDF
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: reportType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [trial-balance, profit-and-loss, balance-sheet, schedule-iii, day-book, stock-summary, ageing]
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Deterministic PDF statement
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
 components:
   securitySchemes:
     SessionCookie:
@@ -6264,4 +7080,226 @@ components:
           items:
             type: object
         snapshotSha256Hex:
+          type: string
+
+    TrialBalanceReportDto:
+      type: object
+      properties:
+        fromDate:
+          type: string
+          format: date
+        toDate:
+          type: string
+          format: date
+        includeOptional:
+          type: boolean
+        groupRows:
+          type: array
+          items:
+            type: object
+        ledgerRows:
+          type: array
+          items:
+            type: object
+        totalOpeningDebit:
+          type: string
+        totalOpeningCredit:
+          type: string
+        totalPeriodDebit:
+          type: string
+        totalPeriodCredit:
+          type: string
+        totalClosingDebit:
+          type: string
+        totalClosingCredit:
+          type: string
+        differenceAmount:
+          type: string
+        isBalanced:
+          type: boolean
+
+    ProfitAndLossReportDto:
+      type: object
+      properties:
+        fromDate:
+          type: string
+          format: date
+        toDate:
+          type: string
+          format: date
+        openingStockValue:
+          type: string
+        closingStockValue:
+          type: string
+        salesTotal:
+          type: string
+        purchaseTotal:
+          type: string
+        grossProfit:
+          type: string
+        indirectExpensesTotal:
+          type: string
+        netProfit:
+          type: string
+        signedNetProfit:
+          type: string
+
+    BalanceSheetReportDto:
+      type: object
+      properties:
+        asOfDate:
+          type: string
+          format: date
+        format:
+          type: string
+        totalLiabilities:
+          type: string
+        totalAssets:
+          type: string
+        differenceAmount:
+          type: string
+        isBalanced:
+          type: boolean
+
+    ScheduleIiiReportDto:
+      type: object
+      properties:
+        asOfDate:
+          type: string
+          format: date
+        entityFormat:
+          type: string
+        roundingScale:
+          type: string
+        totalEquityAndLiabilities:
+          type: string
+        totalAssets:
+          type: string
+        netProfitForPeriod:
+          type: string
+        isBalanced:
+          type: boolean
+
+    CashFlowReportDto:
+      type: object
+      properties:
+        openingCashAndBank:
+          type: string
+        netCashMovement:
+          type: string
+        closingCashAndBank:
+          type: string
+
+    RatioAnalysisReportDto:
+      type: object
+      properties:
+        workingCapital:
+          type: string
+        currentRatio:
+          type: string
+        quickRatio:
+          type: string
+        grossProfitPct:
+          type: string
+        netProfitPct:
+          type: string
+
+    BillsAgeingReportDto:
+      type: object
+      properties:
+        type:
+          type: string
+        asOfDate:
+          type: string
+          format: date
+        totalPendingAmount:
+          type: string
+
+    SmartFindResponseDto:
+      type: object
+      properties:
+        query:
+          type: string
+        scope:
+          type: string
+        elapsedMs:
+          type: integer
+          format: int64
+        results:
+          type: array
+          items:
+            type: object
+
+    ChequeBookDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        bankLedgerId:
+          type: string
+          format: uuid
+        bookName:
+          type: string
+        fromLeafNo:
+          type: string
+        toLeafNo:
+          type: string
+        totalLeaves:
+          type: integer
+        availableLeaves:
+          type: integer
+
+    StageTally1800Request:
+      type: object
+      required: [snapshotDirectoryPath]
+      properties:
+        snapshotDirectoryPath:
+          type: string
+        companionXmlDirectoryPath:
+          type: string
+          nullable: true
+
+    ImportJobSummaryDto:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        jobType:
+          type: string
+        status:
+          type: string
+        sourceCompanyName:
+          type: string
+        isZeroVariance:
+          type: boolean
+        varianceAmount:
+          type: string
+        proofSha256Hex:
+          type: string
+
+    ImportJobProofDto:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        sourceCompanyName:
+          type: string
+        sector0Verified:
+          type: boolean
+        cmpSaveParityVerified:
+          type: boolean
+        stagedGrossDebit:
+          type: string
+        stagedNetTrialBalance:
+          type: string
+        stagedNetProfit:
+          type: string
+        isZeroVariance:
+          type: boolean
+        proofSha256Hex:
           type: string

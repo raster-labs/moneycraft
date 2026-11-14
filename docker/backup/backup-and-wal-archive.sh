@@ -102,22 +102,18 @@ run_full_snapshot() {
     mkdir -p "${snap_dir}" "${work_dir}"
 
     # 1. Query cross-cluster causal-cut markers (`ma_receipt` seq + `mc_audit_tail` hash)
-    local ma_receipt_seq
-    ma_receipt_seq="$(psql -h "${AUTH_HOST}" -p "${AUTH_PORT}" -U "${AUTH_USER}" -d "${AUTH_DB}" -Atqc \
-        "SELECT COALESCE(MAX(receipt_seq), 0) FROM information_schema.tables t LEFT JOIN LATERAL (SELECT 0 AS receipt_seq) x ON true WHERE t.table_schema='public' AND t.table_name='ma_receipt';" 2>/dev/null || echo "0")"
+    local ma_receipt_seq="0"
     if psql -h "${AUTH_HOST}" -p "${AUTH_PORT}" -U "${AUTH_USER}" -d "${AUTH_DB}" -Atqc \
         "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='ma_receipt';" | grep -q 1; then
         ma_receipt_seq="$(psql -h "${AUTH_HOST}" -p "${AUTH_PORT}" -U "${AUTH_USER}" -d "${AUTH_DB}" -Atqc \
             "SELECT COALESCE(MAX(receipt_seq), 0) FROM ma_receipt;")"
-    else
-        ma_receipt_seq="0"
     fi
 
     local mc_audit_tail_hash="GENESIS"
     if psql -h "${BIZ_HOST}" -p "${BIZ_PORT}" -U "${BIZ_USER}" -d "${BIZ_DB}" -Atqc \
         "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='mc_audit_tail';" | grep -q 1; then
         mc_audit_tail_hash="$(psql -h "${BIZ_HOST}" -p "${BIZ_PORT}" -U "${BIZ_USER}" -d "${BIZ_DB}" -Atqc \
-            "SELECT COALESCE(MAX(tail_hash), 'GENESIS') FROM mc_audit_tail;")"
+            "SELECT COALESCE((SELECT encode(last_event_hash, 'hex') FROM mc_audit_tail ORDER BY updated_at DESC, scope_id ASC LIMIT 1), 'GENESIS');")"
     fi
 
     # 2. Logical `pg_dump` (custom zstd-compressed format) across both PG18 clusters

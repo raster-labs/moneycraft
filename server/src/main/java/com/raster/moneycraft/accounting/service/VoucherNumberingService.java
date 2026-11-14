@@ -40,6 +40,31 @@ public class VoucherNumberingService {
         UUID gstRegistrationId,
         String requestedManualNumber
     ) {
+        return allocateNumber(
+            companyId,
+            journalId,
+            voucherTypeId,
+            numberingMethod,
+            preventDuplicateNumbers,
+            fiscalYearId,
+            gstRegistrationId,
+            requestedManualNumber,
+            false
+        );
+    }
+
+    @Transactional(transactionManager = "transactionManager", propagation = Propagation.MANDATORY)
+    public AllocatedVoucherNumber allocateNumber(
+        UUID companyId,
+        UUID journalId,
+        UUID voucherTypeId,
+        String numberingMethod,
+        boolean preventDuplicateNumbers,
+        UUID fiscalYearId,
+        UUID gstRegistrationId,
+        String requestedManualNumber,
+        boolean preserveExplicitNumber
+    ) {
         String trimmedManual = requestedManualNumber == null ? null : requestedManualNumber.trim();
         if (trimmedManual != null && trimmedManual.isEmpty()) {
             trimmedManual = null;
@@ -78,6 +103,25 @@ public class VoucherNumberingService {
             fiscalYearId,
             gstRegistrationId
         );
+
+        if (preserveExplicitNumber && trimmedManual != null) {
+            Long parsedSeq = tryParsePositiveLong(trimmedManual);
+            if (parsedSeq != null && parsedSeq >= series.nextNumber()) {
+                businessJdbcTemplate.update(
+                    """
+                    UPDATE mc_number_series
+                       SET next_number = ?,
+                           version_no = version_no + 1,
+                           updated_at = clock_timestamp()
+                     WHERE company_id = ? AND id = ?
+                    """,
+                    parsedSeq + 1L,
+                    companyId,
+                    series.id()
+                );
+            }
+            return new AllocatedVoucherNumber(series.id(), trimmedManual, parsedSeq);
+        }
 
         if ("AUTOMATIC_RETAIN_NUMBERS".equals(numberingMethod)) {
             List<AvailableUnusedRow> unusedRows = businessJdbcTemplate.query(
@@ -461,6 +505,18 @@ public class VoucherNumberingService {
             excludeJournalId
         );
         return cnt != null && cnt > 0;
+    }
+
+    private static Long tryParsePositiveLong(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            long val = Long.parseLong(raw.trim());
+            return val > 0 ? val : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     public static String formatSeriesNumber(

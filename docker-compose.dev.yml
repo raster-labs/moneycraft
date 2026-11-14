@@ -20,6 +20,10 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: dev
       MC_BASE_URL: https://localhost:${MC_GATEWAY_HTTPS_PORT:-18443}
+      MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_0: https://localhost:${MC_GATEWAY_HTTPS_PORT:-18443}
+      MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_1: https://127.0.0.1:${MC_GATEWAY_HTTPS_PORT:-18443}
+      MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_2: http://localhost:${MC_GATEWAY_HTTP_PORT:-18080}
+      MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_3: http://127.0.0.1:${MC_GATEWAY_HTTP_PORT:-18080}
       JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:InitialRAMPercentage=25.0 -XX:MaxRAMPercentage=65.0 -XX:+UseZGC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -Djava.awt.headless=true"
 
   moneycraft-migrator:
@@ -38,3 +42,4 @@ services:
     environment:
       MC_HTTPS_REDIRECT_PORT: ${MC_GATEWAY_HTTPS_PORT:-18443}
       MC_ALLOW_SELF_SIGNED_TLS: "true"
+      MC_DEV_ALLOW_HTTP: "true"

@@ -136,6 +136,33 @@ public class VoucherService {
         UUID companyId,
         VoucherDtos.UpsertVoucherRequest request
     ) {
+        return createVoucherInternal(actor, companyId, request, "LIVE", "CREATE", false);
+    }
+
+    public VoucherDtos.VoucherDetailDto createImportedVoucher(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        VoucherDtos.UpsertVoucherRequest request,
+        String origin,
+        String editLogOperation
+    ) {
+        String effectiveOrigin = (origin == null || origin.isBlank())
+            ? "MIGRATION"
+            : origin.trim().toUpperCase(Locale.ROOT);
+        String effectiveOp = (editLogOperation == null || editLogOperation.isBlank())
+            ? ("MIGRATION".equals(effectiveOrigin) ? "MIGRATE_IN" : "CREATE")
+            : editLogOperation.trim().toUpperCase(Locale.ROOT);
+        return createVoucherInternal(actor, companyId, request, effectiveOrigin, effectiveOp, true);
+    }
+
+    private VoucherDtos.VoucherDetailDto createVoucherInternal(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        VoucherDtos.UpsertVoucherRequest request,
+        String origin,
+        String editLogOperation,
+        boolean preserveExplicitNumber
+    ) {
         authorityGuard.assertActiveLease();
         CompanyMasterSequenceHelper.requireInventoryWriteRole(rbacGuard, actor, companyId);
         if (request == null || request.voucherDate() == null) {
@@ -240,7 +267,8 @@ public class VoucherService {
                 vt.preventDuplicateNumbers(),
                 period.fiscalYearId(),
                 resolvedCompanyGstinId,
-                request.voucherNumber()
+                request.voucherNumber(),
+                preserveExplicitNumber
             );
 
             boolean postActiveGl = shouldHoldActiveGl(header.status(), header.postingNature(), vt.postsAccountingEntries());
@@ -269,7 +297,7 @@ public class VoucherService {
                     ?, ?, ?,
                     ?, ?, ?, ?,
                     ?, ?, ?, ?,
-                    ?, ?, ?, ?, 'LIVE', ?,
+                    ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, 1,
                     ?, ?, ?, CASE WHEN ?::uuid IS NOT NULL THEN clock_timestamp() ELSE NULL END
                 )
@@ -307,6 +335,7 @@ public class VoucherService {
                 totalDr,
                 totalCr,
                 header.narration(),
+                origin,
                 header.sourceGuid(),
                 seq.masterSeqId(),
                 seq.alterId(),
@@ -354,7 +383,7 @@ public class VoucherService {
                 created.masterSeqId(),
                 created.alterId(),
                 created.versionNo(),
-                "CREATE",
+                editLogOperation,
                 actor.principalId(),
                 actor.username(),
                 created.voucherNumber(),

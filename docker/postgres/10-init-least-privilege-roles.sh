@@ -41,6 +41,9 @@ psql -v ON_ERROR_STOP=1 \
      -v runtime_pw="${RUNTIME_PW}" \
      -v backup_pw="${BACKUP_PW}" \
      -v target_db="${POSTGRES_DB}" <<'EOSQL'
+CREATE EXTENSION IF NOT EXISTS citext;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mc_flyway_migrator') THEN
@@ -50,17 +53,18 @@ BEGIN
         CREATE ROLE mc_app_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mc_backup_operator') THEN
-        CREATE ROLE mc_backup_operator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE REPLICATION NOBYPASSRLS;
+        CREATE ROLE mc_backup_operator LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE REPLICATION BYPASSRLS;
     END IF;
 END
 $$;
 
-ALTER ROLE mc_flyway_migrator WITH PASSWORD :'migrator_pw';
-ALTER ROLE mc_app_runtime     WITH PASSWORD :'runtime_pw';
-ALTER ROLE mc_backup_operator WITH PASSWORD :'backup_pw';
+ALTER ROLE mc_flyway_migrator WITH PASSWORD :'migrator_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER ROLE mc_app_runtime     WITH PASSWORD :'runtime_pw'  NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+ALTER ROLE mc_backup_operator WITH PASSWORD :'backup_pw'   NOSUPERUSER NOCREATEDB NOCREATEROLE REPLICATION   BYPASSRLS;
 
 GRANT pg_read_all_data TO mc_backup_operator;
 GRANT pg_checkpoint    TO mc_backup_operator;
+GRANT pg_monitor       TO mc_backup_operator;
 
 REVOKE ALL ON DATABASE :"target_db" FROM PUBLIC;
 GRANT CONNECT, TEMPORARY ON DATABASE :"target_db" TO mc_flyway_migrator, mc_app_runtime, mc_backup_operator;
@@ -75,3 +79,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE mc_flyway_migrator IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE mc_flyway_migrator IN SCHEMA public
     GRANT USAGE, SELECT ON SEQUENCES TO mc_app_runtime;
 EOSQL
+
+if [[ -n "${PGDATA:-}" && -f "${PGDATA}/pg_hba.conf" ]]; then
+    if ! grep -qE '^host[[:space:]]+replication[[:space:]]+mc_backup_operator[[:space:]]' "${PGDATA}/pg_hba.conf"; then
+        printf '\n# MoneyCraft Dual-PG18 physical backup & WAL streaming role (isolated mc_data_net)\nhost replication mc_backup_operator all scram-sha-256\n' >> "${PGDATA}/pg_hba.conf"
+    fi
+    psql -v ON_ERROR_STOP=1 --username "${POSTGRES_USER}" --dbname "${POSTGRES_DB}" -c "SELECT pg_reload_conf();" >/dev/null
+fi

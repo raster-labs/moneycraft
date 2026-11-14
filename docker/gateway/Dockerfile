@@ -80,8 +80,29 @@ else
         -addext "subjectAltName=DNS:${CN_HOST},DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
     chmod 0600 /tmp/tls/privkey.pem
 fi
+
+if [ "${MC_DEV_ALLOW_HTTP:-false}" = "true" ]; then
+    cat > /tmp/nginx-conf.d/http-port8080-mode.inc <<'HTTPDEV'
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+limit_conn mc_conn_limit 64;
+
+include /tmp/nginx-conf.d/gateway-routes.inc;
+HTTPDEV
+else
+    REDIRECT_PORT="${MC_HTTPS_REDIRECT_PORT:-443}"
+    cat > /tmp/nginx-conf.d/http-port8080-mode.inc <<HTTPPROD
+location / {
+    return 308 https://\$host:${REDIRECT_PORT}\$request_uri;
+}
+HTTPPROD
+fi
 EOF
 
+COPY --chown=101:101 gateway-routes.inc.template /etc/nginx/templates/gateway-routes.inc.template
 COPY --chown=101:101 nginx.conf.template /etc/nginx/templates/default.conf.template
 
 ENV NGINX_ENVSUBST_OUTPUT_DIR="/tmp/nginx-conf.d" \
@@ -89,7 +110,8 @@ ENV NGINX_ENVSUBST_OUTPUT_DIR="/tmp/nginx-conf.d" \
     MC_API_UPSTREAM="moneycraft-api:8080" \
     MC_UI_UPSTREAM="moneycraft-ui:8080" \
     MC_PUBLIC_HOSTNAME="localhost" \
-    MC_HTTPS_REDIRECT_PORT="443"
+    MC_HTTPS_REDIRECT_PORT="443" \
+    MC_DEV_ALLOW_HTTP="false"
 
 USER 101:101
 

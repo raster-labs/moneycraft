@@ -1,0 +1,27 @@
+server:
+  servlet:
+    session:
+      cookie:
+        secure: false
+
+moneycraft:
+  flyway:
+    enabled: ${MC_FLYWAY_ENABLED:true}
+  security:
+    cookie-secure: false
+  crypto:
+    allow-ephemeral-dev-kek: true
+    master-kek: ${MC_TINK_MASTER_KEK:${mc_tink_master_kek:dev-only-local-master-kek-32byte!}}
+    cursor-hmac-seed: ${MC_CURSOR_HMAC_KEY:${mc_cursor_hmac_key:dev-only-cursor-hmac-seed-32byte!}}
+    idempotency-hmac-seed: ${MC_IDEMPOTENCY_HMAC_KEY:${mc_idempotency_hmac_key:dev-only-idempotency-seed-32byte!}}
+  connector:
+    enabled: ${MC_CONNECTOR_SPI_ENABLED:false}
+  datasource:
+    authority:
+      jdbc-url: ${MC_AUTHORITY_JDBC_URL:jdbc:postgresql://${MC_AUTHORITY_DB_HOST:127.0.0.1}:${MC_AUTHORITY_DB_PORT:55481}/${MC_AUTHORITY_DB_NAME:moneycraft_authority}}
+      password: ${MC_AUTHORITY_DB_PASSWORD:${mc_db_runtime_password:${mc_authority_db_password:moneycraft_dev_pw}}}
+      migrator-password: ${MC_AUTHORITY_MIGRATOR_PASSWORD:${mc_db_migrator_password:${MC_AUTHORITY_DB_PASSWORD:moneycraft_dev_pw}}}
+    business:
+      jdbc-url: ${MC_BUSINESS_JDBC_URL:jdbc:postgresql://${MC_BUSINESS_DB_HOST:127.0.0.1}:${MC_BUSINESS_DB_PORT:55480}/${MC_BUSINESS_DB_NAME:moneycraft_business}}
+      password: ${MC_BUSINESS_DB_PASSWORD:${mc_db_runtime_password:${mc_business_db_password:moneycraft_dev_pw}}}
+      migrator-password: ${MC_BUSINESS_MIGRATOR_PASSWORD:${mc_db_migrator_password:${MC_BUSINESS_DB_PASSWORD:moneycraft_dev_pw}}}

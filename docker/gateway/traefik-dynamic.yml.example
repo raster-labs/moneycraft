@@ -1,0 +1,104 @@
+# ==============================================================================
+# MoneyCraft 1.0.0 — Optional Drop-In Traefik v3 Dynamic Edge Config Example
+# Mirrors `nginx.conf.template` rules for enterprise operators running Traefik:
+#   - TLS 1.3 / strong TLS 1.2 termination + HSTS
+#   - Hard 404 block on `/actuator/*`
+#   - Rate limiting on `/api/v1/auth/*` (10r/m) and `/api/v1/*` (120r/s)
+#   - Unbuffered SSE proxy on `/api/v1/events/stream`
+# ==============================================================================
+
+tls:
+  options:
+    moneycraft-tls:
+      minVersion: VersionTLS13
+      sniStrict: true
+
+http:
+  routers:
+    mc-block-actuator:
+      rule: "PathPrefix(`/actuator`)"
+      priority: 1000
+      entryPoints: ["websecure"]
+      tls:
+        options: moneycraft-tls
+      middlewares: ["mc-deny-all"]
+      service: noop@internal
+
+    mc-api-auth:
+      rule: "PathPrefix(`/api/v1/auth/`)"
+      priority: 300
+      entryPoints: ["websecure"]
+      tls:
+        options: moneycraft-tls
+      middlewares: ["mc-security-headers", "mc-auth-ratelimit"]
+      service: moneycraft-api
+
+    mc-api-sse:
+      rule: "Path(`/api/v1/events/stream`)"
+      priority: 250
+      entryPoints: ["websecure"]
+      tls:
+        options: moneycraft-tls
+      middlewares: ["mc-security-headers"]
+      service: moneycraft-api-sse
+
+    mc-api:
+      rule: "PathPrefix(`/api/v1/`)"
+      priority: 200
+      entryPoints: ["websecure"]
+      tls:
+        options: moneycraft-tls
+      middlewares: ["mc-security-headers", "mc-erp-ratelimit"]
+      service: moneycraft-api
+
+    mc-ui:
+      rule: "PathPrefix(`/`)"
+      priority: 100
+      entryPoints: ["websecure"]
+      tls:
+        options: moneycraft-tls
+      middlewares: ["mc-security-headers"]
+      service: moneycraft-ui
+
+  middlewares:
+    mc-security-headers:
+      headers:
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+
+    mc-auth-ratelimit:
+      rateLimit:
+        average: 10
+        period: 1m
+        burst: 5
+
+    mc-erp-ratelimit:
+      rateLimit:
+        average: 120
+        period: 1s
+        burst: 200
+
+    mc-deny-all:
+      ipAllowList:
+        sourceRange: ["127.0.0.254/32"]
+
+  services:
+    moneycraft-api:
+      loadBalancer:
+        servers:
+          - url: "http://moneycraft-api:8080"
+
+    moneycraft-api-sse:
+      loadBalancer:
+        responseForwarding:
+          flushInterval: "1ms"
+        servers:
+          - url: "http://moneycraft-api:8080"
+
+    moneycraft-ui:
+      loadBalancer:
+        servers:
+          - url: "http://moneycraft-ui:8080"

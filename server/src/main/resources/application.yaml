@@ -1,0 +1,122 @@
+spring:
+  application:
+    name: moneycraft-server
+  config:
+    import: optional:configtree:/run/secrets/
+  lifecycle:
+    timeout-per-shutdown-phase: ${SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE:25s}
+  session:
+    timeout: 30m
+    jdbc:
+      initialize-schema: never
+      table-name: SPRING_SESSION
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: ${SERVER_SHUTDOWN:graceful}
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        name: MCSESSION
+        http-only: true
+        same-site: lax
+
+management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: ${MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED:true}
+      show-details: when_authorized
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,authorityDb,businessDb,authorityGuard
+
+moneycraft:
+  version: ${MC_RELEASE_VERSION:1.0.0-SNAPSHOT}
+  installation-id: ${MC_INSTALLATION_ID:00000000-0000-4000-8000-000000000000}
+  base-url: ${MC_BASE_URL:https://localhost:18443}
+  flyway:
+    enabled: ${MC_FLYWAY_ENABLED:true}
+  migrator:
+    only: false
+    exit-on-complete: ${MC_MIGRATOR_EXIT_ON_COMPLETE:false}
+  webauthn:
+    rp-id: ${MC_WEBAUTHN_RP_ID:localhost}
+    rp-name: ${MC_WEBAUTHN_RP_NAME:MoneyCraft}
+    allowed-origins:
+      - ${MC_BASE_URL:https://localhost:18443}
+      - http://localhost:4200
+      - http://localhost:8080
+  security:
+    cookie-secure: true
+    argon2:
+      salt-length: 16
+      hash-length: 32
+      parallelism: 1
+      memory-kib: 65536
+      iterations: 3
+  crypto:
+    kek-key-id: ${MC_TINK_KEK_ID:local-envelope-kek-v1}
+    master-kek: ${MC_TINK_MASTER_KEK:${mc_tink_master_kek:}}
+    cursor-hmac-seed: ${MC_CURSOR_HMAC_KEY:${mc_cursor_hmac_key:}}
+    idempotency-hmac-seed: ${MC_IDEMPOTENCY_HMAC_KEY:${mc_idempotency_hmac_key:}}
+    allow-ephemeral-dev-kek: false
+  connector:
+    enabled: ${MC_CONNECTOR_SPI_ENABLED:false}
+    egress-hostname-allowlist: []
+  datasource:
+    authority:
+      jdbc-url: ${MC_AUTHORITY_JDBC_URL:jdbc:postgresql://${MC_AUTHORITY_DB_HOST:localhost}:${MC_AUTHORITY_DB_PORT:5432}/${MC_AUTHORITY_DB_NAME:moneycraft_authority}}
+      username: ${MC_AUTHORITY_DB_USER:mc_app_runtime}
+      password: ${MC_AUTHORITY_DB_PASSWORD:${mc_db_runtime_password:${mc_authority_db_password:}}}
+      migrator-username: ${MC_AUTHORITY_MIGRATOR_USER:${MC_AUTHORITY_DB_USER:mc_app_runtime}}
+      migrator-password: ${MC_AUTHORITY_MIGRATOR_PASSWORD:${mc_db_migrator_password:${MC_AUTHORITY_DB_PASSWORD:${mc_db_runtime_password:}}}}
+      maximum-pool-size: 10
+      minimum-idle: 2
+    business:
+      jdbc-url: ${MC_BUSINESS_JDBC_URL:jdbc:postgresql://${MC_BUSINESS_DB_HOST:localhost}:${MC_BUSINESS_DB_PORT:5432}/${MC_BUSINESS_DB_NAME:moneycraft_business}}
+      username: ${MC_BUSINESS_DB_USER:mc_app_runtime}
+      password: ${MC_BUSINESS_DB_PASSWORD:${mc_db_runtime_password:${mc_business_db_password:}}}
+      migrator-username: ${MC_BUSINESS_MIGRATOR_USER:${MC_BUSINESS_DB_USER:mc_app_runtime}}
+      migrator-password: ${MC_BUSINESS_MIGRATOR_PASSWORD:${mc_db_migrator_password:${MC_BUSINESS_DB_PASSWORD:${mc_db_runtime_password:}}}}
+      maximum-pool-size: 20
+      minimum-idle: 4
+
+---
+spring:
+  config:
+    activate:
+      on-profile: migrator
+  main:
+    web-application-type: none
+
+moneycraft:
+  flyway:
+    enabled: ${MC_FLYWAY_ENABLED:true}
+  migrator:
+    only: true
+    exit-on-complete: ${MC_MIGRATOR_EXIT_ON_COMPLETE:true}
+  datasource:
+    authority:
+      username: ${MC_AUTHORITY_DB_USER:mc_flyway_migrator}
+      password: ${MC_AUTHORITY_DB_PASSWORD:${mc_db_migrator_password:${mc_authority_db_password:}}}
+    business:
+      username: ${MC_BUSINESS_DB_USER:mc_flyway_migrator}
+      password: ${MC_BUSINESS_DB_PASSWORD:${mc_db_migrator_password:${mc_business_db_password:}}}

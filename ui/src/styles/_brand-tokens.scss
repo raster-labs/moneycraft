@@ -1,0 +1,100 @@
+/* MoneyCraft 1.0.0 — Brand Identity v0.2.0 Canonical Design Tokens */
+:root {
+  /* Core Brand Identity v0.2.0 Palette */
+  --mc-color-slate-900: #142F42;
+  --mc-color-deep-ledger-slate: #142F42;
+
+  --mc-color-teal-600: #008D87;
+  --mc-color-verdigris-teal: #008D87;
+
+  --mc-color-teal-700: #006D68;
+  --mc-color-pressed-teal: #006D68;
+
+  --mc-color-mint-400: #4CE1BD;
+  --mc-color-mint-signal: #4CE1BD;
+
+  --mc-color-jade-500: #22B69C;
+  --mc-color-ledger-jade: #22B69C;
+
+  --mc-color-canvas: #F6FAF9;
+  --mc-color-cool-alabaster: #F6FAF9;
+
+  --mc-color-surface: #FFFFFF;
+  --mc-color-crisp-card: #FFFFFF;
+
+  /* Extended ERP Neutrals & Surface Hierarchy */
+  --mc-color-slate-800: #1D3E55;
+  --mc-color-slate-700: #2B526E;
+  --mc-color-slate-600: #41657F;
+  --mc-color-slate-500: #5B7B92;
+  --mc-color-slate-300: #B9CBD6;
+  --mc-color-slate-200: #D5E2E9;
+  --mc-color-slate-100: #E8F0F3;
+  --mc-color-teal-50: #E6F6F5;
+  --mc-color-teal-100: #C5ECE9;
+  --mc-color-row-hover: #EDF6F5;
+  --mc-color-row-selected: #DDF2EF;
+  --mc-color-cell-active-bg: #FFFCE6;
+
+  /* Semantic Status & Quarantine Alert Palette */
+  --mc-color-danger-700: #912018;
+  --mc-color-danger-600: #B42318;
+  --mc-color-danger-100: #FEE4E2;
+  --mc-color-danger-50: #FEF3F2;
+
+  --mc-color-warning-700: #B54708;
+  --mc-color-warning-100: #FEF0C7;
+  --mc-color-warning-50: #FFFAEB;
+
+  --mc-color-success-700: #067647;
+  --mc-color-success-100: #DCFAE6;
+  --mc-color-success-50: #ECFDF3;
+
+  /* Typography Families & Scale */
+  --mc-font-ui: 'Manrope', 'Noto Sans Devanagari', 'Noto Sans Tamil', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mc-font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+
+  --mc-font-size-xs: 0.75rem;    /* 12px — dense badges & shortcut hints */
+  --mc-font-size-sm: 0.8125rem;  /* 13px — compact register headers */
+  --mc-font-size-base: 0.875rem; /* 14px — standard dense ERP body/grid */
+  --mc-font-size-md: 0.9375rem;  /* 15px — prominent controls/menus */
+  --mc-font-size-lg: 1.0625rem;  /* 17px — panel titles */
+  --mc-font-size-xl: 1.25rem;    /* 20px — screen headers */
+  --mc-font-size-2xl: 1.5rem;    /* 24px — setup/auth titles */
+
+  /* Tally-Dense ERP Spacing & Sizing */
+  --mc-space-1: 0.25rem;  /* 4px */
+  --mc-space-2: 0.5rem;   /* 8px */
+  --mc-space-3: 0.75rem;  /* 12px */
+  --mc-space-4: 1rem;     /* 16px */
+  --mc-space-5: 1.25rem;  /* 20px */
+  --mc-space-6: 1.5rem;   /* 24px */
+  --mc-space-8: 2rem;     /* 32px */
+
+  --mc-shell-topbar-height: 40px;
+  --mc-shell-bottombar-height: 28px;
+  --mc-shell-fbar-width: 176px;
+  --mc-shell-infopanel-width: 280px;
+  --mc-grid-row-height: 30px;
+
+  /* Borders, Radius & Elevation */
+  --mc-border-subtle: 1px solid var(--mc-color-slate-200);
+  --mc-border-strong: 1px solid var(--mc-color-slate-300);
+  --mc-border-active: 2px solid var(--mc-color-verdigris-teal);
+  --mc-radius-xs: 3px;
+  --mc-radius-sm: 4px;
+  --mc-radius-md: 6px;
+  --mc-radius-lg: 8px;
+
+  --mc-focus-ring: 0 0 0 2px rgba(0, 141, 135, 0.32);
+  --mc-shadow-card: 0 1px 3px rgba(20, 47, 66, 0.08), 0 1px 2px rgba(20, 47, 66, 0.05);
+  --mc-shadow-modal: 0 16px 36px rgba(20, 47, 66, 0.24), 0 4px 12px rgba(20, 47, 66, 0.12);
+
+  /* Z-Index Stack */
+  --mc-z-shell: 100;
+  --mc-z-dropdown: 250;
+  --mc-z-goto-stack-base: 400;
+  --mc-z-palette: 700;
+  --mc-z-error-modal: 900;
+  --mc-z-quarantine: 1000;
+}

@@ -1,0 +1,351 @@
+name: moneycraft
+
+# ==============================================================================
+# MoneyCraft 1.0.0 — Canonical Multi-Service Production Base Topology
+# Zero host `ports:` published in base; combine with an explicit overlay:
+#   Dev:     docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev up -d
+#   Staging: docker compose -f docker-compose.yml -f docker-compose.staging.yml --env-file .env.staging up -d
+#   Prod:    docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d
+# ==============================================================================
+
+x-hardened-common: &hardened-common
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Protected Authority PostgreSQL 18.6 (`ma_*` + `SPRING_SESSION`)
+  # ----------------------------------------------------------------------------
+  moneycraft-authority-pg18:
+    <<: *hardened-common
+    image: postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+    user: "999:999"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MC_AUTHORITY_DB_NAME:-moneycraft_authority}
+      POSTGRES_USER: ${MC_AUTHORITY_DB_SUPER_USER:-mc_auth_pg_super}
+      POSTGRES_PASSWORD_FILE: /run/secrets/mc_authority_db_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums"
+      MC_DB_MIGRATOR_PASSWORD_FILE: /run/secrets/mc_db_migrator_password
+      MC_DB_RUNTIME_PASSWORD_FILE: /run/secrets/mc_db_runtime_password
+      MC_DB_BACKUP_PASSWORD_FILE: /run/secrets/mc_db_backup_password
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/moneycraft/postgresql-authority.conf"
+    volumes:
+      # PostgreSQL 18+ official layout mounts `/var/lib/postgresql` (`PGDATA=/var/lib/postgresql/18/docker`)
+      - mc_authority_pg18_data:/var/lib/postgresql
+      - mc_pg_wal_archive:/var/lib/postgresql/wal-archive
+      - ./docker/postgres/postgresql-authority.conf:/etc/postgresql/moneycraft/postgresql-authority.conf:ro
+      - ./docker/postgres/10-init-least-privilege-roles.sh:/docker-entrypoint-initdb.d/10-init-least-privilege-roles.sh:ro
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+      - /var/run/postgresql:uid=999,gid=999,mode=0775,size=16m
+    secrets:
+      - mc_authority_db_password
+      - mc_db_migrator_password
+      - mc_db_runtime_password
+      - mc_db_backup_password
+    networks:
+      - mc_data_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # 2. Business Accounting PostgreSQL 18.6 (`mc_*` + RLS + Composite FKs)
+  # ----------------------------------------------------------------------------
+  moneycraft-business-pg18:
+    <<: *hardened-common
+    image: postgres:18.6-bookworm@sha256:f1ea2a1a4fb7b68d4836be1fdcb8a6466a89b072158bf9d97663600538c294c5
+    user: "999:999"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${MC_BUSINESS_DB_NAME:-moneycraft_business}
+      POSTGRES_USER: ${MC_BUSINESS_DB_SUPER_USER:-mc_pg_super}
+      POSTGRES_PASSWORD_FILE: /run/secrets/mc_business_db_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256 --data-checksums"
+      MC_DB_MIGRATOR_PASSWORD_FILE: /run/secrets/mc_db_migrator_password
+      MC_DB_RUNTIME_PASSWORD_FILE: /run/secrets/mc_db_runtime_password
+      MC_DB_BACKUP_PASSWORD_FILE: /run/secrets/mc_db_backup_password
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/moneycraft/postgresql-business.conf"
+    volumes:
+      - mc_business_pg18_data:/var/lib/postgresql
+      - mc_pg_wal_archive:/var/lib/postgresql/wal-archive
+      - ./docker/postgres/postgresql-business.conf:/etc/postgresql/moneycraft/postgresql-business.conf:ro
+      - ./docker/postgres/10-init-least-privilege-roles.sh:/docker-entrypoint-initdb.d/10-init-least-privilege-roles.sh:ro
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+      - /var/run/postgresql:uid=999,gid=999,mode=0775,size=16m
+    secrets:
+      - mc_business_db_password
+      - mc_db_migrator_password
+      - mc_db_runtime_password
+      - mc_db_backup_password
+    networks:
+      - mc_data_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # 3. Synchronized Dual-PG18 Backup & Encrypted WAL PITR Sidecar (`uid 999`)
+  # ----------------------------------------------------------------------------
+  moneycraft-pg-backup:
+    <<: *hardened-common
+    image: ${MC_REGISTRY:-local}/moneycraft-pg-backup:${MC_IMAGE_TAG:-1.0.0-SNAPSHOT}
+    build:
+      context: ./docker/backup
+      dockerfile: Dockerfile
+    user: "999:999"
+    restart: unless-stopped
+    depends_on:
+      moneycraft-authority-pg18:
+        condition: service_healthy
+      moneycraft-business-pg18:
+        condition: service_healthy
+    environment:
+      MC_BACKUP_ROOT: /backups
+      MC_WAL_ARCHIVE_ROOT: /wal-archive
+      MC_BACKUP_KEK_FILE: /run/secrets/mc_tink_master_kek
+      MC_DB_BACKUP_PASSWORD_FILE: /run/secrets/mc_db_backup_password
+      MC_AUTHORITY_SUPER_PASSWORD_FILE: /run/secrets/mc_authority_db_password
+      MC_BUSINESS_SUPER_PASSWORD_FILE: /run/secrets/mc_business_db_password
+      MC_AUTHORITY_DB_HOST: moneycraft-authority-pg18
+      MC_AUTHORITY_DB_PORT: "5432"
+      MC_AUTHORITY_DB_NAME: ${MC_AUTHORITY_DB_NAME:-moneycraft_authority}
+      MC_AUTHORITY_DB_SUPER_USER: ${MC_AUTHORITY_DB_SUPER_USER:-mc_auth_pg_super}
+      MC_BUSINESS_DB_HOST: moneycraft-business-pg18
+      MC_BUSINESS_DB_PORT: "5432"
+      MC_BUSINESS_DB_NAME: ${MC_BUSINESS_DB_NAME:-moneycraft_business}
+      MC_BUSINESS_DB_SUPER_USER: ${MC_BUSINESS_DB_SUPER_USER:-mc_pg_super}
+      MC_BACKUP_DB_USER: mc_backup_operator
+    volumes:
+      - mc_pg_backups:/backups
+      - mc_pg_wal_archive:/wal-archive
+    tmpfs:
+      - /tmp:uid=999,gid=999,mode=1777,size=256m
+    secrets:
+      - mc_tink_master_kek
+      - mc_db_backup_password
+      - mc_authority_db_password
+      - mc_business_db_password
+    networks:
+      - mc_data_net
+
+  # ----------------------------------------------------------------------------
+  # 4. One-Shot Pre-Deploy Expand-and-Contract Flyway Migrator (`uid 10001`)
+  # ----------------------------------------------------------------------------
+  moneycraft-migrator:
+    <<: *hardened-common
+    image: ${MC_REGISTRY:-local}/moneycraft-api:${MC_IMAGE_TAG:-1.0.0-SNAPSHOT}
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    user: "10001:10001"
+    restart: "no"
+    depends_on:
+      moneycraft-authority-pg18:
+        condition: service_healthy
+      moneycraft-business-pg18:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${MC_SPRING_PROFILE:-prod},migrator
+      SPRING_MAIN_WEB_APPLICATION_TYPE: "none"
+      SPRING_CONFIG_IMPORT: "optional:configtree:/run/secrets/"
+      MC_AUTHORITY_DB_HOST: moneycraft-authority-pg18
+      MC_AUTHORITY_DB_PORT: "5432"
+      MC_AUTHORITY_DB_NAME: ${MC_AUTHORITY_DB_NAME:-moneycraft_authority}
+      MC_AUTHORITY_DB_USER: mc_flyway_migrator
+      MC_BUSINESS_DB_HOST: moneycraft-business-pg18
+      MC_BUSINESS_DB_PORT: "5432"
+      MC_BUSINESS_DB_NAME: ${MC_BUSINESS_DB_NAME:-moneycraft_business}
+      MC_BUSINESS_DB_USER: mc_flyway_migrator
+      MC_FLYWAY_ENABLED: "true"
+      MC_MIGRATOR_EXIT_ON_COMPLETE: "true"
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1777,size=64m
+      - /var/run/moneycraft:uid=10001,gid=10001,mode=0750,size=16m
+      - /var/log/moneycraft/oom:uid=10001,gid=10001,mode=0750,size=64m
+    secrets:
+      - mc_db_migrator_password
+      - mc_tink_master_kek
+      - mc_cursor_hmac_key
+      - mc_idempotency_hmac_key
+    networks:
+      - mc_data_net
+
+  # ----------------------------------------------------------------------------
+  # 5. Spring Boot 4.1.2 / Java 25 ERP Backend (`uid 10001`, `NOBYPASSRLS`)
+  # ----------------------------------------------------------------------------
+  moneycraft-api:
+    <<: *hardened-common
+    image: ${MC_REGISTRY:-local}/moneycraft-api:${MC_IMAGE_TAG:-1.0.0-SNAPSHOT}
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    user: "10001:10001"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      moneycraft-authority-pg18:
+        condition: service_healthy
+      moneycraft-business-pg18:
+        condition: service_healthy
+      moneycraft-migrator:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: ${MC_SPRING_PROFILE:-prod}
+      SPRING_CONFIG_IMPORT: "optional:configtree:/run/secrets/"
+      SERVER_PORT: "8080"
+      SERVER_SHUTDOWN: "graceful"
+      SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: "25s"
+      MANAGEMENT_SERVER_PORT: "8081"
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+      MC_INSTALLATION_ID: ${MC_INSTALLATION_ID:-00000000-0000-4000-8000-000000000000}
+      MC_BASE_URL: ${MC_BASE_URL:-https://localhost:18443}
+      MC_WEBAUTHN_RP_ID: ${MC_WEBAUTHN_RP_ID:-localhost}
+      MC_WEBAUTHN_RP_NAME: ${MC_WEBAUTHN_RP_NAME:-MoneyCraft}
+      MC_AUTHORITY_DB_HOST: moneycraft-authority-pg18
+      MC_AUTHORITY_DB_PORT: "5432"
+      MC_AUTHORITY_DB_NAME: ${MC_AUTHORITY_DB_NAME:-moneycraft_authority}
+      MC_AUTHORITY_DB_USER: mc_app_runtime
+      MC_BUSINESS_DB_HOST: moneycraft-business-pg18
+      MC_BUSINESS_DB_PORT: "5432"
+      MC_BUSINESS_DB_NAME: ${MC_BUSINESS_DB_NAME:-moneycraft_business}
+      MC_BUSINESS_DB_USER: mc_app_runtime
+      MC_CONNECTOR_SPI_ENABLED: "false"
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=1777,size=128m
+      - /var/run/moneycraft:uid=10001,gid=10001,mode=0750,size=16m
+      - /var/log/moneycraft/oom:uid=10001,gid=10001,mode=0750,size=256m
+    secrets:
+      - mc_db_runtime_password
+      - mc_tink_master_kek
+      - mc_cursor_hmac_key
+      - mc_idempotency_hmac_key
+    networks:
+      - mc_edge_net
+      - mc_data_net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/actuator/health/readiness"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  # ----------------------------------------------------------------------------
+  # 6. Angular 22 LTS SPA Server (`nginx-unprivileged`, `uid 101`)
+  # ----------------------------------------------------------------------------
+  moneycraft-ui:
+    <<: *hardened-common
+    image: ${MC_REGISTRY:-local}/moneycraft-ui:${MC_IMAGE_TAG:-1.0.0-SNAPSHOT}
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+    user: "101:101"
+    restart: unless-stopped
+    environment:
+      MC_PUBLIC_API_URL: ${MC_PUBLIC_API_URL:-/api/v1}
+      MC_ENV_LABEL: ${MC_ENV_LABEL:-PRODUCTION}
+      MC_DEFAULT_CURRENCY: ${MC_DEFAULT_CURRENCY:-INR}
+      MC_RELEASE_VERSION: ${MC_RELEASE_VERSION:-1.0.0}
+    tmpfs:
+      - /tmp:uid=101,gid=101,mode=1777,size=16m
+      - /var/cache/nginx:uid=101,gid=101,mode=0750,size=32m
+      - /usr/share/nginx/html/assets/config:uid=101,gid=101,mode=0755,size=1m
+    networks:
+      - mc_edge_net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # 7. Edge TLS 1.3 Reverse Proxy (`nginx-unprivileged`, `uid 101`)
+  # ----------------------------------------------------------------------------
+  moneycraft-gateway:
+    <<: *hardened-common
+    image: ${MC_REGISTRY:-local}/moneycraft-gateway:${MC_IMAGE_TAG:-1.0.0-SNAPSHOT}
+    build:
+      context: ./docker/gateway
+      dockerfile: Dockerfile
+    user: "101:101"
+    restart: unless-stopped
+    depends_on:
+      moneycraft-api:
+        condition: service_healthy
+      moneycraft-ui:
+        condition: service_healthy
+    environment:
+      MC_PUBLIC_HOSTNAME: ${MC_PUBLIC_HOSTNAME:-localhost}
+      MC_HTTPS_REDIRECT_PORT: ${MC_HTTPS_REDIRECT_PORT:-443}
+      MC_API_UPSTREAM: moneycraft-api:8080
+      MC_UI_UPSTREAM: moneycraft-ui:8080
+      MC_ALLOW_SELF_SIGNED_TLS: ${MC_ALLOW_SELF_SIGNED_TLS:-false}
+    tmpfs:
+      - /tmp:uid=101,gid=101,mode=1777,size=16m
+      - /var/cache/nginx:uid=101,gid=101,mode=0750,size=32m
+    secrets:
+      - mc_tls_fullchain
+      - mc_tls_privkey
+    networks:
+      - mc_edge_net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/gateway-healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  mc_edge_net:
+    driver: bridge
+  mc_data_net:
+    driver: bridge
+    internal: true
+  mc_egress_net:
+    driver: bridge
+
+volumes:
+  mc_business_pg18_data:
+  mc_authority_pg18_data:
+  mc_pg_wal_archive:
+  mc_pg_backups:
+
+secrets:
+  mc_authority_db_password:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_authority_db_password
+  mc_business_db_password:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_business_db_password
+  mc_db_migrator_password:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_db_migrator_password
+  mc_db_runtime_password:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_db_runtime_password
+  mc_db_backup_password:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_db_backup_password
+  mc_tink_master_kek:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_tink_master_kek
+  mc_cursor_hmac_key:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_cursor_hmac_key
+  mc_idempotency_hmac_key:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_idempotency_hmac_key
+  mc_tls_fullchain:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_tls_fullchain.pem
+  mc_tls_privkey:
+    file: ${MC_SECRETS_DIR:-./.local-secrets}/mc_tls_privkey.pem

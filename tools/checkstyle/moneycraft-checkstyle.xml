@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
+
+    <module name="BeforeExecutionExclusionFileFilter">
+        <property name="fileNamePattern" value="module\-info\.java$"/>
+    </module>
+
+    <module name="FileTabCharacter">
+        <property name="eachLine" value="true"/>
+    </module>
+
+    <!-- Ban TODO / FIXME / XXX placeholders in source code (QUAL-001) -->
+    <module name="RegexpSingleline">
+        <property name="format" value="//\s*(TODO|FIXME|XXX)\b"/>
+        <property name="message" value="QUAL-001: Placeholder comments (TODO/FIXME/XXX) are forbidden in MoneyCraft."/>
+    </module>
+
+    <!-- Ban H2 and SQLite in-memory database substitutes -->
+    <module name="RegexpSingleline">
+        <property name="format" value="import\s+(org\.h2\.|org\.sqlite\.)"/>
+        <property name="message" value="QUAL-002: H2/SQLite substitutes are forbidden; use PostgreSQL 18 Testcontainers."/>
+    </module>
+
+    <module name="TreeWalker">
+        <module name="AvoidStarImport"/>
+        <module name="UnusedImports"/>
+        <module name="RedundantImport"/>
+
+        <!-- Ban legacy java.util.Date / java.util.Calendar -->
+        <module name="IllegalImport">
+            <property name="illegalClasses" value="java.util.Date,java.util.Calendar,java.sql.Date"/>
+        </module>
+
+        <module name="EmptyCatchBlock">
+            <property name="exceptionVariableName" value="expected|ignored"/>
+        </module>
+
+        <module name="EqualsHashCode"/>
+        <module name="SimplifyBooleanExpression"/>
+        <module name="SimplifyBooleanReturn"/>
+        <module name="OneTopLevelClass"/>
+        <module name="UpperEll"/>
+        <module name="OuterTypeFilename"/>
+    </module>
+</module>

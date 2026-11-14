@@ -1,0 +1,13 @@
+# ==============================================================================
+# MoneyCraft 1.0.0 — Synchronized Dual-PG18 Backup & Encrypted WAL Schedule
+# Executed in UTC by non-root `scheduler.py` (`uid 999:999`)
+# ==============================================================================
+
+# Continuous WAL segment encryption sweep (RPO < 60 seconds)
+* * * * * /opt/moneycraft/backup/backup-and-wal-archive.sh --mode wal-sync
+
+# Daily 01:30 UTC full synchronized Authority + Business causal-cut snapshot
+30 1 * * * /opt/moneycraft/backup/backup-and-wal-archive.sh --mode full-snapshot --label nightly
+
+# Daily 03:15 UTC GFS statutory retention pruning (7 daily, 4 weekly, 12 monthly, 8 FY archives)
+15 3 * * * /opt/moneycraft/backup/backup-and-wal-archive.sh --mode prune-retention

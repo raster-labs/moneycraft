@@ -1,0 +1,31 @@
+{
+  "id": "moneycraft-erp",
+  "name": "MoneyCraft",
+  "short_name": "MoneyCraft",
+  "description": "MoneyCraft 1.0.0 — Keyboard-First Enterprise Accounting & Statutory ERP",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F6FAF9",
+  "theme_color": "#142F42",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

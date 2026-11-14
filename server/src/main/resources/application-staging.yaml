@@ -1,0 +1,18 @@
+server:
+  servlet:
+    session:
+      cookie:
+        secure: true
+
+moneycraft:
+  flyway:
+    enabled: ${MC_FLYWAY_ENABLED:false}
+  security:
+    cookie-secure: true
+  crypto:
+    allow-ephemeral-dev-kek: false
+  connector:
+    enabled: ${MC_CONNECTOR_SPI_ENABLED:false}
+    egress-hostname-allowlist:
+      - einvoice1-sandbox.nic.in
+      - ewaybillgst-sandbox.gov.in

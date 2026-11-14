@@ -1,0 +1,29 @@
+# ==============================================================================
+# WildFly 42.0.0.Final JBoss CLI Hardening & Dual-PG18 Configuration (`DEP-002`)
+# Run offline via: `$JBOSS_HOME/bin/jboss-cli.sh --file=configure-wildfly.cli`
+# ==============================================================================
+
+embed-server --server-config=standalone.xml --std-out=echo
+
+# 1. System properties pointing Spring Boot to externalized `/etc/moneycraft/secrets/`
+/system-property=spring.profiles.active:add(value="${env.MC_SPRING_PROFILE:prod}")
+/system-property=spring.config.import:add(value="optional:configtree:/etc/moneycraft/secrets/")
+/system-property=MC_CONNECTOR_SPI_ENABLED:add(value="false")
+
+# 2. Undertow HTTP/2 + Server Banner Removal + Strict Security Response Headers
+/subsystem=undertow/configuration=filter/response-header=x-content-type:add(header-name="X-Content-Type-Options", header-value="nosniff")
+/subsystem=undertow/configuration=filter/response-header=x-frame-deny:add(header-name="X-Frame-Options", header-value="DENY")
+/subsystem=undertow/configuration=filter/response-header=referrer-policy:add(header-name="Referrer-Policy", header-value="strict-origin-when-cross-origin")
+/subsystem=undertow/configuration=filter/response-header=hsts-header:add(header-name="Strict-Transport-Security", header-value="max-age=63072000; includeSubDomains")
+
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=x-content-type:add()
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=x-frame-deny:add()
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=referrer-policy:add()
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=hsts-header:add()
+
+# Suppress Server / X-Powered-By Fingerprinting
+/subsystem=undertow/servlet-container=default/setting=jsp:write-attribute(name=x-powered-by, value=false)
+/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=max-post-size, value=67108864)
+/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=proxy-address-forwarding, value=true)
+
+stop-embedded-server

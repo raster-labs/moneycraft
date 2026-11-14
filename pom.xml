@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.2</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.raster.moneycraft</groupId>
+    <artifactId>moneycraft-parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>MoneyCraft 1.0.0 — Clean-Room ERP Reactor</name>
+    <description>
+        Offline-first, Dual-PG18, TallyPrime 7.2-equivalent enterprise accounting and India statutory ERP
+        built on Java 25 LTS, Spring Boot 4.1.2 (Jakarta EE 11 Dual-WAR), and Angular 22 LTS.
+    </description>
+
+    <properties>
+        <java.version>25</java.version>
+        <maven.compiler.release>25</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <project.build.outputTimestamp>2026-11-14T00:00:00Z</project.build.outputTimestamp>
+
+        <!-- Pinned Ecosystem Versions -->
+        <tink.version>1.20.0</tink.version>
+        <bouncycastle.version>1.87</bouncycastle.version>
+        <poi.version>5.4.1</poi.version>
+        <pdfbox.version>3.0.8</pdfbox.version>
+        <playwright.version>1.65.0</playwright.version>
+        <archunit.version>1.5.1</archunit.version>
+        <checkstyle.plugin.version>3.6.0</checkstyle.plugin.version>
+        <checkstyle.tool.version>14.4.0</checkstyle.tool.version>
+
+        <!-- Runtime & Container Packaging Controls -->
+        <moneycraft.stage>full</moneycraft.stage>
+        <tomcat.scope>provided</tomcat.scope>
+        <skipITs>true</skipITs>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.raster.moneycraft</groupId>
+                <artifactId>moneycraft-reader</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.raster.moneycraft</groupId>
+                <artifactId>moneycraft-server</artifactId>
+                <version>${project.version}</version>
+                <classifier>classes</classifier>
+            </dependency>
+            <dependency>
+                <groupId>com.google.crypto.tink</groupId>
+                <artifactId>tink</artifactId>
+                <version>${tink.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.poi</groupId>
+                <artifactId>poi-ooxml</artifactId>
+                <version>${poi.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.pdfbox</groupId>
+                <artifactId>pdfbox</artifactId>
+                <version>${pdfbox.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.playwright</groupId>
+                <artifactId>playwright</artifactId>
+                <version>${playwright.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <configuration>
+                        <excludeGroupIds>com.raster.moneycraft</excludeGroupIds>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <release>${maven.compiler.release}</release>
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <moneycraft.stage>${moneycraft.stage}</moneycraft.stage>
+                            <java.awt.headless>true</java.awt.headless>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <configuration>
+                        <skipITs>${skipITs}</skipITs>
+                        <systemPropertyVariables>
+                            <moneycraft.stage>${moneycraft.stage}</moneycraft.stage>
+                            <java.awt.headless>true</java.awt.headless>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-checkstyle-plugin</artifactId>
+                    <version>${checkstyle.plugin.version}</version>
+                    <dependencies>
+                        <dependency>
+                            <groupId>com.puppycrawl.tools</groupId>
+                            <artifactId>checkstyle</artifactId>
+                            <version>${checkstyle.tool.version}</version>
+                        </dependency>
+                    </dependencies>
+                    <configuration>
+                        <configLocation>${maven.multiModuleProjectDirectory}/tools/checkstyle/moneycraft-checkstyle.xml</configLocation>
+                        <consoleOutput>true</consoleOutput>
+                        <failsOnError>true</failsOnError>
+                        <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <profiles>
+        <!-- Gate G1: Standalone .1800 binary reader only (zero Spring / JPA / network) -->
+        <profile>
+            <id>reader</id>
+            <modules>
+                <module>reader</module>
+            </modules>
+            <properties>
+                <moneycraft.stage>reader</moneycraft.stage>
+                <skipITs>true</skipITs>
+            </properties>
+        </profile>
+
+        <!-- Gate G2-F: Dual-PG18 Foundation, Auth, RBAC, Tink, RLS & Multi-Company -->
+        <profile>
+            <id>foundation</id>
+            <modules>
+                <module>reader</module>
+                <module>server</module>
+                <module>qa</module>
+            </modules>
+            <properties>
+                <moneycraft.stage>foundation</moneycraft.stage>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+
+        <!-- Gate G2-J: CoA (28 Groups), Masters, 24 Voucher Types & Double-Entry Engine -->
+        <profile>
+            <id>accounting</id>
+            <modules>
+                <module>reader</module>
+                <module>server</module>
+                <module>qa</module>
+            </modules>
+            <properties>
+                <moneycraft.stage>accounting</moneycraft.stage>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+
+        <!-- Gate G2-I: Native .1800 Staging/Promotion & XML/JSONEx/Excel Exchange -->
+        <profile>
+            <id>import</id>
+            <modules>
+                <module>reader</module>
+                <module>server</module>
+                <module>qa</module>
+            </modules>
+            <properties>
+                <moneycraft.stage>import</moneycraft.stage>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+
+        <!-- Gate G3 (Default Reactor): Full Monorepo Build (reader + server + qa) -->
+        <profile>
+            <id>full</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <modules>
+                <module>reader</module>
+                <module>server</module>
+                <module>qa</module>
+            </modules>
+            <properties>
+                <moneycraft.stage>full</moneycraft.stage>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+
+        <!-- Gate G4: Identical WAR Qualification on Apache Tomcat 11.0.x & WildFly 42.0.0.Final -->
+        <profile>
+            <id>dual-war-qa</id>
+            <modules>
+                <module>reader</module>
+                <module>server</module>
+                <module>qa</module>
+            </modules>
+            <properties>
+                <moneycraft.stage>dual-war-qa</moneycraft.stage>
+                <tomcat.scope>provided</tomcat.scope>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+    </profiles>
+</project>

@@ -1,0 +1,40 @@
+{
+  "name": "moneycraft-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MoneyCraft 1.0.0 — Angular 22 LTS Keyboard-First ERP Frontend (Brand Identity v0.2.0)",
+  "license": "UNLICENSED",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "build:prod": "ng build --configuration=production",
+    "watch": "ng build --watch --configuration=development",
+    "test": "ng test",
+    "test:ci": "ng test --watch=false",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@angular/cdk": "^22.2.7",
+    "@angular/common": "^22.2.6",
+    "@angular/compiler": "^22.2.6",
+    "@angular/core": "^22.2.6",
+    "@angular/forms": "^22.2.6",
+    "@angular/platform-browser": "^22.2.6",
+    "@angular/router": "^22.2.6",
+    "rxjs": "~7.8.2",
+    "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "@angular/build": "22.2.7",
+    "@angular/cli": "22.2.7",
+    "@angular/compiler-cli": "^22.2.6",
+    "@eslint/js": "^10.0.1",
+    "angular-eslint": "^22.6.0",
+    "eslint": "^10.15.0",
+    "jsdom": "^31.0.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}

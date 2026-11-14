@@ -1,0 +1,51 @@
+# ==============================================================================
+# MoneyCraft 1.0.0 — Hardened Enterprise Systemd Unit (Apache Tomcat 11.0.x + JDK 25)
+# Install at `/etc/systemd/system/moneycraft-tomcat.service` (`chmod 0644`)
+# ==============================================================================
+
+[Unit]
+Description=MoneyCraft 1.0.0 Enterprise Accounting & Statutory ERP (Tomcat 11 / Java 25)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+User=moneycraft
+Group=moneycraft
+UMask=0027
+
+Environment="JAVA_HOME=/usr/lib/jvm/temurin-25-jdk"
+Environment="CATALINA_HOME=/opt/tomcat11"
+Environment="CATALINA_BASE=/var/lib/moneycraft/tomcat11"
+Environment="CATALINA_PID=/run/moneycraft/tomcat11.pid"
+Environment="JAVA_OPTS=-XX:+UseZGC -Xms2g -Xmx4g -XX:+ExitOnOutOfMemoryError -XX:HeapDumpPath=/var/log/moneycraft/oom -Djava.security.egd=file:/dev/./urandom -Djava.awt.headless=true"
+EnvironmentFile=/etc/moneycraft/moneycraft.env
+
+RuntimeDirectory=moneycraft
+RuntimeDirectoryMode=0750
+LogsDirectory=moneycraft
+LogsDirectoryMode=0750
+
+ExecStart=/opt/tomcat11/bin/startup.sh
+ExecStop=/opt/tomcat11/bin/shutdown.sh 25
+TimeoutStopSec=35
+Restart=on-failure
+RestartSec=5
+
+# Systemd Sandboxing & Privilege Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ReadWritePaths=/var/lib/moneycraft/tomcat11/work /var/lib/moneycraft/tomcat11/temp /var/log/moneycraft
+ReadOnlyPaths=/etc/moneycraft/secrets /etc/moneycraft/tls
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

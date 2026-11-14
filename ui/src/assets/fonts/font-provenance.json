@@ -1,0 +1,1304 @@
+{
+  "schema_version": "1.0",
+  "brand_package_version": "0.2.0",
+  "verified_date": "2026-11-13",
+  "date_timezone": "Europe/Madrid",
+  "approval": "Owner accepted the typography recommendations; Manrope for UI and numeric values, JetBrains Mono dotted zero for mixed identifiers; supplied outlined logo unchanged.",
+  "fonts": [
+    {
+      "family": "Manrope",
+      "version": "4.505",
+      "repository": "google/fonts",
+      "commit": "35e77c3854970a550d9894a85aba21420813a019",
+      "source_url": "https://github.com/google/fonts/blob/35e77c3854970a550d9894a85aba21420813a019/ofl/manrope/Manrope%5Bwght%5D.ttf",
+      "license_url": "https://github.com/google/fonts/blob/35e77c3854970a550d9894a85aba21420813a019/ofl/manrope/OFL.txt",
+      "role": "Default UI and tabular numeric values",
+      "zero_default": "plain; no dot or slash",
+      "zero_feature": false,
+      "original": {
+        "path": "source/Manrope-VariableFont_wght.ttf",
+        "bytes": 164700,
+        "sha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+        "git_blob_sha1": "75274da58537d6123b14f2cd0c355ad4681fc2b3"
+      },
+      "web_font": {
+        "path": "fonts/Manrope-Variable.woff2",
+        "bytes": 53892,
+        "sha256": "30b83738add8c9edd9e3450b98036a9a8fb5668d0cbd4eb0ce5fe6761197f21f",
+        "git_blob_sha1": "6e0584dbf6647a8e27cf5e28b9c667659088e1c4"
+      },
+      "license": {
+        "path": "source/OFL-Manrope.txt",
+        "name": "SIL Open Font License 1.1",
+        "bytes": 4387,
+        "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
+        "git_blob_sha1": "e271172a9ed0cddc895aabb6509f1c7d880b492d"
+      },
+      "font_metadata": {
+        "family_name_id_1": "Manrope ExtraLight",
+        "typographic_family_name_id_16": "Manrope",
+        "version": "Version 4.505",
+        "units_per_em": 2000,
+        "glyph_count": 742,
+        "unicode_codepoint_count": 678,
+        "style": "normal upright only",
+        "axes": [
+          {
+            "tag": "wght",
+            "minimum": 200.0,
+            "default": 200.0,
+            "maximum": 800.0
+          }
+        ],
+        "gsub_features": [
+          "aalt",
+          "calt",
+          "case",
+          "dnom",
+          "frac",
+          "liga",
+          "locl",
+          "numr",
+          "ordn",
+          "pnum",
+          "sinf",
+          "subs",
+          "sups",
+          "tnum"
+        ],
+        "copyright_name_id_0": [
+          "Copyright 2019 The Manrope Project Authors (https://github.com/googlefonts/manrope)"
+        ],
+        "sample_coverage": {
+          "U+20B9": {
+            "character": "₹",
+            "present": true,
+            "glyph": "uni20B9"
+          },
+          "U+20AC": {
+            "character": "€",
+            "present": true,
+            "glyph": "Euro"
+          },
+          "U+00A3": {
+            "character": "£",
+            "present": true,
+            "glyph": "sterling"
+          },
+          "U+0024": {
+            "character": "$",
+            "present": true,
+            "glyph": "dollar"
+          },
+          "U+00A5": {
+            "character": "¥",
+            "present": true,
+            "glyph": "yen"
+          },
+          "U+002C": {
+            "character": ",",
+            "present": true,
+            "glyph": "comma"
+          },
+          "U+002E": {
+            "character": ".",
+            "present": true,
+            "glyph": "period"
+          },
+          "U+2212": {
+            "character": "−",
+            "present": true,
+            "glyph": "minus"
+          },
+          "U+002D": {
+            "character": "-",
+            "present": true,
+            "glyph": "hyphen"
+          },
+          "U+0028": {
+            "character": "(",
+            "present": true,
+            "glyph": "parenleft"
+          },
+          "U+0029": {
+            "character": ")",
+            "present": true,
+            "glyph": "parenright"
+          },
+          "U+0025": {
+            "character": "%",
+            "present": true,
+            "glyph": "percent"
+          },
+          "U+0030": {
+            "character": "0",
+            "present": true,
+            "glyph": "zero"
+          },
+          "U+004F": {
+            "character": "O",
+            "present": true,
+            "glyph": "O"
+          },
+          "U+0031": {
+            "character": "1",
+            "present": true,
+            "glyph": "one"
+          },
+          "U+0049": {
+            "character": "I",
+            "present": true,
+            "glyph": "I"
+          },
+          "U+006C": {
+            "character": "l",
+            "present": true,
+            "glyph": "l"
+          },
+          "U+0035": {
+            "character": "5",
+            "present": true,
+            "glyph": "five"
+          },
+          "U+0053": {
+            "character": "S",
+            "present": true,
+            "glyph": "S"
+          },
+          "U+0038": {
+            "character": "8",
+            "present": true,
+            "glyph": "eight"
+          },
+          "U+0042": {
+            "character": "B",
+            "present": true,
+            "glyph": "B"
+          },
+          "U+0915": {
+            "character": "क",
+            "present": false,
+            "glyph": null
+          },
+          "U+0B85": {
+            "character": "அ",
+            "present": false,
+            "glyph": null
+          }
+        },
+        "zero_contours": 2,
+        "capital_o_contours": 2
+      },
+      "shaping_evidence": [
+        {
+          "text": "0123456789",
+          "features": {},
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "zero",
+              "cluster": 0,
+              "advance": 1220
+            },
+            {
+              "name": "one",
+              "cluster": 1,
+              "advance": 780
+            },
+            {
+              "name": "two",
+              "cluster": 2,
+              "advance": 1140
+            },
+            {
+              "name": "three",
+              "cluster": 3,
+              "advance": 1106
+            },
+            {
+              "name": "four",
+              "cluster": 4,
+              "advance": 1179
+            },
+            {
+              "name": "five",
+              "cluster": 5,
+              "advance": 1155
+            },
+            {
+              "name": "six",
+              "cluster": 6,
+              "advance": 1241
+            },
+            {
+              "name": "seven",
+              "cluster": 7,
+              "advance": 1004
+            },
+            {
+              "name": "eight",
+              "cluster": 8,
+              "advance": 1161
+            },
+            {
+              "name": "nine",
+              "cluster": 9,
+              "advance": 1241
+            }
+          ]
+        },
+        {
+          "text": "0123456789",
+          "features": {
+            "tnum": 1
+          },
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "zero.tf",
+              "cluster": 0,
+              "advance": 1240
+            },
+            {
+              "name": "one.tf",
+              "cluster": 1,
+              "advance": 1240
+            },
+            {
+              "name": "two.tf",
+              "cluster": 2,
+              "advance": 1240
+            },
+            {
+              "name": "three.tf",
+              "cluster": 3,
+              "advance": 1240
+            },
+            {
+              "name": "four.tf",
+              "cluster": 4,
+              "advance": 1240
+            },
+            {
+              "name": "five.tf",
+              "cluster": 5,
+              "advance": 1240
+            },
+            {
+              "name": "six.tf",
+              "cluster": 6,
+              "advance": 1240
+            },
+            {
+              "name": "seven.tf",
+              "cluster": 7,
+              "advance": 1240
+            },
+            {
+              "name": "eight.tf",
+              "cluster": 8,
+              "advance": 1240
+            },
+            {
+              "name": "nine.tf",
+              "cluster": 9,
+              "advance": 1240
+            }
+          ]
+        },
+        {
+          "text": "0O 1Il 5S 8B",
+          "features": {},
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "zero",
+              "cluster": 0,
+              "advance": 1220
+            },
+            {
+              "name": "O",
+              "cluster": 1,
+              "advance": 1447
+            },
+            {
+              "name": "space",
+              "cluster": 2,
+              "advance": 400
+            },
+            {
+              "name": "one",
+              "cluster": 3,
+              "advance": 780
+            },
+            {
+              "name": "I",
+              "cluster": 4,
+              "advance": 467
+            },
+            {
+              "name": "l",
+              "cluster": 5,
+              "advance": 467
+            },
+            {
+              "name": "space",
+              "cluster": 6,
+              "advance": 400
+            },
+            {
+              "name": "five",
+              "cluster": 7,
+              "advance": 1155
+            },
+            {
+              "name": "S",
+              "cluster": 8,
+              "advance": 1233
+            },
+            {
+              "name": "space",
+              "cluster": 9,
+              "advance": 400
+            },
+            {
+              "name": "eight",
+              "cluster": 10,
+              "advance": 1161
+            },
+            {
+              "name": "B",
+              "cluster": 11,
+              "advance": 1226
+            }
+          ]
+        },
+        {
+          "text": "0O 1Il 5S 8B",
+          "features": {
+            "zero": 1
+          },
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "zero",
+              "cluster": 0,
+              "advance": 1220
+            },
+            {
+              "name": "O",
+              "cluster": 1,
+              "advance": 1447
+            },
+            {
+              "name": "space",
+              "cluster": 2,
+              "advance": 400
+            },
+            {
+              "name": "one",
+              "cluster": 3,
+              "advance": 780
+            },
+            {
+              "name": "I",
+              "cluster": 4,
+              "advance": 467
+            },
+            {
+              "name": "l",
+              "cluster": 5,
+              "advance": 467
+            },
+            {
+              "name": "space",
+              "cluster": 6,
+              "advance": 400
+            },
+            {
+              "name": "five",
+              "cluster": 7,
+              "advance": 1155
+            },
+            {
+              "name": "S",
+              "cluster": 8,
+              "advance": 1233
+            },
+            {
+              "name": "space",
+              "cluster": 9,
+              "advance": 400
+            },
+            {
+              "name": "eight",
+              "cluster": 10,
+              "advance": 1161
+            },
+            {
+              "name": "B",
+              "cluster": 11,
+              "advance": 1226
+            }
+          ]
+        },
+        {
+          "text": "=== != -> 10:30",
+          "features": {},
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "equal",
+              "cluster": 0,
+              "advance": 1500
+            },
+            {
+              "name": "equal",
+              "cluster": 1,
+              "advance": 1500
+            },
+            {
+              "name": "equal",
+              "cluster": 2,
+              "advance": 1500
+            },
+            {
+              "name": "space",
+              "cluster": 3,
+              "advance": 400
+            },
+            {
+              "name": "exclam",
+              "cluster": 4,
+              "advance": 627
+            },
+            {
+              "name": "equal",
+              "cluster": 5,
+              "advance": 1500
+            },
+            {
+              "name": "space",
+              "cluster": 6,
+              "advance": 400
+            },
+            {
+              "name": "hyphen_greater.liga",
+              "cluster": 7,
+              "advance": 2002
+            },
+            {
+              "name": "space",
+              "cluster": 9,
+              "advance": 400
+            },
+            {
+              "name": "one",
+              "cluster": 10,
+              "advance": 780
+            },
+            {
+              "name": "zero",
+              "cluster": 11,
+              "advance": 1220
+            },
+            {
+              "name": "colon",
+              "cluster": 12,
+              "advance": 598
+            },
+            {
+              "name": "three",
+              "cluster": 13,
+              "advance": 1106
+            },
+            {
+              "name": "zero",
+              "cluster": 14,
+              "advance": 1220
+            }
+          ]
+        },
+        {
+          "text": "=== != -> 10:30",
+          "features": {
+            "calt": 0,
+            "liga": 0,
+            "clig": 0,
+            "dlig": 0,
+            "hlig": 0,
+            "zero": 0
+          },
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "equal",
+              "cluster": 0,
+              "advance": 1500
+            },
+            {
+              "name": "equal",
+              "cluster": 1,
+              "advance": 1500
+            },
+            {
+              "name": "equal",
+              "cluster": 2,
+              "advance": 1500
+            },
+            {
+              "name": "space",
+              "cluster": 3,
+              "advance": 400
+            },
+            {
+              "name": "exclam",
+              "cluster": 4,
+              "advance": 627
+            },
+            {
+              "name": "equal",
+              "cluster": 5,
+              "advance": 1500
+            },
+            {
+              "name": "space",
+              "cluster": 6,
+              "advance": 400
+            },
+            {
+              "name": "hyphen",
+              "cluster": 7,
+              "advance": 840
+            },
+            {
+              "name": "greater",
+              "cluster": 8,
+              "advance": 1229
+            },
+            {
+              "name": "space",
+              "cluster": 9,
+              "advance": 400
+            },
+            {
+              "name": "one",
+              "cluster": 10,
+              "advance": 780
+            },
+            {
+              "name": "zero",
+              "cluster": 11,
+              "advance": 1220
+            },
+            {
+              "name": "colon",
+              "cluster": 12,
+              "advance": 598
+            },
+            {
+              "name": "three",
+              "cluster": 13,
+              "advance": 1106
+            },
+            {
+              "name": "zero",
+              "cluster": 14,
+              "advance": 1220
+            }
+          ]
+        }
+      ],
+      "conversion_checks": {
+        "cmap_unchanged": true,
+        "glyph_order_unchanged": true,
+        "name_records_unchanged": true,
+        "gsub_unchanged": true,
+        "six_shaping_cases_match_after_roundtrip": true
+      }
+    },
+    {
+      "family": "JetBrains Mono",
+      "version": "2.304",
+      "repository": "JetBrains/JetBrainsMono",
+      "commit": "cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9",
+      "tag": "v2.304",
+      "release_published": "2023-01-14T15:22:41Z",
+      "source_url": "https://github.com/JetBrains/JetBrainsMono/blob/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9/fonts/variable/JetBrainsMono%5Bwght%5D.ttf",
+      "license_url": "https://github.com/JetBrains/JetBrainsMono/blob/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9/OFL.txt",
+      "role": "Mixed alphanumeric identifiers and diagnostics; ligatures disabled",
+      "zero_default": "dotted",
+      "zero_feature": true,
+      "original": {
+        "path": "fonts/JetBrainsMono-Variable.ttf",
+        "bytes": 303144,
+        "sha256": "662a196d58f1183bf2d77428b6d5283fe3f45161ab021bea4036bc98e5cac016",
+        "git_blob_sha1": "b60e77f5dbf5505436c1904cb7a9ac4111ee76d0"
+      },
+      "web_font": {
+        "path": "fonts/JetBrainsMono-Variable.woff2",
+        "bytes": 113504,
+        "sha256": "fe7b565a583febc11ec94fa9aacf8a8180c21efe601f174a33c71a0b596346b7",
+        "git_blob_sha1": "ffe8348bd836f9540d913097b7cf3f344fd69c11"
+      },
+      "license": {
+        "path": "fonts/OFL-JetBrainsMono.txt",
+        "name": "SIL Open Font License 1.1",
+        "bytes": 4399,
+        "sha256": "30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad",
+        "git_blob_sha1": "8bee4148c1d54dbf5dae6d6c117fc80414266abb"
+      },
+      "font_metadata": {
+        "family_name_id_1": "JetBrains Mono",
+        "typographic_family_name_id_16": null,
+        "version": "Version 2.304",
+        "units_per_em": 1000,
+        "glyph_count": 1743,
+        "unicode_codepoint_count": 1363,
+        "style": "normal upright only",
+        "axes": [
+          {
+            "tag": "wght",
+            "minimum": 100.0,
+            "default": 400.0,
+            "maximum": 800.0
+          }
+        ],
+        "gsub_features": [
+          "aalt",
+          "calt",
+          "case",
+          "ccmp",
+          "cv01",
+          "cv02",
+          "cv03",
+          "cv04",
+          "cv05",
+          "cv06",
+          "cv07",
+          "cv08",
+          "cv09",
+          "cv10",
+          "cv11",
+          "cv12",
+          "cv14",
+          "cv15",
+          "cv16",
+          "cv17",
+          "cv18",
+          "cv19",
+          "cv20",
+          "cv99",
+          "frac",
+          "locl",
+          "ordn",
+          "sinf",
+          "ss01",
+          "ss02",
+          "ss19",
+          "ss20",
+          "subs",
+          "sups",
+          "zero"
+        ],
+        "copyright_name_id_0": [
+          "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)"
+        ],
+        "sample_coverage": {
+          "U+20B9": {
+            "character": "₹",
+            "present": false,
+            "glyph": null
+          },
+          "U+20AC": {
+            "character": "€",
+            "present": true,
+            "glyph": "Euro"
+          },
+          "U+00A3": {
+            "character": "£",
+            "present": true,
+            "glyph": "sterling"
+          },
+          "U+0024": {
+            "character": "$",
+            "present": true,
+            "glyph": "dollar"
+          },
+          "U+00A5": {
+            "character": "¥",
+            "present": true,
+            "glyph": "yen"
+          },
+          "U+002C": {
+            "character": ",",
+            "present": true,
+            "glyph": "comma"
+          },
+          "U+002E": {
+            "character": ".",
+            "present": true,
+            "glyph": "period"
+          },
+          "U+2212": {
+            "character": "−",
+            "present": true,
+            "glyph": "minus"
+          },
+          "U+002D": {
+            "character": "-",
+            "present": true,
+            "glyph": "hyphen"
+          },
+          "U+0028": {
+            "character": "(",
+            "present": true,
+            "glyph": "parenleft"
+          },
+          "U+0029": {
+            "character": ")",
+            "present": true,
+            "glyph": "parenright"
+          },
+          "U+0025": {
+            "character": "%",
+            "present": true,
+            "glyph": "percent"
+          },
+          "U+0030": {
+            "character": "0",
+            "present": true,
+            "glyph": "zero"
+          },
+          "U+004F": {
+            "character": "O",
+            "present": true,
+            "glyph": "O"
+          },
+          "U+0031": {
+            "character": "1",
+            "present": true,
+            "glyph": "one"
+          },
+          "U+0049": {
+            "character": "I",
+            "present": true,
+            "glyph": "I"
+          },
+          "U+006C": {
+            "character": "l",
+            "present": true,
+            "glyph": "l"
+          },
+          "U+0035": {
+            "character": "5",
+            "present": true,
+            "glyph": "five"
+          },
+          "U+0053": {
+            "character": "S",
+            "present": true,
+            "glyph": "S"
+          },
+          "U+0038": {
+            "character": "8",
+            "present": true,
+            "glyph": "eight"
+          },
+          "U+0042": {
+            "character": "B",
+            "present": true,
+            "glyph": "B"
+          },
+          "U+0915": {
+            "character": "क",
+            "present": false,
+            "glyph": null
+          },
+          "U+0B85": {
+            "character": "அ",
+            "present": false,
+            "glyph": null
+          }
+        },
+        "zero_contours": 3,
+        "capital_o_contours": 2
+      },
+      "shaping_evidence": [
+        {
+          "text": "0123456789",
+          "features": {},
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "zero",
+              "cluster": 0,
+              "advance": 600
+            },
+            {
+              "name": "one",
+              "cluster": 1,
+              "advance": 600
+            },
+            {
+              "name": "two",
+              "cluster": 2,
+              "advance": 600
+            },
+            {
+              "name": "three",
+              "cluster": 3,
+              "advance": 600
+            },
+            {
+              "name": "four",
+              "cluster": 4,
+              "advance": 600
+            },
+            {
+              "name": "five",
+              "cluster": 5,
+              "advance": 600
+            },
+            {
+              "name": "six",
+              "cluster": 6,
+              "advance": 600
+            },
+            {
+              "name": "seven",
+              "cluster": 7,
+              "advance": 600
+            },
+            {
+              "name": "eight",
+              "cluster": 8,
+              "advance": 600
+            },
+            {
+              "name": "nine",
+              "cluster": 9,
+              "advance": 600
+            }
+          ]
+        },
+        {
+          "text": "0123456789",
+          "features": {
+            "tnum": 1
+          },
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "zero",
+              "cluster": 0,
+              "advance": 600
+            },
+            {
+              "name": "one",
+              "cluster": 1,
+              "advance": 600
+            },
+            {
+              "name": "two",
+              "cluster": 2,
+              "advance": 600
+            },
+            {
+              "name": "three",
+              "cluster": 3,
+              "advance": 600
+            },
+            {
+              "name": "four",
+              "cluster": 4,
+              "advance": 600
+            },
+            {
+              "name": "five",
+              "cluster": 5,
+              "advance": 600
+            },
+            {
+              "name": "six",
+              "cluster": 6,
+              "advance": 600
+            },
+            {
+              "name": "seven",
+              "cluster": 7,
+              "advance": 600
+            },
+            {
+              "name": "eight",
+              "cluster": 8,
+              "advance": 600
+            },
+            {
+              "name": "nine",
+              "cluster": 9,
+              "advance": 600
+            }
+          ]
+        },
+        {
+          "text": "0O 1Il 5S 8B",
+          "features": {},
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "zero",
+              "cluster": 0,
+              "advance": 600
+            },
+            {
+              "name": "O",
+              "cluster": 1,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 2,
+              "advance": 600
+            },
+            {
+              "name": "one",
+              "cluster": 3,
+              "advance": 600
+            },
+            {
+              "name": "I",
+              "cluster": 4,
+              "advance": 600
+            },
+            {
+              "name": "l",
+              "cluster": 5,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 6,
+              "advance": 600
+            },
+            {
+              "name": "five",
+              "cluster": 7,
+              "advance": 600
+            },
+            {
+              "name": "S",
+              "cluster": 8,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 9,
+              "advance": 600
+            },
+            {
+              "name": "eight",
+              "cluster": 10,
+              "advance": 600
+            },
+            {
+              "name": "B",
+              "cluster": 11,
+              "advance": 600
+            }
+          ]
+        },
+        {
+          "text": "0O 1Il 5S 8B",
+          "features": {
+            "zero": 1
+          },
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "zero.zero",
+              "cluster": 0,
+              "advance": 600
+            },
+            {
+              "name": "O",
+              "cluster": 1,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 2,
+              "advance": 600
+            },
+            {
+              "name": "one",
+              "cluster": 3,
+              "advance": 600
+            },
+            {
+              "name": "I",
+              "cluster": 4,
+              "advance": 600
+            },
+            {
+              "name": "l",
+              "cluster": 5,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 6,
+              "advance": 600
+            },
+            {
+              "name": "five",
+              "cluster": 7,
+              "advance": 600
+            },
+            {
+              "name": "S",
+              "cluster": 8,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 9,
+              "advance": 600
+            },
+            {
+              "name": "eight",
+              "cluster": 10,
+              "advance": 600
+            },
+            {
+              "name": "B",
+              "cluster": 11,
+              "advance": 600
+            }
+          ]
+        },
+        {
+          "text": "=== != -> 10:30",
+          "features": {},
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "SPC",
+              "cluster": 0,
+              "advance": 600
+            },
+            {
+              "name": "SPC",
+              "cluster": 1,
+              "advance": 600
+            },
+            {
+              "name": "equal_equal_equal.liga",
+              "cluster": 2,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 3,
+              "advance": 600
+            },
+            {
+              "name": "SPC",
+              "cluster": 4,
+              "advance": 600
+            },
+            {
+              "name": "exclam_equal.liga",
+              "cluster": 5,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 6,
+              "advance": 600
+            },
+            {
+              "name": "SPC",
+              "cluster": 7,
+              "advance": 600
+            },
+            {
+              "name": "hyphen_greater.liga",
+              "cluster": 8,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 9,
+              "advance": 600
+            },
+            {
+              "name": "one",
+              "cluster": 10,
+              "advance": 600
+            },
+            {
+              "name": "zero",
+              "cluster": 11,
+              "advance": 600
+            },
+            {
+              "name": "colon.case",
+              "cluster": 12,
+              "advance": 600
+            },
+            {
+              "name": "three",
+              "cluster": 13,
+              "advance": 600
+            },
+            {
+              "name": "zero",
+              "cluster": 14,
+              "advance": 600
+            }
+          ]
+        },
+        {
+          "text": "=== != -> 10:30",
+          "features": {
+            "calt": 0,
+            "liga": 0,
+            "clig": 0,
+            "dlig": 0,
+            "hlig": 0,
+            "zero": 0
+          },
+          "weight": 400,
+          "glyphs": [
+            {
+              "name": "equal",
+              "cluster": 0,
+              "advance": 600
+            },
+            {
+              "name": "equal",
+              "cluster": 1,
+              "advance": 600
+            },
+            {
+              "name": "equal",
+              "cluster": 2,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 3,
+              "advance": 600
+            },
+            {
+              "name": "exclam",
+              "cluster": 4,
+              "advance": 600
+            },
+            {
+              "name": "equal",
+              "cluster": 5,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 6,
+              "advance": 600
+            },
+            {
+              "name": "hyphen",
+              "cluster": 7,
+              "advance": 600
+            },
+            {
+              "name": "greater",
+              "cluster": 8,
+              "advance": 600
+            },
+            {
+              "name": "space",
+              "cluster": 9,
+              "advance": 600
+            },
+            {
+              "name": "one",
+              "cluster": 10,
+              "advance": 600
+            },
+            {
+              "name": "zero",
+              "cluster": 11,
+              "advance": 600
+            },
+            {
+              "name": "colon",
+              "cluster": 12,
+              "advance": 600
+            },
+            {
+              "name": "three",
+              "cluster": 13,
+              "advance": 600
+            },
+            {
+              "name": "zero",
+              "cluster": 14,
+              "advance": 600
+            }
+          ]
+        }
+      ],
+      "conversion_checks": {
+        "cmap_unchanged": true,
+        "glyph_order_unchanged": true,
+        "name_records_unchanged": true,
+        "gsub_unchanged": true,
+        "six_shaping_cases_match_after_roundtrip": true
+      }
+    }
+  ],
+  "conversion": {
+    "method": "fontTools TTFont, recalcTimestamp=False, flavor=woff2; full-font container conversion; no subsetting or glyph/feature redesign",
+    "fonttools_version": "4.61.1",
+    "brotli_version": "1.2.1",
+    "uharfbuzz_version": "0.57.0",
+    "third_party_notices": "Preserved. Raster product copyright does not replace font project notices."
+  },
+  "primary_references": [
+    "https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304",
+    "https://api.github.com/repos/JetBrains/JetBrainsMono/releases/latest",
+    "https://www.jetbrains.com/lp/mono/",
+    "https://github.com/JetBrains/JetBrainsMono/wiki/OpenType-features",
+    "https://github.com/googlefonts/manrope",
+    "https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/font-variant-numeric"
+  ],
+  "interpretation": [
+    "Manrope default digits are proportional. Its tnum substitutions give equal digit advances; alphabetic characters are not made monospaced.",
+    "Manrope digits are lining by design; this file has tnum and pnum but no lnum or zero GSUB feature. CSS lining-nums states desired semantics without inventing an absent alternate.",
+    "JetBrains Mono zero is dotted by default. zero=1 substitutes zero.zero, the slashed alternate; this is available but not the approved default.",
+    "JetBrains Mono calt contains code ligatures and colon adjustment. Disable contextual and other ligatures in identifiers/diagnostics.",
+    "Manrope includes U+20B9 Indian rupee; this JetBrains Mono file does not. Currency amounts use Manrope. Do not promise fixed-width behaviour for a fallback currency glyph in a mono field.",
+    "Neither selected file contains the sampled Devanagari U+0915 or Tamil U+0B85 characters. Locale/script coverage and a licensed local fallback must be qualified for actual content. The samples do not certify any language's complete coverage.",
+    "No glyph feature changes stored text or copied characters: digit zero remains U+0030."
+  ],
+  "checks": [
+    {
+      "family": "Manrope",
+      "result": "PASS",
+      "scope": "Font files, WOFF2 conversion and local HarfBuzz shaping only"
+    },
+    {
+      "family": "JetBrains Mono",
+      "result": "PASS",
+      "scope": "Font files, WOFF2 conversion and local HarfBuzz shaping only"
+    }
+  ],
+  "not_run": [
+    "Application implementation",
+    "Safari/Chrome/Firefox integration",
+    "OS and zoom qualification",
+    "Real company data language coverage",
+    "Print/report pipeline integration"
+  ]
+}

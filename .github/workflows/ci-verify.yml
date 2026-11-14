@@ -1,0 +1,136 @@
+name: CI Verification & Dual-PG18 Qualification
+
+on:
+  pull_request:
+    branches: [develop, main, "release/**"]
+  push:
+    branches: [develop, main, "release/**", "hotfix/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene-and-ddl-lint:
+    name: "Stage 1: Manifest, Expand-Contract DDL & Zero-Licensing"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Run Manifest & Zero-Stub Gate
+        run: python3 tools/verify_manifest.py
+
+      - name: Run Expand-and-Contract Flyway DDL Gate
+        run: python3 tools/verify_flyway_backward_compat.py
+
+      - name: Run AT-GEN-003 Zero-Licensing & Air-Gap Gate
+        run: python3 tools/check_zero_licensing.py
+
+      - name: Validate Multi-Environment Docker Compose Overlays
+        run: |
+          mkdir -p -m 0700 .local-secrets
+          for s in mc_authority_db_password mc_business_db_password mc_db_migrator_password \
+                   mc_db_runtime_password mc_db_backup_password mc_tink_master_kek \
+                   mc_cursor_hmac_key mc_idempotency_hmac_key mc_tls_fullchain.pem mc_tls_privkey.pem; do
+            head -c 32 /dev/urandom | base64 > ".local-secrets/${s}"
+            chmod 0600 ".local-secrets/${s}"
+          done
+          cp .env.dev.example .env.dev
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env.dev config >/dev/null
+          MC_SECRETS_DIR=./.local-secrets MC_REGISTRY=ghcr.io/raster-images MC_IMAGE_TAG=1.0.0-rc.1 \
+            docker compose -f docker-compose.yml -f docker-compose.staging.yml config >/dev/null
+          MC_SECRETS_DIR=./.local-secrets MC_REGISTRY=ghcr.io/raster-images MC_IMAGE_TAG=1.0.0 \
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml config >/dev/null
+
+  standalone-reader:
+    name: "Stage 2: Standalone .1800 Reader (MIG-003 Zero-Spring)"
+    needs: hygiene-and-ddl-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Verify Zero Spring / JPA / Network Dependencies in reader
+        run: |
+          mvn -B dependency:tree -pl reader > /tmp/reader-deps.txt
+          cat /tmp/reader-deps.txt
+          if grep -E "org\.springframework|org\.hibernate|jakarta\.persistence|jakarta\.servlet" /tmp/reader-deps.txt; then
+            echo "MIG-003 violation: forbidden framework dependency in standalone reader" >&2
+            exit 1
+          fi
+
+      - name: Build & Test Standalone Reader (-Preader)
+        run: mvn -B -Preader test
+
+  frontend-unit-and-build:
+    name: "Stage 3A: Angular 22 Signals, ESLint & Vitest"
+    needs: hygiene-and-ddl-lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Deterministic npm ci (--ignore-scripts)
+        run: npm ci --ignore-scripts
+
+      - name: Lint Exact-Decimal & CSP Rules
+        run: npm run lint
+
+      - name: Run Angular Vitest Unit Suite
+        run: npm run test:ci
+
+      - name: Build Production SRI SPA Bundle
+        run: npm run build:prod
+
+  backend-pg18-qualification:
+    name: "Stage 3B-5: Backend Unit, ArchUnit & Real Dual-PG18 Integration"
+    needs: [standalone-reader]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Execute Full Reactor Unit + PostgreSQL 18.6 Integration Suite
+        run: mvn -B -Pfull verify
+
+  dual-war-portability:
+    name: "Stage 8: Tomcat 11 & WildFly 42 Dual-WAR Gate (G4)"
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
+    needs: [backend-pg18-qualification, frontend-unit-and-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Execute Dual-WAR Qualification (-Pdual-war-qa)
+        run: mvn -B -Pdual-war-qa verify

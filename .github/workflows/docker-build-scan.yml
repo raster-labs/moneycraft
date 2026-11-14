@@ -1,0 +1,100 @@
+name: Multi-Stage OCI Build, Hadolint, Trivy & SBOM
+
+on:
+  pull_request:
+    branches: [develop, main, "release/**"]
+  push:
+    branches: [develop, main, "release/**", "hotfix/**"]
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  hadolint:
+    name: "Hadolint Dockerfile Security Gate"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint All Multi-Stage Dockerfiles
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: |
+            server/Dockerfile
+            ui/Dockerfile
+            docker/gateway/Dockerfile
+            docker/backup/Dockerfile
+          failure-threshold: warning
+
+  build-scan-sbom:
+    name: "Stage 6: Build, Trivy CVE Scan & CycloneDX SBOM (${{ matrix.service }})"
+    needs: hadolint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - service: moneycraft-api
+            context: .
+            dockerfile: server/Dockerfile
+          - service: moneycraft-ui
+            context: ./ui
+            dockerfile: ui/Dockerfile
+          - service: moneycraft-gateway
+            context: ./docker/gateway
+            dockerfile: docker/gateway/Dockerfile
+          - service: moneycraft-pg-backup
+            context: ./docker/backup
+            dockerfile: docker/backup/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Compute Deterministic Git SHA Tag
+        id: meta
+        run: |
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          echo "git_tag=git-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "full_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Multi-Stage Non-Root OCI Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ steps.meta.outputs.git_tag }}
+          build-args: |
+            MC_VERSION=${{ steps.meta.outputs.git_tag }}
+            MC_VCS_REF=${{ steps.meta.outputs.full_sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Trivy Container Vulnerability Gate (0 CRITICAL / HIGH)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ steps.meta.outputs.git_tag }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: false
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Generate CycloneDX 1.6 JSON SBOM
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ steps.meta.outputs.git_tag }}
+          format: cyclonedx
+          output: sbom-${{ matrix.service }}.cdx.json
+
+      - name: Upload CycloneDX SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.service }}-${{ steps.meta.outputs.git_tag }}
+          path: sbom-${{ matrix.service }}.cdx.json

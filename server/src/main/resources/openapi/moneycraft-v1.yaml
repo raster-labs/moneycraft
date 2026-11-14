@@ -1,0 +1,1301 @@
+openapi: 3.1.0
+info:
+  title: MoneyCraft 1.0.0 ERP API
+  version: 1.0.0
+  description: >-
+    Clean-room, air-gapped-first multi-company accounting, inventory, and statutory ERP API.
+    Enforces Dual-PG18 AuthorityGuard fencing, RFC 8785 JCS + HMAC-SHA256 90-day idempotency,
+    ETag/If-Match optimistic concurrency, HS256 keyset pagination, and RFC 9457 ProblemDetail.
+servers:
+  - url: /api/v1
+    description: Versioned MoneyCraft v1 API base path
+
+security:
+  - SessionCookie: []
+  - ServiceApiKey: []
+
+paths:
+  /system/status:
+    get:
+      operationId: queryInstallationStatus
+      tags: [System]
+      security: []
+      summary: Query installation security state, fence epoch, and version
+      responses:
+        '200':
+          description: Current installation status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatusResponse'
+
+  /system/initialise:
+    post:
+      operationId: executeFirstRunBootstrap
+      tags: [System]
+      security: []
+      summary: Execute one-time first-run installation owner bootstrap ceremony
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitialiseInstallationRequest'
+      responses:
+        '201':
+          description: Installation initialised and owner session established
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitialiseInstallationResponse'
+        '409':
+          $ref: '#/components/responses/ProblemConflict'
+
+  /auth/login:
+    post:
+      operationId: signInWithArgon2Password
+      tags: [Auth]
+      security: []
+      summary: Authenticate local operator with Argon2id verifier and rotate SPRING_SESSION
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated operator session and CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatedPrincipalDto'
+        '401':
+          $ref: '#/components/responses/ProblemUnauthorized'
+
+  /auth/logout:
+    post:
+      operationId: signOutCurrentSession
+      tags: [Auth]
+      summary: Invalidate active SPRING_SESSION and clear XSRF-TOKEN cookie
+      responses:
+        '204':
+          description: Session terminated
+
+  /auth/me:
+    get:
+      operationId: currentOperatorProfile
+      tags: [Auth]
+      summary: Fetch authenticated principal profile, system roles, and active MC-OBJECT-1 grants
+      responses:
+        '200':
+          description: Current operator profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatedPrincipalDto'
+        '401':
+          $ref: '#/components/responses/ProblemUnauthorized'
+
+  /auth/passkeys/register/options:
+    post:
+      operationId: beginPasskeyEnrollment
+      tags: [Passkeys]
+      summary: Issue WebAuthn FIDO2 attestation options bound to Protected Authority challenge
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+      responses:
+        '200':
+          description: WebAuthn PublicKeyCredentialCreationOptions payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyCreationOptionsResponse'
+
+  /auth/passkeys/register/verify:
+    post:
+      operationId: finishPasskeyEnrollment
+      tags: [Passkeys]
+      summary: Verify CBOR/COSE WebAuthn attestation and persist passkey in ma_passkey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyRegisterVerifyRequest'
+      responses:
+        '204':
+          description: Passkey enrolled
+
+  /auth/passkeys/authenticate/options:
+    post:
+      operationId: beginPasskeyAssertion
+      tags: [Passkeys]
+      security: []
+      summary: Issue WebAuthn FIDO2 assertion options
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: [string, 'null']
+      responses:
+        '200':
+          description: WebAuthn PublicKeyCredentialRequestOptions payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyRequestOptionsResponse'
+
+  /auth/passkeys/authenticate/verify:
+    post:
+      operationId: finishPasskeyAssertion
+      tags: [Passkeys]
+      security: []
+      summary: Verify WebAuthn assertion signature and establish authenticated session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyAuthVerifyRequest'
+      responses:
+        '200':
+          description: Authenticated operator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatedPrincipalDto'
+
+  /auth/oidc/{issuerId}/authorize:
+    get:
+      operationId: beginOidcPkceRedirect
+      tags: [OIDC]
+      security: []
+      summary: Generate S256 PKCE authorization redirect URL for enterprise OIDC issuer
+      parameters:
+        - name: issuerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: PKCE S256 authorization URL and state nonce
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OidcAuthorizeResponse'
+
+  /auth/oidc/callback:
+    post:
+      operationId: completeOidcPkceExchange
+      tags: [OIDC]
+      security: []
+      summary: Complete S256 PKCE code exchange and establish authenticated session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OidcCallbackRequest'
+      responses:
+        '200':
+          description: Authenticated operator session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticatedPrincipalDto'
+
+  /admin/principals:
+    get:
+      operationId: listOperatorPrincipals
+      tags: [Administration]
+      summary: List Protected Authority principals
+      responses:
+        '200':
+          description: Registered principals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminPrincipalRecordDto'
+    post:
+      operationId: createOperatorPrincipal
+      tags: [Administration]
+      summary: Provision new operator principal with Argon2id verifier and Business DB projection
+      parameters:
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePrincipalRequest'
+      responses:
+        '201':
+          description: Principal created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPrincipalRecordDto'
+
+  /admin/principals/{principalRef}/grants:
+    put:
+      operationId: upsertPrincipalCompanyGrant
+      tags: [Administration]
+      summary: Assign or update MC-OBJECT-1 company role grant and sync admin receipt mirror
+      parameters:
+        - name: principalRef
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignCompanyGrantRequest'
+      responses:
+        '200':
+          description: Updated company role grant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyGrantSummaryDto'
+
+  /admin/service-keys:
+    post:
+      operationId: issueScopedServiceApiKey
+      tags: [Administration]
+      summary: Issue scoped machine-to-machine API key (mc_sk_<prefix>_<secret>)
+      parameters:
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceKeyRequest'
+      responses:
+        '201':
+          description: One-time raw service key token and metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedServiceKeyResponse'
+
+  /admin/oidc-issuers:
+    get:
+      operationId: listEnterpriseOidcIssuers
+      tags: [Administration]
+      summary: List configured enterprise OIDC issuers
+      responses:
+        '200':
+          description: OIDC issuers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OidcIssuerDto'
+    post:
+      operationId: registerEnterpriseOidcIssuer
+      tags: [Administration]
+      summary: Register enterprise OIDC issuer with Tink AES256_GCM client secret protection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOidcIssuerRequest'
+      responses:
+        '201':
+          description: Registered OIDC issuer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OidcIssuerDto'
+
+  /admin/audit/verify:
+    get:
+      operationId: verifyMcAudit2Chain
+      tags: [Administration]
+      summary: Verify cryptographic integrity of all MC-AUDIT-2 SHA-256 hash chain streams
+      responses:
+        '200':
+          description: Audit chain verification report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditChainVerifyResponseDto'
+
+  /admin/quarantine/enter:
+    post:
+      operationId: enterFailClosedQuarantine
+      tags: [Administration]
+      summary: Transition installation into fail-closed QUARANTINE DR state
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Updated system status in QUARANTINED mode
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatusResponse'
+
+  /admin/quarantine/recover:
+    post:
+      operationId: recoverFromQuarantineCeremony
+      tags: [Administration]
+      summary: Reconcile receipts, verify MC-AUDIT-2 chain, and exit QUARANTINE using recovery receipt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recoveryReceipt:
+                  type: string
+                recoveryReceiptCode:
+                  type: string
+      responses:
+        '200':
+          description: Installation recovered to ACTIVE writer mode
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatusResponse'
+
+  /companies:
+    get:
+      operationId: listCompanies
+      tags: [Companies]
+      summary: List companies accessible under caller MC-OBJECT-1 grants
+      responses:
+        '200':
+          description: Accessible companies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CompanySummaryDto'
+    post:
+      operationId: createCompany
+      tags: [Companies]
+      summary: >-
+        Create company master (seeding 28 groups, Cash + P&L ledgers, 24 voucher types,
+        Main Location godown, 6 TDS natures, and 12 monthly OPEN periods)
+      parameters:
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateCompanyRequest'
+      responses:
+        '201':
+          description: Created company with ETag "v1"
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanySummaryDto'
+        '409':
+          $ref: '#/components/responses/ProblemConflict'
+        '503':
+          $ref: '#/components/responses/ProblemQuarantined'
+
+  /companies/{companyId}:
+    get:
+      operationId: fetchCompanyById
+      tags: [Companies]
+      summary: Fetch tenant-scoped company configuration and ETag
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Company details
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanySummaryDto'
+        '403':
+          $ref: '#/components/responses/ProblemForbidden'
+    put:
+      operationId: alterCompany
+      tags: [Companies]
+      summary: Alter company & F11 features enforcing If-Match optimistic lock and non-disablable MCA Edit Log
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateCompanyRequest'
+      responses:
+        '200':
+          description: Updated company and incremented ETag
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanySummaryDto'
+        '403':
+          $ref: '#/components/responses/ProblemForbidden'
+        '412':
+          $ref: '#/components/responses/ProblemPreconditionFailed'
+
+  /companies/{companyId}/fiscal-years:
+    get:
+      operationId: listCompanyFiscalYears
+      tags: [FiscalPeriods]
+      summary: List tenant-isolated fiscal years and nested monthly accounting periods
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Fiscal years for company
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FiscalYearDto'
+    post:
+      operationId: createCompanyFiscalYear
+      tags: [FiscalPeriods]
+      summary: Create non-overlapping fiscal year and seed monthly OPEN accounting periods
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFiscalYearRequest'
+      responses:
+        '201':
+          description: Created fiscal year
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FiscalYearDto'
+
+  /companies/{companyId}/periods:
+    get:
+      operationId: listCompanyAccountingPeriods
+      tags: [FiscalPeriods]
+      summary: List monthly accounting periods under PostgreSQL 18 RLS isolation
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Accounting periods
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccountingPeriodDto'
+
+  /companies/{companyId}/periods/{periodId}:
+    patch:
+      operationId: changeAccountingPeriodState
+      tags: [FiscalPeriods]
+      summary: Transition accounting period state between OPEN, SOFT_LOCKED, and CLOSED
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: periodId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchPeriodStateRequest'
+      responses:
+        '200':
+          description: Updated accounting period state
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountingPeriodDto'
+
+  /events/stream:
+    get:
+      operationId: subscribeOperationalEvents
+      tags: [Events]
+      summary: Subscribe to Server-Sent Events (SSE) operational & quarantine notifications
+      responses:
+        '200':
+          description: SSE text/event-stream channel
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: MCSESSION
+    ServiceApiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: mc_sk_<prefix>_<secret>
+
+  parameters:
+    CompanyIdPath:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RequiredIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 90-day RFC 8785 JCS + HMAC-SHA256 idempotency token
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    OptionalIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    RequiredIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Current resource ETag (e.g. "v1")
+      schema:
+        type: string
+
+  responses:
+    ProblemUnauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    ProblemForbidden:
+      description: RBAC authorization denied or immutable MCA Edit Log violation
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    ProblemConflict:
+      description: Resource state conflict or Idempotency-Key payload mismatch
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    ProblemPreconditionFailed:
+      description: Stale ETag / If-Match optimistic concurrency conflict
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    ProblemQuarantined:
+      description: Fail-closed QUARANTINE mode active (MC-SYSTEM-QUARANTINED)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+  schemas:
+    ProblemDetail:
+      type: object
+      required: [type, title, status, detail, code, errorCode]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          example: MC-SYSTEM-QUARANTINED
+        errorCode:
+          type: string
+          example: MC-SYSTEM-QUARANTINED
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: string
+
+    SystemStatusResponse:
+      type: object
+      required: [securityState, fenceEpoch, version]
+      properties:
+        securityState:
+          type: string
+          enum: [UNINITIALISED, ACTIVE, QUARANTINED]
+        fenceEpoch:
+          type: integer
+          format: int64
+        version:
+          type: string
+        quarantineReason:
+          type: [string, 'null']
+
+    InitialiseInstallationRequest:
+      type: object
+      required: [ownerUsername, ownerDisplayName, password]
+      properties:
+        installationLabel:
+          type: string
+        ownerUsername:
+          type: string
+        ownerDisplayName:
+          type: string
+        password:
+          type: string
+          minLength: 12
+
+    InitialiseInstallationResponse:
+      type: object
+      required: [installationId, ownerPrincipal, recoveryReceiptCode]
+      properties:
+        installationId:
+          type: string
+          format: uuid
+        ownerPrincipal:
+          $ref: '#/components/schemas/AuthenticatedPrincipalDto'
+        recoveryReceiptCode:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    CompanyGrantSummaryDto:
+      type: object
+      required: [grantId, companyId, roleCode, voucherTypeAllowlist, exportPermitted]
+      properties:
+        grantId:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        roleCode:
+          type: string
+          enum:
+            - COMPANY_ADMIN
+            - AUDITOR_APPROVER
+            - SENIOR_ACCOUNTANT
+            - DATA_ENTRY_OPERATOR
+            - INVENTORY_CLERK
+            - READ_ONLY_VIEWER
+        voucherTypeAllowlist:
+          type: array
+          items:
+            type: string
+        backdatedDaysLimit:
+          type: [integer, 'null']
+        exportPermitted:
+          type: boolean
+
+    AuthenticatedPrincipalDto:
+      type: object
+      required: [principalId, username, displayName, systemRoles, companyGrants, passkeyEnrolled]
+      properties:
+        principalId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+        systemRoles:
+          type: array
+          items:
+            type: string
+            enum: [INSTALLATION_OWNER, SECURITY_AUDITOR, SYSTEM_OPERATOR]
+        companyGrants:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompanyGrantSummaryDto'
+        passkeyEnrolled:
+          type: boolean
+        csrfToken:
+          type: string
+
+    PasskeyCreationOptionsResponse:
+      type: object
+      required: [challenge, rp, user, pubKeyCredParams]
+      properties:
+        challenge:
+          type: string
+        rp:
+          type: object
+          properties:
+            name:
+              type: string
+            id:
+              type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            displayName:
+              type: string
+        pubKeyCredParams:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              alg:
+                type: integer
+        timeout:
+          type: integer
+          format: int64
+        attestation:
+          type: string
+        excludeCredentials:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+
+    PasskeyRegisterVerifyRequest:
+      type: object
+      required: [clientDataJSON, attestationObject]
+      properties:
+        label:
+          type: string
+        credentialId:
+          type: string
+        rawId:
+          type: string
+        type:
+          type: string
+        clientDataJSON:
+          type: string
+        attestationObject:
+          type: string
+
+    PasskeyRequestOptionsResponse:
+      type: object
+      required: [challenge]
+      properties:
+        challenge:
+          type: string
+        rpId:
+          type: string
+        timeout:
+          type: integer
+          format: int64
+        userVerification:
+          type: string
+        allowCredentials:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+
+    PasskeyAuthVerifyRequest:
+      type: object
+      required: [rawId, clientDataJSON, authenticatorData, signature]
+      properties:
+        credentialId:
+          type: string
+        rawId:
+          type: string
+        type:
+          type: string
+        clientDataJSON:
+          type: string
+        authenticatorData:
+          type: string
+        signature:
+          type: string
+        userHandle:
+          type: [string, 'null']
+
+    OidcAuthorizeResponse:
+      type: object
+      required: [authorizationUrl, state]
+      properties:
+        authorizationUrl:
+          type: string
+        state:
+          type: string
+
+    OidcCallbackRequest:
+      type: object
+      required: [code, state]
+      properties:
+        code:
+          type: string
+        state:
+          type: string
+
+    CreateOidcIssuerRequest:
+      type: object
+      required: [registrationId, displayName, issuerUri, clientId]
+      properties:
+        registrationId:
+          type: string
+        displayName:
+          type: string
+        issuerUri:
+          type: string
+        authorizationUri:
+          type: string
+        tokenUri:
+          type: string
+        jwksUri:
+          type: string
+        userinfoUri:
+          type: string
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        scopes:
+          type: string
+        linkPrincipalUsername:
+          type: string
+        linkSubject:
+          type: string
+
+    OidcIssuerDto:
+      type: object
+      required: [issuerId, registrationId, displayName, issuerUri, clientId, pkceRequired]
+      properties:
+        issuerId:
+          type: string
+          format: uuid
+        registrationId:
+          type: string
+        displayName:
+          type: string
+        issuerUri:
+          type: string
+        clientId:
+          type: string
+        pkceRequired:
+          type: boolean
+
+    CreatePrincipalRequest:
+      type: object
+      required: [username, displayName, password]
+      properties:
+        username:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: [string, 'null']
+        password:
+          type: string
+        systemRoles:
+          type: array
+          items:
+            type: string
+            enum: [INSTALLATION_OWNER, SECURITY_AUDITOR, SYSTEM_OPERATOR]
+
+    AdminPrincipalRecordDto:
+      type: object
+      required: [id, username, displayName, systemRoles, active]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+        systemRoles:
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+
+    AssignCompanyGrantRequest:
+      type: object
+      required: [companyId, roleCode]
+      properties:
+        companyId:
+          type: string
+          format: uuid
+        roleCode:
+          type: string
+          enum:
+            - COMPANY_ADMIN
+            - AUDITOR_APPROVER
+            - SENIOR_ACCOUNTANT
+            - DATA_ENTRY_OPERATOR
+            - INVENTORY_CLERK
+            - READ_ONLY_VIEWER
+        voucherTypeAllowlist:
+          type: array
+          items:
+            type: string
+        backdatedDaysLimit:
+          type: [integer, 'null']
+        exportPermitted:
+          type: [boolean, 'null']
+
+    CreateServiceKeyRequest:
+      type: object
+      required: [label]
+      properties:
+        label:
+          type: string
+        companyIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        endpointAllowlist:
+          type: array
+          items:
+            type: string
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+
+    CreatedServiceKeyResponse:
+      type: object
+      required: [keyId, label, keyPrefix, rawSecretOnce]
+      properties:
+        keyId:
+          type: string
+          format: uuid
+        label:
+          type: string
+        keyPrefix:
+          type: string
+        rawSecretOnce:
+          type: string
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+
+    AuditChainVerifyResponseDto:
+      type: object
+      required: [verified, checkedEventCount, tailHashSha256, verifiedAt]
+      properties:
+        verified:
+          type: boolean
+        checkedEventCount:
+          type: integer
+          format: int64
+        tailHashSha256:
+          type: string
+        verifiedAt:
+          type: string
+        failureDetail:
+          type: [string, 'null']
+
+    CompanyFeaturesDto:
+      type: object
+      properties:
+        maintainAccounts:
+          type: boolean
+        billWiseEnabled:
+          type: boolean
+        costCentresEnabled:
+          type: boolean
+        maintainInventory:
+          type: boolean
+        inventoryIntegrated:
+          type: boolean
+        gstEnabled:
+          type: boolean
+        multiGstinEnabled:
+          type: boolean
+        gstRegistrationType:
+          type: string
+          enum: [REGULAR, COMPOSITION, ISD, SEZ]
+        gstin:
+          type: string
+        gstr1Periodicity:
+          type: string
+          enum: [MONTHLY, QUARTERLY]
+        gstEffectiveFrom:
+          type: string
+          format: date
+        tdsEnabled:
+          type: boolean
+        mcaEditLogEnforced:
+          type: boolean
+
+    CreateOrUpdateCompanyRequest:
+      type: object
+      required: [code, legalName]
+      properties:
+        code:
+          type: string
+        legalName:
+          type: string
+        mailingName:
+          type: string
+        addressLines:
+          type: string
+        countryCode:
+          type: string
+        stateCode:
+          type: string
+        stateName:
+          type: string
+        pinCode:
+          type: string
+        pan:
+          type: string
+        baseCurrencyCode:
+          type: string
+        currencySymbol:
+          type: string
+        currencyScale:
+          type: integer
+        financialYearFrom:
+          type: string
+          format: date
+        booksBeginningFrom:
+          type: string
+          format: date
+        versionNo:
+          type: [integer, 'null']
+          format: int64
+        features:
+          $ref: '#/components/schemas/CompanyFeaturesDto'
+
+    CompanySummaryDto:
+      type: object
+      required:
+        - id
+        - code
+        - legalName
+        - mailingName
+        - countryCode
+        - stateCode
+        - baseCurrencyCode
+        - currencySymbol
+        - currencyScale
+        - financialYearFrom
+        - booksBeginningFrom
+        - versionNo
+        - features
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        legalName:
+          type: string
+        mailingName:
+          type: string
+        countryCode:
+          type: string
+        stateCode:
+          type: string
+        pinCode:
+          type: string
+        panMasked:
+          type: [string, 'null']
+        baseCurrencyCode:
+          type: string
+        currencySymbol:
+          type: string
+        currencyScale:
+          type: integer
+        financialYearFrom:
+          type: string
+          format: date
+        booksBeginningFrom:
+          type: string
+          format: date
+        lastEntryDate:
+          type: [string, 'null']
+          format: date
+        versionNo:
+          type: integer
+          format: int64
+        features:
+          $ref: '#/components/schemas/CompanyFeaturesDto'
+
+    AccountingPeriodDto:
+      type: object
+      required: [id, fiscalYearId, periodNo, code, periodCode, name, startDate, endDate, state, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fiscalYearId:
+          type: string
+          format: uuid
+        periodNo:
+          type: integer
+        code:
+          type: string
+        periodCode:
+          type: string
+        name:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        state:
+          type: string
+          enum: [OPEN, SOFT_LOCKED, CLOSED]
+        lockedReason:
+          type: [string, 'null']
+        versionNo:
+          type: integer
+          format: int64
+
+    FiscalYearDto:
+      type: object
+      required: [id, fiscalYearId, code, periodCode, displayLabel, startDate, endDate, closed, state, versionNo, periods]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fiscalYearId:
+          type: string
+          format: uuid
+        code:
+          type: string
+        periodCode:
+          type: string
+        displayLabel:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        closed:
+          type: boolean
+        state:
+          type: string
+          enum: [OPEN, SOFT_LOCKED, CLOSED]
+        versionNo:
+          type: integer
+          format: int64
+        periods:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountingPeriodDto'
+
+    CreateFiscalYearRequest:
+      type: object
+      required: [startDate, endDate]
+      properties:
+        code:
+          type: string
+        displayLabel:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+
+    PatchPeriodStateRequest:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [OPEN, SOFT_LOCKED, CLOSED]
+        reason:
+          type: string

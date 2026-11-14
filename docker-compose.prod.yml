@@ -1,0 +1,106 @@
+# ==============================================================================
+# MoneyCraft 1.0.0 — Hardened Enterprise / Private-LAN Production Overlay
+# Publishes `:80` (308 redirect) & `:443` (TLS 1.3) on `moneycraft-gateway` ONLY.
+# Dual-PG18 clusters stay isolated on `mc_data_net` (`internal: true`).
+# Secrets are injected exclusively from root-protected `0400` files via `/run/secrets/*`.
+# ==============================================================================
+
+x-prod-logging: &prod-logging
+  driver: json-file
+  options:
+    max-size: "25m"
+    max-file: "10"
+
+services:
+  moneycraft-authority-pg18:
+    logging: *prod-logging
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/moneycraft/postgresql-authority.conf"
+      - "-c"
+      - "hba_file=/etc/postgresql/moneycraft/pg_hba-scram-tls.conf"
+    volumes:
+      - ./docker/postgres/pg_hba-scram-tls.conf:/etc/postgresql/moneycraft/pg_hba-scram-tls.conf:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+        reservations:
+          cpus: "1.0"
+          memory: 1024M
+
+  moneycraft-business-pg18:
+    logging: *prod-logging
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/moneycraft/postgresql-business.conf"
+      - "-c"
+      - "hba_file=/etc/postgresql/moneycraft/pg_hba-scram-tls.conf"
+    volumes:
+      - ./docker/postgres/pg_hba-scram-tls.conf:/etc/postgresql/moneycraft/pg_hba-scram-tls.conf:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4096M
+        reservations:
+          cpus: "2.0"
+          memory: 2048M
+
+  moneycraft-pg-backup:
+    logging: *prod-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+
+  moneycraft-migrator:
+    logging: *prod-logging
+    image: ${MC_REGISTRY:?Set MC_REGISTRY}/moneycraft-api:${MC_IMAGE_TAG:?Set MC_IMAGE_TAG}
+    environment:
+      SPRING_PROFILES_ACTIVE: prod,migrator
+
+  moneycraft-api:
+    logging: *prod-logging
+    image: ${MC_REGISTRY:?Set MC_REGISTRY}/moneycraft-api:${MC_IMAGE_TAG:?Set MC_IMAGE_TAG}
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      MC_CONNECTOR_SPI_ENABLED: "false"
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 4096M
+        reservations:
+          cpus: "2.0"
+          memory: 2048M
+
+  moneycraft-ui:
+    logging: *prod-logging
+    image: ${MC_REGISTRY:?Set MC_REGISTRY}/moneycraft-ui:${MC_IMAGE_TAG:?Set MC_IMAGE_TAG}
+    environment:
+      MC_ENV_LABEL: PRODUCTION
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+
+  moneycraft-gateway:
+    logging: *prod-logging
+    image: ${MC_REGISTRY:?Set MC_REGISTRY}/moneycraft-gateway:${MC_IMAGE_TAG:?Set MC_IMAGE_TAG}
+    ports:
+      - "80:8080"
+      - "443:8443"
+    environment:
+      MC_HTTPS_REDIRECT_PORT: "443"
+      MC_ALLOW_SELF_SIGNED_TLS: "false"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 512M

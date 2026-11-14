@@ -1,0 +1,36 @@
+# ==============================================================================
+# MoneyCraft 1.0.0 — Hermetic Multi-Stage Docker Build Context Exclusions
+# ==============================================================================
+
+.git/
+.github/
+.idea/
+.vscode/
+.DS_Store
+
+# Build & Test Caches (Rebuilt cleanly inside multi-stage Docker builders)
+**/target/
+**/node_modules/
+**/dist/
+**/.angular/
+**/playwright-report/
+**/test-results/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Environment & Secret Custody (Injected at runtime via /run/secrets/* & env_file)
+.env
+.env.*
+.local-secrets/
+secrets/
+*.pem
+*.key
+*.p12
+*.jks
+
+# Clean-Room & Zero-Licensing Artifacts
+*.lic
+*.1800
+*.tsf
+execution/

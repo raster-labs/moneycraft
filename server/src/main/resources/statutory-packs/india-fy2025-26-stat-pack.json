@@ -1,0 +1,170 @@
+{
+  "packCode": "IN-FY2025-26-V1",
+  "countryCode": "IN",
+  "fiscalYear": "FY 2025-26",
+  "effectiveFrom": "2025-04-01",
+  "effectiveTo": "2026-03-31",
+  "schemaVersion": "1.0.0",
+  "gst": {
+    "slabsPct": [
+      "0.00",
+      "0.10",
+      "0.25",
+      "1.50",
+      "3.00",
+      "5.00",
+      "12.00",
+      "18.00",
+      "28.00",
+      "40.00"
+    ],
+    "b2clInvoiceThresholdInr": "100000.00",
+    "ewayBillDefaultThresholdInr": "50000.00",
+    "einvoiceTurnoverThresholdInr": "50000000.00",
+    "slabLevelRoundingMode": "HALF_UP",
+    "inheritanceHierarchy": [
+      "VOUCHER_LINE_OVERRIDE",
+      "ACCOUNTING_LEDGER",
+      "STOCK_ITEM",
+      "STOCK_GROUP",
+      "ACCOUNT_GROUP",
+      "COMPANY_GST_REGISTRATION"
+    ],
+    "hsnPhaseIii": {
+      "mandatoryB2bB2cBifurcation": true,
+      "turnoverUpTo5CrMinDigits": 4,
+      "turnoverAbove5CrMinDigits": 6,
+      "validDigitLengths": [4, 6, 8],
+      "sacPrefix": "99",
+      "omitUqcForPureSac": true
+    },
+    "tobaccoDeemedMrpRel72": {
+      "enabled": true,
+      "formula": "round((declared_mrp * billed_qty * 100) / (100 + aggregate_ad_valorem_rate_pct), currency_scale)",
+      "missingMrpErrorCode": "MC-TAX-MRP-REQUIRED"
+    },
+    "imsRel72": {
+      "supportedActions": ["NO_ACTION", "ACCEPT", "REJECT", "PENDING"],
+      "partialItcReductionEnabled": true,
+      "remarksMandatoryOnReject": true,
+      "remarksMandatoryOnItcReduction": true
+    },
+    "connectorSessionRel72": {
+      "defaultOutboundEnabled": false,
+      "maxSessionWindowHours": 720
+    },
+    "statesAndUnionTerritories": [
+      { "code": "01", "name": "Jammu and Kashmir", "isUnionTerritory": true },
+      { "code": "02", "name": "Himachal Pradesh", "isUnionTerritory": false },
+      { "code": "03", "name": "Punjab", "isUnionTerritory": false },
+      { "code": "04", "name": "Chandigarh", "isUnionTerritory": true },
+      { "code": "05", "name": "Uttarakhand", "isUnionTerritory": false },
+      { "code": "06", "name": "Haryana", "isUnionTerritory": false },
+      { "code": "07", "name": "Delhi", "isUnionTerritory": true },
+      { "code": "08", "name": "Rajasthan", "isUnionTerritory": false },
+      { "code": "09", "name": "Uttar Pradesh", "isUnionTerritory": false },
+      { "code": "10", "name": "Bihar", "isUnionTerritory": false },
+      { "code": "11", "name": "Sikkim", "isUnionTerritory": false },
+      { "code": "12", "name": "Arunachal Pradesh", "isUnionTerritory": false },
+      { "code": "13", "name": "Nagaland", "isUnionTerritory": false },
+      { "code": "14", "name": "Manipur", "isUnionTerritory": false },
+      { "code": "15", "name": "Mizoram", "isUnionTerritory": false },
+      { "code": "16", "name": "Tripura", "isUnionTerritory": false },
+      { "code": "17", "name": "Meghalaya", "isUnionTerritory": false },
+      { "code": "18", "name": "Assam", "isUnionTerritory": false },
+      { "code": "19", "name": "West Bengal", "isUnionTerritory": false },
+      { "code": "20", "name": "Jharkhand", "isUnionTerritory": false },
+      { "code": "21", "name": "Odisha", "isUnionTerritory": false },
+      { "code": "22", "name": "Chhattisgarh", "isUnionTerritory": false },
+      { "code": "23", "name": "Madhya Pradesh", "isUnionTerritory": false },
+      { "code": "24", "name": "Gujarat", "isUnionTerritory": false },
+      { "code": "26", "name": "Dadra and Nagar Haveli and Daman and Diu", "isUnionTerritory": true },
+      { "code": "27", "name": "Maharashtra", "isUnionTerritory": false },
+      { "code": "29", "name": "Karnataka", "isUnionTerritory": false },
+      { "code": "30", "name": "Goa", "isUnionTerritory": false },
+      { "code": "31", "name": "Lakshadweep", "isUnionTerritory": true },
+      { "code": "32", "name": "Kerala", "isUnionTerritory": false },
+      { "code": "33", "name": "Tamil Nadu", "isUnionTerritory": false },
+      { "code": "34", "name": "Puducherry", "isUnionTerritory": true },
+      { "code": "35", "name": "Andaman and Nicobar Islands", "isUnionTerritory": true },
+      { "code": "36", "name": "Telangana", "isUnionTerritory": false },
+      { "code": "37", "name": "Andhra Pradesh", "isUnionTerritory": false },
+      { "code": "38", "name": "Ladakh", "isUnionTerritory": true },
+      { "code": "96", "name": "Foreign Country", "isUnionTerritory": false },
+      { "code": "97", "name": "Other Territory", "isUnionTerritory": true }
+    ]
+  },
+  "tdsTcs": {
+    "fvuSchemaVersion": "1.2",
+    "supportedForms": ["26Q", "27Q", "27EQ"],
+    "defaultNoPanRatePct": "20.00",
+    "sections": [
+      {
+        "sectionCode": "194C",
+        "paymentCode": "94C",
+        "name": "Payment to Contractors and Sub-Contractors",
+        "rateIndividualHufPct": "1.00",
+        "rateOtherPct": "2.00",
+        "noPanRatePct": "20.00",
+        "singleBillThresholdInr": "30000.00",
+        "annualAggregateThresholdInr": "100000.00",
+        "isTcs": false
+      },
+      {
+        "sectionCode": "194J",
+        "paymentCode": "94J",
+        "name": "Fees for Professional Services",
+        "rateIndividualHufPct": "10.00",
+        "rateOtherPct": "10.00",
+        "noPanRatePct": "20.00",
+        "singleBillThresholdInr": "0.00",
+        "annualAggregateThresholdInr": "50000.00",
+        "isTcs": false
+      },
+      {
+        "sectionCode": "194H",
+        "paymentCode": "94H",
+        "name": "Commission or Brokerage",
+        "rateIndividualHufPct": "2.00",
+        "rateOtherPct": "2.00",
+        "noPanRatePct": "20.00",
+        "singleBillThresholdInr": "0.00",
+        "annualAggregateThresholdInr": "20000.00",
+        "isTcs": false
+      },
+      {
+        "sectionCode": "194I",
+        "paymentCode": "94I",
+        "name": "Rent of Land, Building or Furniture",
+        "rateIndividualHufPct": "10.00",
+        "rateOtherPct": "10.00",
+        "noPanRatePct": "20.00",
+        "singleBillThresholdInr": "0.00",
+        "annualAggregateThresholdInr": "600000.00",
+        "isTcs": false
+      },
+      {
+        "sectionCode": "194Q",
+        "paymentCode": "94Q",
+        "name": "Purchase of Goods",
+        "rateIndividualHufPct": "0.10",
+        "rateOtherPct": "0.10",
+        "noPanRatePct": "5.00",
+        "singleBillThresholdInr": "0.00",
+        "annualAggregateThresholdInr": "5000000.00",
+        "isTcs": false
+      },
+      {
+        "sectionCode": "206C",
+        "paymentCode": "6CA",
+        "name": "Tax Collected at Source",
+        "rateIndividualHufPct": "1.00",
+        "rateOtherPct": "1.00",
+        "noPanRatePct": "5.00",
+        "singleBillThresholdInr": "0.00",
+        "annualAggregateThresholdInr": "5000000.00",
+        "isTcs": true
+      }
+    ]
+  }
+}

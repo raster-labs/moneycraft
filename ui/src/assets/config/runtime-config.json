@@ -1,0 +1,6 @@
+{
+  "apiBaseUrl": "/api/v1",
+  "envLabel": "LOCAL",
+  "defaultCurrency": "INR",
+  "releaseVersion": "1.0.0"
+}

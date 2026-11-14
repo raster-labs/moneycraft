@@ -1,0 +1,121 @@
+/* MoneyCraft 1.0.0 — Brand Identity v0.2.0 Local Font-Face & Semantic Typography
+ * Zero external font CDN requests (GEN-003).
+ * Manrope v4.505 variable default axis is wght 200 (ExtraLight); explicit numeric
+ * font-weight (400 / 500 / 600 / 700) is declared on every typography rule.
+ */
+@font-face {
+  font-family: 'Manrope';
+  src: url('../assets/fonts/Manrope-Variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../assets/fonts/JetBrainsMono-Variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+html,
+body {
+  font-family: var(--mc-font-ui);
+  font-size: var(--mc-font-size-base);
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--mc-color-slate-900);
+  background-color: var(--mc-color-canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, .mc-heading {
+  font-family: var(--mc-font-ui);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--mc-color-slate-900);
+  margin: 0;
+}
+
+strong, b, th {
+  font-weight: 600;
+}
+
+button,
+input,
+select,
+textarea,
+label {
+  font-family: var(--mc-font-ui);
+  font-size: inherit;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+p, td, li, span {
+  font-weight: inherit;
+}
+
+/* Monetary amounts, balances, quantities, rates & financial report columns.
+ * Uses Manrope tabular lining figures so digits align vertically across rows,
+ * rendering U+20B9 (₹) and true minus U+2212 (−) natively.
+ */
+.mc-amount {
+  font-family: 'Manrope', 'Noto Sans Devanagari', 'Noto Sans Tamil', sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  text-align: right;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.mc-amount-muted {
+  font-weight: 500;
+  color: var(--mc-color-slate-600);
+}
+
+/* Voucher IDs, GSTINs, PANs, HSN/SAC, IRNs, Batch Nos & SHA-256 Hashes.
+ * NEVER place U+20B9 (₹) inside .mc-code (JetBrains Mono 2.304 lacks U+20B9).
+ */
+.mc-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-variant-ligatures: none;
+  font-feature-settings: "zero" 1, "calt" 0, "liga" 0, "clig" 0, "dlig" 0, "hlig" 0;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.mc-identifier {
+  font-family: var(--mc-font-mono);
+  font-variant-ligatures: none;
+  font-variant-numeric: normal;
+  font-feature-settings: "calt" 0, "liga" 0, "clig" 0, "dlig" 0, "hlig" 0, "zero" 0;
+  font-weight: 500;
+}
+
+/* TallyPrime 7.2 Universal Modifier Keycap Grammar:
+ * - Plain key (e.g., F2, F8): direct invocation
+ * - Single underline (.mc-key-alt): Alt + <Key>
+ * - Double underline (.mc-key-ctrl): Ctrl + <Key>
+ */
+.mc-key-alt {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1.5px;
+  font-weight: 700;
+}
+
+.mc-key-ctrl {
+  text-decoration: underline double;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  font-weight: 700;
+}
+
+.mc-mnemonic-char {
+  color: var(--mc-color-verdigris-teal);
+  font-weight: 700;
+}

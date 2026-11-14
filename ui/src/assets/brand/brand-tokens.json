@@ -1,0 +1,142 @@
+{
+  "identity": "MoneyCraft",
+  "version": "0.2.0",
+  "owner": "Raster Images Pvt. Ltd.",
+  "copyright_base_year": 2026,
+  "direction": "Crafted ledger",
+  "colours": {
+    "ink": "#142F42",
+    "teal": "#008D87",
+    "fold": "#006D68",
+    "mint": "#4CE1BD",
+    "jade": "#22B69C",
+    "paper": "#F6FAF9",
+    "white": "#FFFFFF"
+  },
+  "wordmark": {
+    "text": "MoneyCraft",
+    "typeface": "Manrope",
+    "weight": 650,
+    "distribution": "Outlined SVG; no runtime font dependency",
+    "tracking_font_units": -12,
+    "yC_tracking_font_units": 4
+  },
+  "symbol_geometry": {
+    "width": 240,
+    "height": 160,
+    "editable_paths": {
+      "left-stem": "M 0 40 L 60 60 L 60 144 Q 60 160 44 160 L 16 160 Q 0 160 0 144 Z",
+      "right-stem": "M 180 61 L 240 29 L 240 144 Q 240 160 224 160 L 196 160 Q 180 160 180 144 Z",
+      "back-fold": "M 0 43 Q 0 27 15 17 L 39 2 Q 50 -5 63 3 L 127 47 L 78 81 Q 70 87 61 81 L 10 48 Q 0 42 0 43 Z",
+      "front-fold": "M 61 81 L 183 3 Q 196 -5 209 3 L 232 18 Q 240 23 240 32 Q 240 37 235 41 L 133 112 Q 121 120 109 112 L 61 81 Z"
+    }
+  },
+  "icon": {
+    "canvas": 1024,
+    "ordinary_symbol_width": 720,
+    "maskable_symbol_width": 640,
+    "maskable_safe_circle_radius": 409.6
+  },
+  "status": "Accepted UI typography recommendations recorded on 2026-11-13 (Europe/Madrid); existing identity supplied for REA Handoff v0.2.0 integration. Application and native packaging qualification remain NOT RUN.",
+  "decision": {
+    "recorded_date": "2026-11-13",
+    "timezone": "Europe/Madrid",
+    "scope": "Accepted typography recommendations and inclusion of the existing identity in the REA handoff",
+    "previous_package": "0.1.0",
+    "production_artwork_changed": false,
+    "target_product_version": "1.0.0"
+  },
+  "typography": {
+    "ui": {
+      "family": "Manrope",
+      "font_version": "4.505",
+      "distribution": "Pinned SIL OFL 1.1 distribution; no silent substitution with Manrope V5",
+      "style": "normal",
+      "asset": "fonts/Manrope-Variable.woff2",
+      "weights": {
+        "body": 400,
+        "labels_and_controls": [
+          400,
+          500
+        ],
+        "headings": 600
+      },
+      "ordinary_text_starting_size_css_px": [
+        14,
+        16
+      ],
+      "size_policy": "Starting guidance; qualify actual density, browser zoom, fallback and legibility",
+      "zero_style": "plain",
+      "monospaced": false,
+      "variable_weight_range": [
+        200,
+        800
+      ]
+    },
+    "financial_values": {
+      "family_role": "ui",
+      "roles": [
+        "amount",
+        "balance",
+        "quantity",
+        "rate",
+        "numeric_report_column"
+      ],
+      "font_variant_numeric": "lining-nums tabular-nums",
+      "open_type_tabular_feature": "tnum",
+      "alignment": "right",
+      "formatting": "Consistent locale, precision, grouping and signs per column",
+      "data_mutation": false
+    },
+    "identifiers": {
+      "family": "JetBrains Mono",
+      "asset": "fonts/JetBrainsMono-Variable.woff2",
+      "font_version_source": "fonts/font-provenance.json",
+      "style": "normal",
+      "zero_style": "dotted",
+      "font_variant_ligatures": "none",
+      "font_variant_numeric": "normal",
+      "font_feature_settings": {
+        "calt": 0,
+        "liga": 0,
+        "clig": 0,
+        "dlig": 0,
+        "hlig": 0,
+        "zero": 0
+      },
+      "optional_slashed_zero_enabled": false,
+      "roles": [
+        "voucher_reference",
+        "account_reference",
+        "item_reference",
+        "tax_identifier",
+        "import_identifier",
+        "diagnostic",
+        "code"
+      ],
+      "data_mutation": false,
+      "font_version": "2.304",
+      "source_commit": "cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9",
+      "variable_weight_range": [
+        100,
+        800
+      ]
+    },
+    "deployment": {
+      "source": "bundled local assets",
+      "public_font_cdn_dependency": false,
+      "stylesheet": "web/moneycraft-typography.css",
+      "provenance": "fonts/font-provenance.json",
+      "coverage_policy": "Inspect actual glyph coverage and qualify explicit local fallbacks for required scripts and currency symbols",
+      "qualification_status": "NOT RUN for application and report renderer",
+      "coverage_evidence": {
+        "Manrope_has_rupee_U20B9": true,
+        "JetBrainsMono_has_rupee_U20B9": false,
+        "sampled_Devanagari_U0915_present_in_either": false,
+        "sampled_Tamil_U0B85_present_in_either": false,
+        "qualification": "Qualify local fallbacks for required languages and missing glyphs; no broad Indian-script coverage claim."
+      }
+    },
+    "wordmark_policy": "Use supplied outlined SVG paths; do not retype or regenerate from UI font settings"
+  }
+}

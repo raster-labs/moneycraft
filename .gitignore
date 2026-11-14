@@ -1,0 +1,67 @@
+# ==============================================================================
+# MoneyCraft 1.0.0 — Clean-Room Monorepo Git Ignore Rules
+# ==============================================================================
+
+# Maven & Java Build Outputs
+target/
+*.class
+*.war
+*.ear
+*.log
+hs_err_pid*
+replay_pid*
+.flattened-pom.xml
+dependency-reduced-pom.xml
+
+# Node / Angular 22 / Playwright Outputs
+ui/node_modules/
+ui/dist/
+ui/.angular/
+ui/coverage/
+node_modules/
+playwright-report/
+test-results/
+blob-report/
+
+# Local Secrets, Keysets, Certificates & Active .env Files (NEVER COMMIT)
+.env
+.env.dev
+.env.staging
+.env.prod
+.env.local
+.env.*.local
+!.env.dev.example
+!.env.staging.example
+!.env.prod.example
+.local-secrets/
+secrets/
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+
+# Clean-Room & Zero-Licensing Guardrails (GEN-003 / SEC-015)
+*.lic
+*.1800
+*.tsf
+*.cap
+*.cif
+
+# Python Tooling Caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+
+# IDE & OS Metadata
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+.DS_Store
+Thumbs.db

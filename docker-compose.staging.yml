@@ -1,0 +1,53 @@
+# ==============================================================================
+# MoneyCraft 1.0.0 — Staging / UAT Qualification Compose Overlay
+# Exposes HTTPS `:8443` on `moneycraft-gateway` ONLY; PostgreSQL 18 clusters
+# remain strictly isolated on `mc_data_net` (`internal: true`, zero host ports).
+# ==============================================================================
+
+services:
+  moneycraft-authority-pg18:
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/moneycraft/postgresql-authority.conf"
+      - "-c"
+      - "hba_file=/etc/postgresql/moneycraft/pg_hba-scram-tls.conf"
+    volumes:
+      - ./docker/postgres/pg_hba-scram-tls.conf:/etc/postgresql/moneycraft/pg_hba-scram-tls.conf:ro
+
+  moneycraft-business-pg18:
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/moneycraft/postgresql-business.conf"
+      - "-c"
+      - "hba_file=/etc/postgresql/moneycraft/pg_hba-scram-tls.conf"
+    volumes:
+      - ./docker/postgres/pg_hba-scram-tls.conf:/etc/postgresql/moneycraft/pg_hba-scram-tls.conf:ro
+
+  moneycraft-migrator:
+    environment:
+      SPRING_PROFILES_ACTIVE: staging,migrator
+
+  moneycraft-api:
+    environment:
+      SPRING_PROFILES_ACTIVE: staging
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+        reservations:
+          cpus: "1.0"
+          memory: 1024M
+
+  moneycraft-ui:
+    environment:
+      MC_ENV_LABEL: STAGING
+
+  moneycraft-gateway:
+    ports:
+      - "${MC_STAGING_HTTPS_PORT:-8443}:8443"
+    environment:
+      MC_HTTPS_REDIRECT_PORT: ${MC_STAGING_HTTPS_PORT:-8443}
+      MC_ALLOW_SELF_SIGNED_TLS: "false"

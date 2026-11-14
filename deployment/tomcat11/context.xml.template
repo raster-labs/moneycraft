@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Apache Tomcat 11.0.x Context Descriptor Template (`$CATALINA_BASE/conf/Catalina/localhost/ROOT.xml`)
+  Wires externalized Dual-PG18 Hikari/JNDI coordinates and `0400` `/run/secrets/*` custody
+  for `moneycraft.war` (`DEP-002`, Gate G4). Zero secrets are stored in this template.
+-->
+<Context reloadable="false"
+         antiResourceLocking="false"
+         swallowOutput="true"
+         useHttpOnly="true">
+
+    <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor"
+                     sameSiteCookies="Lax" />
+
+    <!-- Spring Boot Externalized Secret ConfigTree & Profile -->
+    <Environment name="spring.profiles.active"
+                 value="${MC_SPRING_PROFILE:-prod}"
+                 type="java.lang.String"
+                 override="false" />
+
+    <Environment name="spring.config.import"
+                 value="optional:configtree:/etc/moneycraft/secrets/"
+                 type="java.lang.String"
+                 override="false" />
+
+    <!-- Protected Authority PostgreSQL 18.6 Coordinates (`ma_*` + `SPRING_SESSION`) -->
+    <Environment name="MC_AUTHORITY_DB_HOST"
+                 value="${MC_AUTHORITY_DB_HOST}"
+                 type="java.lang.String"
+                 override="false" />
+    <Environment name="MC_AUTHORITY_DB_PORT"
+                 value="${MC_AUTHORITY_DB_PORT:-5432}"
+                 type="java.lang.String"
+                 override="false" />
+    <Environment name="MC_AUTHORITY_DB_NAME"
+                 value="${MC_AUTHORITY_DB_NAME:-moneycraft_authority}"
+                 type="java.lang.String"
+                 override="false" />
+    <Environment name="MC_AUTHORITY_DB_USER"
+                 value="mc_app_runtime"
+                 type="java.lang.String"
+                 override="false" />
+
+    <!-- Business Accounting PostgreSQL 18.6 Coordinates (`mc_*` + RLS) -->
+    <Environment name="MC_BUSINESS_DB_HOST"
+                 value="${MC_BUSINESS_DB_HOST}"
+                 type="java.lang.String"
+                 override="false" />
+    <Environment name="MC_BUSINESS_DB_PORT"
+                 value="${MC_BUSINESS_DB_PORT:-5432}"
+                 type="java.lang.String"
+                 override="false" />
+    <Environment name="MC_BUSINESS_DB_NAME"
+                 value="${MC_BUSINESS_DB_NAME:-moneycraft_business}"
+                 type="java.lang.String"
+                 override="false" />
+    <Environment name="MC_BUSINESS_DB_USER"
+                 value="mc_app_runtime"
+                 type="java.lang.String"
+                 override="false" />
+</Context>

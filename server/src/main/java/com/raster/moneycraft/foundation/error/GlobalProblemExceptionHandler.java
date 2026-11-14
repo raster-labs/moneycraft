@@ -182,6 +182,139 @@ public class GlobalProblemExceptionHandler {
                     )
                 );
             }
+            if (rawMsg.contains("MC-ACC-SYSTEM-GROUP-PROTECTED")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-SYSTEM-GROUP-PROTECTED",
+                        "Predefined System Group Protected",
+                        "Predefined system account groups cannot be deleted, renamed, or demoted.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-GROUP-CYCLE")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-GROUP-CYCLE",
+                        "Account Group Hierarchy Cycle",
+                        "Account group parent assignment would introduce a cycle.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-GROUP-DEPTH")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-GROUP-DEPTH",
+                        "Account Group Maximum Depth Exceeded",
+                        "Account group hierarchy cannot exceed depth 32.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-GROUP-PARENT-MISSING")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-GROUP-PARENT-MISSING",
+                        "Parent Account Group Not Found",
+                        "Parent account group does not exist in the current company.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-SYSTEM-LEDGER-PROTECTED")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-SYSTEM-LEDGER-PROTECTED",
+                        "Predefined System Ledger Protected",
+                        "Predefined system ledgers (Cash, Profit & Loss A/c) cannot be deleted or renamed.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-SCALE-OVERFLOW")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-SCALE-OVERFLOW",
+                        "Excess Decimal Scale",
+                        "Monetary value exceeds the company minor-unit currency scale.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-SYSTEM-VCHTYPE-PROTECTED")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-SYSTEM-VCHTYPE-PROTECTED",
+                        "Predefined Voucher Type Protected",
+                        "Predefined system voucher types cannot be deleted or renamed.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-COSTCENTRE-CYCLE") || rawMsg.contains("MC-ACC-COST-CENTRE-CYCLE")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-COST-CENTRE-CYCLE",
+                        "Cost Centre Hierarchy Cycle",
+                        "Cost centre parent assignment would introduce a cycle.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-COSTCENTRE-DEPTH")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-COST-CENTRE-DEPTH",
+                        "Cost Centre Maximum Depth Exceeded",
+                        "Cost centre hierarchy cannot exceed depth 32.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (rawMsg.contains("MC-ACC-COSTCENTRE-CAT-MISMATCH")) {
+                return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-ACC-COST-CENTRE-CAT-MISMATCH",
+                        "Cost Centre Category Mismatch",
+                        "Parent cost centre must belong to the same cost category.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
+            if (ex instanceof org.springframework.dao.DataIntegrityViolationException
+                && (rawMsg.contains("violates foreign key constraint") || rawMsg.contains("still referenced"))) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).contentType(PROBLEM_JSON).body(
+                    buildProblem(
+                        HttpStatus.CONFLICT,
+                        "MC-ACC-MASTER-IN-USE",
+                        "Accounting Master Referenced by Dependent Records",
+                        "Cannot delete master while child records or accounting postings reference it.",
+                        request.getRequestURI(),
+                        Map.of()
+                    )
+                );
+            }
         }
         LOG.error("Database exception on {}", request.getRequestURI(), ex);
         ProblemDetail pd = buildProblem(

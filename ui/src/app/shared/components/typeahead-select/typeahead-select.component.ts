@@ -3,11 +3,13 @@ import {
   Component,
   ElementRef,
   computed,
+  effect,
   input,
   output,
   signal,
   viewChild,
 } from '@angular/core';
+import { moveGridCellFocusFrom } from '../../directives/grid-cell-nav.directive';
 
 export interface TypeaheadOption {
   readonly id: string;
@@ -27,6 +29,7 @@ export interface TypeaheadOption {
         type="text"
         role="combobox"
         class="mc-input"
+        data-mc-grid-cell="true"
         [id]="inputId()"
         [value]="queryText()"
         [placeholder]="placeholder()"
@@ -264,6 +267,7 @@ export class TypeaheadSelectComponent {
   readonly selectedId = input<string | null>(null);
   readonly allowEmptyOnEnter = input<boolean>(false);
   readonly allowInlineCreate = input<boolean>(true);
+  readonly advanceFocusOnEnter = input<boolean>(true);
   readonly disabled = input<boolean>(false);
 
   readonly optionSelected = output<TypeaheadOption>();
@@ -277,6 +281,35 @@ export class TypeaheadSelectComponent {
   readonly dropdownOpen = signal<boolean>(false);
   readonly highlightedIndex = signal<number>(0);
   readonly spellingErrorOpen = signal<boolean>(false);
+
+  private lastSyncedSelectedId: string | null = null;
+
+  constructor() {
+    effect(() => {
+      const selId = this.selectedId();
+      const opts = this.options();
+      if (selId === null) {
+        if (this.lastSyncedSelectedId !== null) {
+          this.lastSyncedSelectedId = null;
+          this.queryText.set('');
+        }
+        return;
+      }
+      const matched = opts.find((o) => o.id === selId);
+      if (matched && (this.lastSyncedSelectedId !== selId || this.queryText().trim().length === 0)) {
+        this.lastSyncedSelectedId = selId;
+        this.queryText.set(matched.label);
+      }
+    });
+  }
+
+  focusInput(): void {
+    const inputEl = this.comboInputRef()?.nativeElement;
+    if (inputEl) {
+      inputEl.focus();
+      inputEl.select();
+    }
+  }
 
   readonly filteredOptions = computed(() => {
     const q = this.queryText().trim().toLowerCase();
@@ -372,10 +405,26 @@ export class TypeaheadSelectComponent {
     }
 
     if (event.key === 'Enter') {
+      if (event.shiftKey) {
+        event.preventDefault();
+        this.dropdownOpen.set(false);
+        const inputEl = this.comboInputRef()?.nativeElement;
+        if (inputEl && this.advanceFocusOnEnter()) {
+          moveGridCellFocusFrom(inputEl, -1);
+        }
+        return;
+      }
+
       const trimmed = this.queryText().trim();
       if (trimmed.length === 0 && this.allowEmptyOnEnter()) {
+        event.preventDefault();
         this.dropdownOpen.set(false);
+        this.lastSyncedSelectedId = null;
         this.emptyConfirmed.emit();
+        const inputEl = this.comboInputRef()?.nativeElement;
+        if (inputEl && this.advanceFocusOnEnter()) {
+          queueMicrotask(() => moveGridCellFocusFrom(inputEl, 1));
+        }
         return;
       }
 
@@ -394,6 +443,10 @@ export class TypeaheadSelectComponent {
       event.preventDefault();
       const chosen = matches[this.highlightedIndex()] ?? matches[0];
       this.commitSelection(chosen);
+      const inputEl = this.comboInputRef()?.nativeElement;
+      if (inputEl && this.advanceFocusOnEnter()) {
+        queueMicrotask(() => moveGridCellFocusFrom(inputEl, 1));
+      }
     }
   }
 
@@ -448,6 +501,7 @@ export class TypeaheadSelectComponent {
   }
 
   private commitSelection(option: TypeaheadOption): void {
+    this.lastSyncedSelectedId = option.id;
     this.queryText.set(option.label);
     this.dropdownOpen.set(false);
     this.spellingErrorOpen.set(false);

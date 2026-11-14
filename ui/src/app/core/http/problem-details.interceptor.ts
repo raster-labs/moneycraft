@@ -47,6 +47,12 @@ export const problemDetailsInterceptor: HttpInterceptorFn = (req, next) => {
     catchError((err: unknown) => {
       if (err instanceof HttpErrorResponse) {
         const body = (err.error ?? {}) as Record<string, unknown>;
+        const rawCode =
+          typeof body['code'] === 'string'
+            ? body['code']
+            : typeof body['errorCode'] === 'string'
+              ? body['errorCode']
+              : null;
         const problem: McProblemDetails = {
           type: typeof body['type'] === 'string' ? body['type'] : 'about:blank',
           title: typeof body['title'] === 'string' ? body['title'] : err.statusText || 'Request Failed',
@@ -58,13 +64,12 @@ export const problemDetailsInterceptor: HttpInterceptorFn = (req, next) => {
                 ? body['message']
                 : err.message,
           code:
-            typeof body['code'] === 'string'
-              ? body['code']
-              : err.status === 412
-                ? 'MC-CONCURRENCY-STALE-VERSION'
-                : err.status === 409
-                  ? 'MC-IDEMPOTENCY-CONFLICT'
-                  : `MC-HTTP-${err.status || 0}`,
+            rawCode ??
+            (err.status === 412
+              ? 'MC-CONCURRENCY-STALE-VERSION'
+              : err.status === 409
+                ? 'MC-IDEMPOTENCY-CONFLICT'
+                : `MC-HTTP-${err.status || 0}`),
           instance: typeof body['instance'] === 'string' ? body['instance'] : req.url,
           fieldErrors:
             typeof body['fieldErrors'] === 'object' && body['fieldErrors'] !== null

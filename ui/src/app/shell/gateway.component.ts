@@ -24,9 +24,33 @@ export interface GatewayMenuItem {
 }
 
 export const GATEWAY_MENU_ITEMS: readonly GatewayMenuItem[] = [
-  { key: 'C', section: 'MASTERS', prefixText: '', mnemonicChar: 'C', suffixText: 'reate', panelId: 'masters-create' },
-  { key: 'A', section: 'MASTERS', prefixText: '', mnemonicChar: 'A', suffixText: 'lter', panelId: 'masters-alter' },
-  { key: 'H', section: 'MASTERS', prefixText: 'C', mnemonicChar: 'H', suffixText: 'art of Accounts', panelId: 'chart-of-accounts' },
+  {
+    key: 'C',
+    section: 'MASTERS',
+    prefixText: '',
+    mnemonicChar: 'C',
+    suffixText: 'reate',
+    panelId: 'masters-create',
+    directRoute: '/app/masters?mode=create',
+  },
+  {
+    key: 'A',
+    section: 'MASTERS',
+    prefixText: '',
+    mnemonicChar: 'A',
+    suffixText: 'lter',
+    panelId: 'masters-alter',
+    directRoute: '/app/masters?mode=alter',
+  },
+  {
+    key: 'H',
+    section: 'MASTERS',
+    prefixText: 'C',
+    mnemonicChar: 'H',
+    suffixText: 'art of Accounts',
+    panelId: 'chart-of-accounts',
+    directRoute: '/app/coa',
+  },
   { key: 'V', section: 'TRANSACTIONS', prefixText: '', mnemonicChar: 'V', suffixText: 'ouchers', panelId: 'vouchers' },
   { key: 'K', section: 'TRANSACTIONS', prefixText: 'Day Boo', mnemonicChar: 'K', suffixText: '', panelId: 'day-book' },
   { key: 'N', section: 'UTILITIES', prefixText: 'Ba', mnemonicChar: 'N', suffixText: 'king', panelId: 'banking' },

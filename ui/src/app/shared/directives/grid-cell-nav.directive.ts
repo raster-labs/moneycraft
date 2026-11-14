@@ -1,5 +1,37 @@
 import { Directive, ElementRef, HostListener, inject, input } from '@angular/core';
 
+export function moveGridCellFocusFrom(origin: HTMLElement, direction: 1 | -1): boolean {
+  const scopeRoot = origin.closest('[data-mc-nav-container]');
+  if (!scopeRoot) {
+    return false;
+  }
+
+  const allCells = Array.from(
+    scopeRoot.querySelectorAll<HTMLElement>(
+      '[mcGridCellNav]:not([disabled]), [data-mc-grid-cell="true"]:not([disabled])',
+    ),
+  ).filter((cell) => {
+    if (cell.hasAttribute('readonly') || cell.dataset['mcSkipEnter'] === 'true') {
+      return false;
+    }
+    return cell.offsetParent !== null || cell === origin;
+  });
+
+  const idx = allCells.indexOf(origin);
+  if (idx < 0) {
+    return false;
+  }
+  const nextCell = allCells[idx + direction];
+  if (nextCell) {
+    nextCell.focus();
+    if (nextCell instanceof HTMLInputElement && nextCell.type === 'text') {
+      nextCell.select();
+    }
+    return true;
+  }
+  return false;
+}
+
 @Directive({
   selector: '[mcGridCellNav]',
   standalone: true,
@@ -21,7 +53,7 @@ export class GridCellNavDirective {
         return;
       }
       event.preventDefault();
-      this.moveFocus(event.shiftKey ? -1 : 1);
+      moveGridCellFocusFrom(target, event.shiftKey ? -1 : 1);
       return;
     }
 
@@ -32,34 +64,8 @@ export class GridCellNavDirective {
           (target.selectionStart ?? 0) === 0 && (target.selectionEnd ?? 0) === 0;
         if (atStart && target.value.length === 0) {
           event.preventDefault();
-          this.moveFocus(-1);
+          moveGridCellFocusFrom(target, -1);
         }
-      }
-    }
-  }
-
-  private moveFocus(direction: 1 | -1): void {
-    const scopeRoot =
-      this.elRef.nativeElement.closest('[data-mc-nav-container]') ??
-      this.elRef.nativeElement.ownerDocument;
-    const allCells = Array.from(
-      scopeRoot.querySelectorAll<HTMLElement>('[mcGridCellNav]:not([disabled])'),
-    ).filter((cell) => {
-      if (cell.hasAttribute('readonly') || cell.dataset['mcSkipEnter'] === 'true') {
-        return false;
-      }
-      return cell.offsetParent !== null || cell === this.elRef.nativeElement;
-    });
-
-    const idx = allCells.indexOf(this.elRef.nativeElement);
-    if (idx < 0) {
-      return;
-    }
-    const nextCell = allCells[idx + direction];
-    if (nextCell) {
-      nextCell.focus();
-      if (nextCell instanceof HTMLInputElement && nextCell.type === 'text') {
-        nextCell.select();
       }
     }
   }

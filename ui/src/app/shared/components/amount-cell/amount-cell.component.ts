@@ -11,6 +11,7 @@ import {
 } from '@angular/core';
 import { ControlValueAccessor, FormsModule, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { ExactDecimal, RUPEE_SYMBOL } from '../../../core/money/exact-decimal';
+import { moveGridCellFocusFrom } from '../../directives/grid-cell-nav.directive';
 
 @Component({
   selector: 'mc-amount-cell',
@@ -35,6 +36,7 @@ import { ExactDecimal, RUPEE_SYMBOL } from '../../../core/money/exact-decimal';
           type="text"
           inputmode="decimal"
           class="mc-input mc-amount mc-amount-input"
+          data-mc-grid-cell="true"
           [id]="inputId()"
           [value]="displayText()"
           [disabled]="isDisabled()"
@@ -295,6 +297,13 @@ export class AmountCellComponent implements ControlValueAccessor {
 
     if (event.key === 'Enter') {
       this.commitRawText();
+      if (this.validationError() === null) {
+        const inputEl = this.amountInputRef()?.nativeElement;
+        if (inputEl) {
+          event.preventDefault();
+          moveGridCellFocusFrom(inputEl, event.shiftKey ? -1 : 1);
+        }
+      }
     }
   }
 

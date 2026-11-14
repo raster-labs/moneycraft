@@ -554,4 +554,39 @@ export class ShortcutCommandRegistry {
     this.lastDispatchedCommandId.set(winner.descriptor.id);
     return true;
   }
+
+  /**
+   * Programmatically invokes the highest-priority enabled handler for `commandId`
+   * (used by right-hand Function Rail & bottom action bar buttons).
+   */
+  triggerCommand(commandId: string): boolean {
+    const descriptor = this.descriptorsMap().get(commandId);
+    if (!descriptor) {
+      return false;
+    }
+
+    const matching = this.handlers.filter(
+      (h) => h.commandId === commandId && (!h.isEnabled || h.isEnabled()),
+    );
+    if (matching.length === 0) {
+      return false;
+    }
+
+    matching.sort((a, b) => {
+      const scopeDiff = SCOPE_PRIORITY[b.scope] - SCOPE_PRIORITY[a.scope];
+      if (scopeDiff !== 0) return scopeDiff;
+      return b.registrationId - a.registrationId;
+    });
+
+    const syntheticEvent = new KeyboardEvent('keydown', {
+      key: descriptor.keycap,
+      cancelable: true,
+    });
+    const result = matching[0].handler(syntheticEvent);
+    if (result === false) {
+      return false;
+    }
+    this.lastDispatchedCommandId.set(commandId);
+    return true;
+  }
 }

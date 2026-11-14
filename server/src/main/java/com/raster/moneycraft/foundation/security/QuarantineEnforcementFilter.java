@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URI;
+import java.util.Locale;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -41,13 +42,18 @@ public class QuarantineEnforcementFilter extends OncePerRequestFilter {
             return;
         }
 
-        AuthorityGuard.GuardSnapshot snap = authorityGuard.currentSnapshot();
+        String method = request.getMethod().toUpperCase(Locale.ROOT);
+        boolean synchronousReconcileRequired = MUTATING_METHODS.contains(method)
+            || "/api/v1/system/status".equals(path)
+            || "/api/v1/admin/audit/verify".equals(path);
+        AuthorityGuard.GuardSnapshot snap = synchronousReconcileRequired
+            ? authorityGuard.currentSnapshot()
+            : authorityGuard.cachedSnapshot();
         if (snap.securityState() != InstallationSecurityState.QUARANTINED) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        String method = request.getMethod().toUpperCase();
         if (isAllowedDuringQuarantine(method, path)) {
             filterChain.doFilter(request, response);
             return;

@@ -51,24 +51,54 @@ export interface CompanySummary {
 export interface FiscalPeriodSummary {
   readonly id: string;
   readonly fiscalYearId: string;
+  readonly periodNo?: number;
+  readonly code?: string;
   readonly periodCode: string;
+  readonly name?: string;
   readonly startDate: string;
   readonly endDate: string;
   readonly state: FiscalPeriodState;
+  readonly lockedReason?: string | null;
+  readonly versionNo?: number;
+}
+
+export interface FiscalYearSummary {
+  readonly id: string;
+  readonly fiscalYearId: string;
+  readonly code: string;
+  readonly periodCode: string;
+  readonly displayLabel: string;
+  readonly startDate: string;
+  readonly endDate: string;
+  readonly closed: boolean;
+  readonly state: string;
+  readonly versionNo: number;
+  readonly periods: readonly FiscalPeriodSummary[];
+}
+
+export interface CreateFiscalYearPayload {
+  readonly code: string;
+  readonly displayLabel: string;
+  readonly startDate: string;
+  readonly endDate: string;
 }
 
 export interface CreateOrUpdateCompanyPayload {
   readonly code: string;
   readonly legalName: string;
   readonly mailingName: string;
+  readonly addressLines?: string;
   readonly countryCode: string;
   readonly stateCode: string;
+  readonly stateName?: string;
   readonly pinCode: string;
+  readonly pan?: string;
   readonly baseCurrencyCode: string;
   readonly currencySymbol: string;
   readonly currencyScale: number;
   readonly financialYearFrom: string;
   readonly booksBeginningFrom: string;
+  readonly versionNo?: number;
   readonly features: CompanyFeaturesConfig;
 }
 
@@ -247,11 +277,18 @@ export class CompanyContextStore {
     companyId: string,
     payload: CreateOrUpdateCompanyPayload,
   ): Promise<CompanySummary> {
+    const existing = this.openCompaniesSignal().find((c) => c.id === companyId);
+    const versionNo = payload.versionNo ?? existing?.versionNo;
+    const headers: Record<string, string> =
+      versionNo !== undefined ? { 'If-Match': `"v${versionNo}"` } : {};
+    const body: CreateOrUpdateCompanyPayload =
+      versionNo !== undefined ? { ...payload, versionNo } : payload;
+
     const updatedCompany = await firstValueFrom(
       this.http.put<CompanySummary>(
         this.runtimeConfig.url(`/companies/${encodeURIComponent(companyId)}`),
-        payload,
-        { withCredentials: true },
+        body,
+        { headers, withCredentials: true },
       ),
     );
     const updatedList = this.openCompaniesSignal().map((c) =>
@@ -265,7 +302,7 @@ export class CompanyContextStore {
     try {
       const list = await firstValueFrom(
         this.http.get<readonly FiscalPeriodSummary[]>(
-          this.runtimeConfig.url(`/companies/${encodeURIComponent(companyId)}/fiscal-years`),
+          this.runtimeConfig.url(`/companies/${encodeURIComponent(companyId)}/periods`),
           { withCredentials: true },
         ),
       );
@@ -276,18 +313,47 @@ export class CompanyContextStore {
     }
   }
 
+  async loadFiscalYears(companyId: string): Promise<readonly FiscalYearSummary[]> {
+    return firstValueFrom(
+      this.http.get<readonly FiscalYearSummary[]>(
+        this.runtimeConfig.url(`/companies/${encodeURIComponent(companyId)}/fiscal-years`),
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async createFiscalYear(
+    companyId: string,
+    payload: CreateFiscalYearPayload,
+  ): Promise<FiscalYearSummary> {
+    const created = await firstValueFrom(
+      this.http.post<FiscalYearSummary>(
+        this.runtimeConfig.url(`/companies/${encodeURIComponent(companyId)}/fiscal-years`),
+        payload,
+        { withCredentials: true },
+      ),
+    );
+    await this.loadFiscalPeriods(companyId);
+    return created;
+  }
+
   async changePeriodState(
     companyId: string,
     periodId: string,
     state: FiscalPeriodState,
+    reason?: string,
   ): Promise<FiscalPeriodSummary> {
+    const existing = this.periodsSignal().find((p) => p.id === periodId);
+    const headers: Record<string, string> =
+      existing?.versionNo !== undefined ? { 'If-Match': `"v${existing.versionNo}"` } : {};
+
     const updated = await firstValueFrom(
       this.http.patch<FiscalPeriodSummary>(
         this.runtimeConfig.url(
           `/companies/${encodeURIComponent(companyId)}/periods/${encodeURIComponent(periodId)}`,
         ),
-        { state },
-        { withCredentials: true },
+        { state, reason: reason ?? `Period transitioned to ${state}` },
+        { headers, withCredentials: true },
       ),
     );
     this.periodsSignal.set(

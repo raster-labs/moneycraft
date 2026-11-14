@@ -5,6 +5,49 @@ import {
   systemRoleGuard,
 } from './core/auth/permission.guard';
 
+const MASTERS_CHILD_ROUTES: Routes = [
+  {
+    path: '',
+    loadComponent: () =>
+      import('./features/masters/masters-hub.component').then((m) => m.MastersHubComponent),
+  },
+  {
+    path: 'groups',
+    loadComponent: () =>
+      import('./features/masters/group-workbench.component').then(
+        (m) => m.GroupWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'ledgers',
+    loadComponent: () =>
+      import('./features/masters/ledger-workbench.component').then(
+        (m) => m.LedgerWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'currencies',
+    loadComponent: () =>
+      import('./features/masters/currency-workbench.component').then(
+        (m) => m.CurrencyWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'cost-centres',
+    loadComponent: () =>
+      import('./features/masters/cost-centre-workbench.component').then(
+        (m) => m.CostCentreWorkbenchComponent,
+      ),
+  },
+  {
+    path: 'voucher-types',
+    loadComponent: () =>
+      import('./features/masters/voucher-type-workbench.component').then(
+        (m) => m.VoucherTypeWorkbenchComponent,
+      ),
+  },
+];
+
 export const APP_ROUTES: Routes = [
   {
     path: 'setup',
@@ -21,6 +64,26 @@ export const APP_ROUTES: Routes = [
     path: 'auth/oidc/callback',
     loadComponent: () =>
       import('./features/auth/oidc-callback.component').then((m) => m.OidcCallbackComponent),
+  },
+  {
+    path: 'coa',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./features/masters/coa-explorer.component').then((m) => m.CoaExplorerComponent),
+      },
+    ],
+  },
+  {
+    path: 'masters',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: MASTERS_CHILD_ROUTES,
   },
   {
     path: 'companies',
@@ -63,6 +126,15 @@ export const APP_ROUTES: Routes = [
         path: 'gateway',
         loadComponent: () =>
           import('./shell/gateway.component').then((m) => m.GatewayComponent),
+      },
+      {
+        path: 'coa',
+        loadComponent: () =>
+          import('./features/masters/coa-explorer.component').then((m) => m.CoaExplorerComponent),
+      },
+      {
+        path: 'masters',
+        children: MASTERS_CHILD_ROUTES,
       },
       {
         path: 'companies',

@@ -47,6 +47,7 @@ export const INDIAN_GST_STATES: readonly IndianGstState[] = [
   { code: '36', name: 'Telangana' },
   { code: '37', name: 'Andhra Pradesh' },
   { code: '38', name: 'Ladakh' },
+  { code: '96', name: 'Foreign Country' },
   { code: '97', name: 'Other Territory' },
   { code: '99', name: 'Centre Jurisdiction' },
 ];

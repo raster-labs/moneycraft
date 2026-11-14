@@ -113,6 +113,10 @@ public class AuthorityGuard implements SmartLifecycle {
         return snapshotRef.get();
     }
 
+    public GuardSnapshot cachedSnapshot() {
+        return snapshotRef.get();
+    }
+
     public boolean isLeaseHealthy() {
         synchronized (leaseMonitor) {
             if (pinnedLeaseConnection == null) {

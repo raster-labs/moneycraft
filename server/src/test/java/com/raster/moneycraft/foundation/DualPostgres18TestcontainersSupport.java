@@ -29,19 +29,55 @@ public abstract class DualPostgres18TestcontainersSupport {
     protected static final PostgreSQLContainer BUSINESS_PG;
 
     static {
+        ClusterPair shared = startIsolatedClusterPair();
+        AUTHORITY_PG = shared.authorityPg();
+        BUSINESS_PG = shared.businessPg();
+    }
+
+    public static ClusterPair startIsolatedClusterPair() {
         configureLocalDockerSocketIfAbsent();
-        AUTHORITY_PG = new PostgreSQLContainer("postgres:18.6-bookworm")
+        PostgreSQLContainer authPg = new PostgreSQLContainer("postgres:18.6-bookworm")
             .withDatabaseName("moneycraft_authority")
             .withUsername("postgres")
             .withPassword("postgres");
-        BUSINESS_PG = new PostgreSQLContainer("postgres:18.6-bookworm")
+        PostgreSQLContainer bizPg = new PostgreSQLContainer("postgres:18.6-bookworm")
             .withDatabaseName("moneycraft_business")
             .withUsername("postgres")
             .withPassword("postgres");
-        AUTHORITY_PG.start();
-        BUSINESS_PG.start();
-        provisionRolesAndExtensions(AUTHORITY_PG, false);
-        provisionRolesAndExtensions(BUSINESS_PG, true);
+        authPg.start();
+        bizPg.start();
+        provisionRolesAndExtensions(authPg, false);
+        provisionRolesAndExtensions(bizPg, true);
+        return new ClusterPair(authPg, bizPg);
+    }
+
+    public static void bindClusterProperties(DynamicPropertyRegistry registry, ClusterPair pair) {
+        registry.add("moneycraft.datasource.authority.jdbc-url", pair.authorityPg()::getJdbcUrl);
+        registry.add("moneycraft.datasource.authority.username", () -> RUNTIME_USER);
+        registry.add("moneycraft.datasource.authority.password", () -> RUNTIME_PASS);
+        registry.add("moneycraft.datasource.authority.migrator-username", () -> MIGRATOR_USER);
+        registry.add("moneycraft.datasource.authority.migrator-password", () -> MIGRATOR_PASS);
+
+        registry.add("moneycraft.datasource.business.jdbc-url", pair.businessPg()::getJdbcUrl);
+        registry.add("moneycraft.datasource.business.username", () -> RUNTIME_USER);
+        registry.add("moneycraft.datasource.business.password", () -> RUNTIME_PASS);
+        registry.add("moneycraft.datasource.business.migrator-username", () -> MIGRATOR_USER);
+        registry.add("moneycraft.datasource.business.migrator-password", () -> MIGRATOR_PASS);
+
+        registry.add("moneycraft.crypto.master-kek", () -> TEST_KEK);
+        registry.add("moneycraft.security.cookie-secure", () -> "false");
+        registry.add("moneycraft.base-url", () -> "http://localhost:8080");
+        registry.add("moneycraft.webauthn.rp-id", () -> "localhost");
+        registry.add("moneycraft.webauthn.allowed-origins[0]", () -> "http://localhost:8080");
+        registry.add("management.server.port", () -> "0");
+    }
+
+    public record ClusterPair(PostgreSQLContainer authorityPg, PostgreSQLContainer businessPg) implements AutoCloseable {
+        @Override
+        public void close() {
+            businessPg.stop();
+            authorityPg.stop();
+        }
     }
 
     private static void configureLocalDockerSocketIfAbsent() {

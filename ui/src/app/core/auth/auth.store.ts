@@ -39,7 +39,11 @@ export interface LoginCredentials {
 
 export interface OidcIssuerInfo {
   readonly issuerId: string;
+  readonly registrationId?: string;
   readonly displayName: string;
+  readonly issuerUri?: string;
+  readonly clientId?: string;
+  readonly pkceRequired?: boolean;
 }
 
 @Injectable({ providedIn: 'root' })

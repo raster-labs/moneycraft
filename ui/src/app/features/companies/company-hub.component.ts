@@ -817,18 +817,24 @@ export class CompanyHubComponent implements OnInit {
       }
     }
 
+    const editingExisting = this.editingCompanyId()
+      ? this.companyContext.openCompanies().find((c) => c.id === this.editingCompanyId())
+      : undefined;
+
     const payload: CreateOrUpdateCompanyPayload = {
       code: this.formCode.trim().toUpperCase(),
       legalName: this.formLegalName.trim(),
       mailingName: (this.formMailingName || this.formLegalName).trim(),
       countryCode: this.formCountryCode.trim().toUpperCase(),
       stateCode: this.formStateCode(),
+      stateName: this.stateName(this.formStateCode()),
       pinCode: this.formPinCode.trim(),
       baseCurrencyCode: this.formCurrencyCode.trim().toUpperCase(),
       currencySymbol: this.formCurrencyCode.trim().toUpperCase() === 'INR' ? '\u20B9' : this.formCurrencyCode.trim(),
       currencyScale: Math.min(6, Math.max(0, Math.trunc(this.formCurrencyScale))),
       financialYearFrom: this.formFyFrom,
       booksBeginningFrom: this.formBooksFrom,
+      versionNo: editingExisting?.versionNo,
       features: {
         maintainAccounts: this.featMaintainAccounts,
         billWiseEnabled: this.featBillWise,

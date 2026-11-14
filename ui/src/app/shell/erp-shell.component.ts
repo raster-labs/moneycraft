@@ -12,6 +12,15 @@ import { Router, RouterLink, RouterOutlet } from '@angular/router';
 import { AuthStore } from '../core/auth/auth.store';
 import { SseStreamService } from '../core/http/sse-stream.service';
 import { ShortcutCommandRegistry } from '../core/keyboard/shortcut-command.registry';
+import { CoaExplorerComponent } from '../features/masters/coa-explorer.component';
+import { CostCentreWorkbenchComponent } from '../features/masters/cost-centre-workbench.component';
+import { CurrencyWorkbenchComponent } from '../features/masters/currency-workbench.component';
+import { GroupWorkbenchComponent } from '../features/masters/group-workbench.component';
+import { LedgerWorkbenchComponent } from '../features/masters/ledger-workbench.component';
+import { MastersHubComponent } from '../features/masters/masters-hub.component';
+import { SecondaryMasterModalComponent } from '../features/masters/secondary-master-modal.component';
+import { SECONDARY_MASTER_ROUTE_TOKEN } from '../features/masters/secondary-master-modal.service';
+import { VoucherTypeWorkbenchComponent } from '../features/masters/voucher-type-workbench.component';
 import { CodeBadgeComponent } from '../shared/components/code-badge/code-badge.component';
 import {
   FunctionBarButtonItem,
@@ -34,6 +43,14 @@ import { SmartFindStore } from '../state/smart-find.store';
     FunctionBarComponent,
     GoToPaletteComponent,
     SmartFindModalComponent,
+    SecondaryMasterModalComponent,
+    CoaExplorerComponent,
+    MastersHubComponent,
+    GroupWorkbenchComponent,
+    LedgerWorkbenchComponent,
+    CurrencyWorkbenchComponent,
+    CostCentreWorkbenchComponent,
+    VoucherTypeWorkbenchComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -172,7 +189,7 @@ import { SmartFindStore } from '../state/smart-find.store';
           <router-outlet />
 
           <!-- Non-Destructive Alt+G Modal Overlay Stack Host (Depth 1..8) -->
-          @for (frame of navStack.frames(); track frame.id; let idx = $index) {
+          @for (frame of goToOverlayFrames(); track frame.id; let idx = $index) {
             <section
               class="mc-goto-overlay-frame"
               role="dialog"
@@ -185,30 +202,64 @@ import { SmartFindStore } from '../state/smart-find.store';
                   <strong>{{ frame.title }}</strong>
                   <mc-code-badge [code]="frame.route" />
                 </div>
-                <button type="button" class="mc-btn" (click)="navStack.pop()">
-                  Close Overlay (Esc)
-                </button>
-              </div>
-              <div class="mc-goto-overlay-content">
-                <p>
-                  Non-destructive <strong>Go To</strong> view suspended above your previous screen
-                  (active focus anchor:
-                  <mc-code-badge [code]="frame.activeElementId ?? 'root'" />).
-                </p>
-                <p>
-                  Press <strong>Esc</strong> at any time to pop this overlay and restore exact
-                  scroll position, cell focus, and unsaved draft state in &lt; 16 ms, or press
-                  <strong>Alt+G</strong> to stack another report on top (up to 8 levels).
-                </p>
-                <div class="mc-goto-overlay-actions">
+                <div class="mc-goto-overlay-bar-btns">
                   <button
                     type="button"
-                    class="mc-btn mc-btn-primary"
+                    class="mc-btn"
                     (click)="switchWorkspaceFromOverlay(frame.route, frame.params)"
                   >
-                    Open in Full Workspace (<span class="mc-key-ctrl">G</span>)
+                    Full View (<span class="mc-key-ctrl">G</span>)
+                  </button>
+                  <button type="button" class="mc-btn" (click)="navStack.pop()">
+                    Close Overlay (Esc)
                   </button>
                 </div>
+              </div>
+              <div class="mc-goto-overlay-content">
+                @switch (frame.route) {
+                  @case ('/app/coa') {
+                    <mc-coa-explorer [embeddedOverlay]="true" />
+                  }
+                  @case ('/coa') {
+                    <mc-coa-explorer [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/masters') {
+                    <mc-masters-hub [initialMode]="frame.params['mode'] === 'alter' ? 'alter' : 'create'" />
+                  }
+                  @case ('/app/masters/groups') {
+                    <mc-group-workbench
+                      [embeddedOverlay]="true"
+                      [initialGroupId]="frame.params['id'] ?? null"
+                    />
+                  }
+                  @case ('/app/masters/ledgers') {
+                    <mc-ledger-workbench
+                      [embeddedOverlay]="true"
+                      [initialLedgerId]="frame.params['id'] ?? null"
+                    />
+                  }
+                  @case ('/app/masters/currencies') {
+                    <mc-currency-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/masters/cost-centres') {
+                    <mc-cost-centre-workbench [embeddedOverlay]="true" />
+                  }
+                  @case ('/app/masters/voucher-types') {
+                    <mc-voucher-type-workbench [embeddedOverlay]="true" />
+                  }
+                  @default {
+                    <p>
+                      Non-destructive <strong>Go To</strong> view suspended above your previous screen
+                      (active focus anchor:
+                      <mc-code-badge [code]="frame.activeElementId ?? 'root'" />).
+                    </p>
+                    <p>
+                      Press <strong>Esc</strong> at any time to pop this overlay and restore exact
+                      scroll position, cell focus, and unsaved draft state in &lt; 16 ms, or press
+                      <strong>Alt+G</strong> to stack another report on top (up to 8 levels).
+                    </p>
+                  }
+                }
               </div>
             </section>
           }
@@ -235,6 +286,7 @@ import { SmartFindStore } from '../state/smart-find.store';
         (closed)="goToOpen.set(false)"
       />
       <mc-smart-find-modal />
+      <mc-secondary-master-modal />
 
       @if (workingDateModalOpen()) {
         <div class="mc-modal-backdrop" role="dialog" aria-modal="true" aria-label="Change Current Date (F2)">
@@ -662,6 +714,12 @@ import { SmartFindStore } from '../state/smart-find.store';
       gap: var(--mc-space-2);
     }
 
+    .mc-goto-overlay-bar-btns {
+      display: flex;
+      align-items: center;
+      gap: var(--mc-space-2);
+    }
+
     .mc-goto-overlay-content {
       padding: var(--mc-space-4);
     }
@@ -748,6 +806,10 @@ export class ErpShellComponent implements OnInit {
   draftPeriodFrom = '2025-04-01';
   draftPeriodTo = '2026-03-31';
 
+  readonly goToOverlayFrames = computed(() =>
+    this.navStack.frames().filter((f) => f.route !== SECONDARY_MASTER_ROUTE_TOKEN),
+  );
+
   readonly rightRailItems = computed<readonly FunctionBarButtonItem[]>(() => [
     { commandId: 'context.changeDate', keycap: 'F2', modifierStyle: 'PLAIN', label: 'Date' },
     { commandId: 'context.changePeriod', keycap: 'F2', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Period' },
@@ -761,11 +823,14 @@ export class ErpShellComponent implements OnInit {
     { commandId: 'voucher.otherVouchers', keycap: 'F10', modifierStyle: 'PLAIN', label: 'Other Vouchers' },
     { commandId: 'company.features', keycap: 'F11', modifierStyle: 'PLAIN', label: 'Features' },
     { commandId: 'screen.configure', keycap: 'F12', modifierStyle: 'PLAIN', label: 'Configure' },
+    { commandId: 'report.toggleDetailed', keycap: 'F1', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Detailed' },
   ]);
 
   readonly bottomBarItems = computed<readonly FunctionBarButtonItem[]>(() => [
     { commandId: 'nav.escape', keycap: 'Q', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Quit' },
     { commandId: 'screen.accept', keycap: 'A', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Accept' },
+    { commandId: 'inline.createOrCalc', keycap: 'C', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Create' },
+    { commandId: 'register.deleteVoucher', keycap: 'D', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Delete' },
     { commandId: 'voucher.changeMode', keycap: 'H', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Change Mode' },
     { commandId: 'voucher.autofill', keycap: 'F', modifierStyle: 'CTRL_DOUBLE_UNDERLINE', label: 'Autofill' },
     { commandId: 'register.duplicateVoucher', keycap: '2', modifierStyle: 'ALT_SINGLE_UNDERLINE', label: 'Duplicate' },
@@ -880,6 +945,11 @@ export class ErpShellComponent implements OnInit {
   }
 
   onCommandButton(commandId: string): void {
+    const handledByBoundCommand = this.shortcutRegistry.triggerCommand(commandId);
+    if (handledByBoundCommand) {
+      return;
+    }
+
     switch (commandId) {
       case 'context.changeDate':
         this.openWorkingDateModal();

@@ -578,6 +578,655 @@ paths:
               schema:
                 $ref: '#/components/schemas/AccountingPeriodDto'
 
+  /companies/{companyId}/chart-of-accounts/tree:
+    get:
+      operationId: getChartOfAccountsTree
+      tags: [ChartOfAccounts]
+      summary: Full hierarchical tree of 28 predefined + custom account groups and child ledgers
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Hierarchical Chart of Accounts tree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartOfAccountsTreeResponse'
+
+  /companies/{companyId}/account-groups:
+    get:
+      operationId: listAccountGroups
+      tags: [ChartOfAccounts]
+      summary: HS256 cursor-paginated account groups
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cursor page of account groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGroupCursorPage'
+    post:
+      operationId: createAccountGroup
+      tags: [ChartOfAccounts]
+      summary: Create custom account group with MCA Edit Log v1 snapshot
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateAccountGroupRequest'
+      responses:
+        '201':
+          description: Created account group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGroupResponse'
+
+  /companies/{companyId}/account-groups/{groupId}:
+    get:
+      operationId: getAccountGroup
+      tags: [ChartOfAccounts]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Account group master
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGroupResponse'
+    put:
+      operationId: updateAccountGroup
+      tags: [ChartOfAccounts]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateAccountGroupRequest'
+      responses:
+        '200':
+          description: Updated account group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountGroupResponse'
+    delete:
+      operationId: deleteAccountGroup
+      tags: [ChartOfAccounts]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      responses:
+        '204':
+          description: Account group deleted
+
+  /companies/{companyId}/ledgers:
+    get:
+      operationId: listLedgers
+      tags: [Ledgers]
+      summary: HS256 cursor-paginated accounting ledgers
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: groupId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: taxType
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cursor page of ledgers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerCursorPage'
+    post:
+      operationId: createLedger
+      tags: [Ledgers]
+      summary: Create accounting ledger with SIV/GCM PII protection and Mod-36 GSTIN validation
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateLedgerRequest'
+      responses:
+        '201':
+          description: Created ledger
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerResponse'
+
+  /companies/{companyId}/ledgers/typeahead:
+    get:
+      operationId: typeaheadLedgers
+      tags: [Ledgers]
+      summary: Sub-15ms indexed ledger typeahead for voucher entry grids
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: filter
+          in: query
+          schema:
+            type: string
+            enum: [ALL, CASH_BANK, PARTY, SALES, PURCHASE, DUTIES_TAXES, NON_CASH_BANK, EXPENSE_INCOME]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Matching ledger typeahead items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LedgerTypeaheadResponse'
+
+  /companies/{companyId}/ledgers/{ledgerId}:
+    get:
+      operationId: getLedger
+      tags: [Ledgers]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: ledgerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ledger master
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerResponse'
+    put:
+      operationId: updateLedger
+      tags: [Ledgers]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: ledgerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateLedgerRequest'
+      responses:
+        '200':
+          description: Updated ledger
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerResponse'
+    delete:
+      operationId: deleteLedger
+      tags: [Ledgers]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: ledgerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      responses:
+        '204':
+          description: Ledger deleted
+
+  /companies/{companyId}/currencies:
+    get:
+      operationId: listCurrencies
+      tags: [Currencies]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Company currencies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CurrencyResponse'
+    post:
+      operationId: createCurrency
+      tags: [Currencies]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateCurrencyRequest'
+      responses:
+        '201':
+          description: Created currency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrencyResponse'
+
+  /companies/{companyId}/currencies/{currencyId}:
+    get:
+      operationId: getCurrency
+      tags: [Currencies]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: currencyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Currency details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrencyResponse'
+    put:
+      operationId: updateCurrency
+      tags: [Currencies]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: currencyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateCurrencyRequest'
+      responses:
+        '200':
+          description: Updated currency
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrencyResponse'
+
+  /companies/{companyId}/currencies/{currencyId}/rates:
+    get:
+      operationId: listForexRates
+      tags: [Currencies]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: currencyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Date-effective forex rates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ForexRateResponse'
+    post:
+      operationId: upsertForexRate
+      tags: [Currencies]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: currencyId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertForexRateRequest'
+      responses:
+        '200':
+          description: Updated forex rate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForexRateResponse'
+        '201':
+          description: Created forex rate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForexRateResponse'
+
+  /companies/{companyId}/cost-categories:
+    get:
+      operationId: listCostCategories
+      tags: [CostCentres]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Cost categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CostCategoryResponse'
+    post:
+      operationId: createCostCategory
+      tags: [CostCentres]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateCostCategoryRequest'
+      responses:
+        '201':
+          description: Created cost category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostCategoryResponse'
+
+  /companies/{companyId}/cost-categories/{categoryId}:
+    put:
+      operationId: updateCostCategory
+      tags: [CostCentres]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateCostCategoryRequest'
+      responses:
+        '200':
+          description: Updated cost category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostCategoryResponse'
+
+  /companies/{companyId}/cost-centres:
+    get:
+      operationId: listCostCentres
+      tags: [CostCentres]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cost centres
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CostCentreResponse'
+    post:
+      operationId: createCostCentre
+      tags: [CostCentres]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateCostCentreRequest'
+      responses:
+        '201':
+          description: Created cost centre
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostCentreResponse'
+
+  /companies/{companyId}/cost-centres/{centreId}:
+    get:
+      operationId: getCostCentre
+      tags: [CostCentres]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: centreId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cost centre details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostCentreResponse'
+    put:
+      operationId: updateCostCentre
+      tags: [CostCentres]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: centreId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateCostCentreRequest'
+      responses:
+        '200':
+          description: Updated cost centre
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostCentreResponse'
+    delete:
+      operationId: deleteCostCentre
+      tags: [CostCentres]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: centreId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      responses:
+        '204':
+          description: Cost centre deleted
+
+  /companies/{companyId}/voucher-types:
+    get:
+      operationId: listVoucherTypes
+      tags: [VoucherTypes]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: 24 predefined + custom voucher types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VoucherTypeResponse'
+    post:
+      operationId: createVoucherType
+      tags: [VoucherTypes]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateVoucherTypeRequest'
+      responses:
+        '201':
+          description: Created custom voucher type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherTypeResponse'
+
+  /companies/{companyId}/voucher-types/{voucherTypeId}:
+    get:
+      operationId: getVoucherType
+      tags: [VoucherTypes]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherTypeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Voucher type details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherTypeResponse'
+    put:
+      operationId: updateVoucherType
+      tags: [VoucherTypes]
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherTypeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+        - $ref: '#/components/parameters/RequiredIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrUpdateVoucherTypeRequest'
+      responses:
+        '200':
+          description: Updated voucher type
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherTypeResponse'
+
   /events/stream:
     get:
       operationId: subscribeOperationalEvents
@@ -1299,3 +1948,720 @@ components:
           enum: [OPEN, SOFT_LOCKED, CLOSED]
         reason:
           type: string
+
+    ChartOfAccountsTreeResponse:
+      type: object
+      required: [nodes, totalGroups, totalLedgers, totalOpeningDebit, totalOpeningCredit, openingDifference]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoaTreeNodeDto'
+        totalGroups:
+          type: integer
+        totalLedgers:
+          type: integer
+        totalOpeningDebit:
+          type: string
+        totalOpeningCredit:
+          type: string
+        openingDifference:
+          type: string
+
+    CoaTreeNodeDto:
+      type: object
+      required: [id, nodeType, name, nature, isSystem, openingBalance, openingSide, openingDebit, openingCredit, versionNo, children]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nodeType:
+          type: string
+          enum: [GROUP, LEDGER]
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        parentId:
+          type: [string, 'null']
+          format: uuid
+        nature:
+          type: string
+          enum: [ASSETS, LIABILITIES, INCOME, EXPENSES]
+        affectsGrossProfit:
+          type: boolean
+        behavesLikeSubledger:
+          type: boolean
+        scheduleIiiLineCode:
+          type: [string, 'null']
+        isSystem:
+          type: boolean
+        openingBalance:
+          type: string
+        openingSide:
+          type: string
+          enum: [DR, CR]
+        openingDebit:
+          type: string
+        openingCredit:
+          type: string
+        versionNo:
+          type: integer
+          format: int64
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoaTreeNodeDto'
+
+    AccountGroupResponse:
+      type: object
+      required: [id, companyId, name, nature, isSystemGroup, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        parentGroupId:
+          type: [string, 'null']
+          format: uuid
+        parentGroupName:
+          type: [string, 'null']
+        nature:
+          type: string
+          enum: [ASSETS, LIABILITIES, INCOME, EXPENSES]
+        affectsGrossProfit:
+          type: boolean
+        behavesLikeSubledger:
+          type: boolean
+        netDebitCreditForReporting:
+          type: boolean
+        usedForCalculation:
+          type: boolean
+        methodToAllocatePurchase:
+          type: string
+        scheduleIiiLineCode:
+          type: [string, 'null']
+        defaultGstRatePct:
+          type: [string, 'null']
+        defaultHsnSacCode:
+          type: [string, 'null']
+        depthLevel:
+          type: integer
+        isSystemGroup:
+          type: boolean
+        sortOrder:
+          type: integer
+        masterSeqId:
+          type: integer
+          format: int64
+        alterId:
+          type: integer
+          format: int64
+        versionNo:
+          type: integer
+          format: int64
+
+    CreateOrUpdateAccountGroupRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        parentGroupId:
+          type: [string, 'null']
+          format: uuid
+        nature:
+          type: [string, 'null']
+        affectsGrossProfit:
+          type: boolean
+        behavesLikeSubledger:
+          type: boolean
+        netDebitCreditForReporting:
+          type: boolean
+        usedForCalculation:
+          type: boolean
+        methodToAllocatePurchase:
+          type: string
+        scheduleIiiLineCode:
+          type: [string, 'null']
+        defaultGstRatePct:
+          type: [string, 'null']
+        defaultHsnSacCode:
+          type: [string, 'null']
+        sortOrder:
+          type: integer
+        versionNo:
+          type: integer
+          format: int64
+
+    AccountGroupCursorPage:
+      type: object
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountGroupResponse'
+        nextCursor:
+          type: [string, 'null']
+        hasMore:
+          type: boolean
+
+    BankDetailsDto:
+      type: object
+      properties:
+        accountHolder:
+          type: [string, 'null']
+        accountNumber:
+          type: [string, 'null']
+        ifscCode:
+          type: [string, 'null']
+        bankName:
+          type: [string, 'null']
+        branch:
+          type: [string, 'null']
+        upiId:
+          type: [string, 'null']
+
+    LedgerResponse:
+      type: object
+      required: [id, companyId, name, openingBalance, openingSide, taxType, isSystemLedger, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        groupId:
+          type: [string, 'null']
+          format: uuid
+        groupName:
+          type: [string, 'null']
+        nature:
+          type: string
+        openingBalance:
+          type: string
+        openingSide:
+          type: string
+          enum: [DR, CR]
+        currencyCode:
+          type: string
+        maintainBalancesBillByBill:
+          type: boolean
+        defaultCreditPeriodDays:
+          type: [integer, 'null']
+        checkCreditDaysDuringVoucher:
+          type: boolean
+        creditLimit:
+          type: [string, 'null']
+        inventoryValuesAffected:
+          type: boolean
+        costCentresApplicable:
+          type: boolean
+        taxType:
+          type: string
+        dutyHead:
+          type: [string, 'null']
+        gstRatePct:
+          type: [string, 'null']
+        hsnSacCode:
+          type: [string, 'null']
+        appropriateFor:
+          type: string
+        partyRegistrationType:
+          type: string
+        countryCode:
+          type: string
+        stateCode:
+          type: [string, 'null']
+        stateName:
+          type: [string, 'null']
+        pincode:
+          type: [string, 'null']
+        gstin:
+          type: [string, 'null']
+        panMasked:
+          type: [string, 'null']
+        tdsApplicable:
+          type: boolean
+        tdsNatureCode:
+          type: [string, 'null']
+        tdsDeducteeType:
+          type: [string, 'null']
+        msmeUdyamNo:
+          type: [string, 'null']
+        bankDetails:
+          oneOf:
+            - $ref: '#/components/schemas/BankDetailsDto'
+            - type: 'null'
+        isSystemLedger:
+          type: boolean
+        active:
+          type: boolean
+        masterSeqId:
+          type: integer
+          format: int64
+        alterId:
+          type: integer
+          format: int64
+        versionNo:
+          type: integer
+          format: int64
+
+    CreateOrUpdateLedgerRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        groupId:
+          type: [string, 'null']
+          format: uuid
+        openingBalance:
+          type: string
+        openingSide:
+          type: string
+          enum: [DR, CR]
+        currencyCode:
+          type: string
+        maintainBalancesBillByBill:
+          type: boolean
+        defaultCreditPeriodDays:
+          type: [integer, 'null']
+        checkCreditDaysDuringVoucher:
+          type: boolean
+        creditLimit:
+          type: [string, 'null']
+        inventoryValuesAffected:
+          type: boolean
+        costCentresApplicable:
+          type: boolean
+        taxType:
+          type: string
+        dutyHead:
+          type: [string, 'null']
+        gstRatePct:
+          type: [string, 'null']
+        hsnSacCode:
+          type: [string, 'null']
+        appropriateFor:
+          type: string
+        appropriationBasis:
+          type: string
+        partyRegistrationType:
+          type: string
+        countryCode:
+          type: string
+        stateCode:
+          type: [string, 'null']
+        stateName:
+          type: [string, 'null']
+        pincode:
+          type: [string, 'null']
+        gstin:
+          type: [string, 'null']
+        pan:
+          type: [string, 'null']
+        tdsApplicable:
+          type: boolean
+        tdsNatureCode:
+          type: [string, 'null']
+        tdsDeducteeType:
+          type: [string, 'null']
+        msmeUdyamNo:
+          type: [string, 'null']
+        bankDetails:
+          oneOf:
+            - $ref: '#/components/schemas/BankDetailsDto'
+            - type: 'null'
+        active:
+          type: boolean
+        versionNo:
+          type: integer
+          format: int64
+
+    LedgerCursorPage:
+      type: object
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerResponse'
+        nextCursor:
+          type: [string, 'null']
+        hasMore:
+          type: boolean
+
+    LedgerTypeaheadResponse:
+      type: object
+      required: [id, name, nature, taxType, currentBalance, currentBalanceSide]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        groupId:
+          type: [string, 'null']
+          format: uuid
+        groupName:
+          type: [string, 'null']
+        nature:
+          type: string
+        maintainBalancesBillByBill:
+          type: boolean
+        costCentresApplicable:
+          type: boolean
+        taxType:
+          type: string
+        dutyHead:
+          type: [string, 'null']
+        gstin:
+          type: [string, 'null']
+        stateName:
+          type: [string, 'null']
+        partyRegistrationType:
+          type: string
+        appropriateFor:
+          type: string
+        tdsApplicable:
+          type: boolean
+        tdsNatureCode:
+          type: [string, 'null']
+        currentBalance:
+          type: string
+        currentBalanceSide:
+          type: string
+          enum: [DR, CR]
+
+    CurrencyResponse:
+      type: object
+      required: [id, companyId, isoCode, symbol, formalName, decimalPlaces, isBaseCurrency, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        isoCode:
+          type: string
+        symbol:
+          type: string
+        formalName:
+          type: string
+        decimalPlaces:
+          type: integer
+        decimalSymbol:
+          type: string
+        showAmountInMillions:
+          type: boolean
+        suffixSymbolToAmount:
+          type: boolean
+        addSpaceBetweenAmountAndSymbol:
+          type: boolean
+        isBaseCurrency:
+          type: boolean
+        active:
+          type: boolean
+        masterSeqId:
+          type: integer
+          format: int64
+        alterId:
+          type: integer
+          format: int64
+        versionNo:
+          type: integer
+          format: int64
+
+    CreateOrUpdateCurrencyRequest:
+      type: object
+      required: [isoCode, symbol, formalName]
+      properties:
+        isoCode:
+          type: string
+        symbol:
+          type: string
+        formalName:
+          type: string
+        decimalPlaces:
+          type: integer
+        decimalSymbol:
+          type: string
+        showAmountInMillions:
+          type: boolean
+        suffixSymbolToAmount:
+          type: boolean
+        addSpaceBetweenAmountAndSymbol:
+          type: boolean
+        active:
+          type: boolean
+        versionNo:
+          type: integer
+          format: int64
+
+    ForexRateResponse:
+      type: object
+      required: [id, companyId, currencyId, isoCode, effectiveDate, standardRate, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        currencyId:
+          type: string
+          format: uuid
+        isoCode:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+        standardRate:
+          type: string
+        sellingRate:
+          type: [string, 'null']
+        buyingRate:
+          type: [string, 'null']
+        versionNo:
+          type: integer
+          format: int64
+
+    UpsertForexRateRequest:
+      type: object
+      required: [effectiveDate, standardRate]
+      properties:
+        effectiveDate:
+          type: string
+          format: date
+        standardRate:
+          type: string
+        sellingRate:
+          type: [string, 'null']
+        buyingRate:
+          type: [string, 'null']
+
+    CostCategoryResponse:
+      type: object
+      required: [id, companyId, name, isPrimaryCategory, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        allocateRevenueItems:
+          type: boolean
+        allocateNonRevenueItems:
+          type: boolean
+        isPrimaryCategory:
+          type: boolean
+        active:
+          type: boolean
+        masterSeqId:
+          type: integer
+          format: int64
+        alterId:
+          type: integer
+          format: int64
+        versionNo:
+          type: integer
+          format: int64
+
+    CreateOrUpdateCostCategoryRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        allocateRevenueItems:
+          type: boolean
+        allocateNonRevenueItems:
+          type: boolean
+        active:
+          type: boolean
+        versionNo:
+          type: integer
+          format: int64
+
+    CostCentreResponse:
+      type: object
+      required: [id, companyId, categoryId, name, depthLevel, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        categoryId:
+          type: string
+          format: uuid
+        categoryName:
+          type: string
+        parentCostCentreId:
+          type: [string, 'null']
+          format: uuid
+        parentCostCentreName:
+          type: [string, 'null']
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        depthLevel:
+          type: integer
+        active:
+          type: boolean
+        masterSeqId:
+          type: integer
+          format: int64
+        alterId:
+          type: integer
+          format: int64
+        versionNo:
+          type: integer
+          format: int64
+
+    CreateOrUpdateCostCentreRequest:
+      type: object
+      required: [name]
+      properties:
+        categoryId:
+          type: [string, 'null']
+          format: uuid
+        costCategoryId:
+          type: [string, 'null']
+          format: uuid
+        parentCostCentreId:
+          type: [string, 'null']
+          format: uuid
+        parentId:
+          type: [string, 'null']
+          format: uuid
+        name:
+          type: string
+        aliasCode:
+          type: [string, 'null']
+        active:
+          type: boolean
+        versionNo:
+          type: integer
+          format: int64
+
+    VoucherTypeResponse:
+      type: object
+      required: [id, companyId, name, abbreviation, category, defaultEntryMode, numberingMethod, approvalPolicy, isSystemType, versionNo]
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        abbreviation:
+          type: string
+        parentVoucherTypeId:
+          type: [string, 'null']
+          format: uuid
+        parentVoucherType:
+          type: [string, 'null']
+        category:
+          type: string
+        postsAccountingEntries:
+          type: boolean
+        movesInventory:
+          type: boolean
+        defaultEntryMode:
+          type: string
+        numberingMethod:
+          type: string
+        approvalPolicy:
+          type: string
+        preventDuplicates:
+          type: boolean
+        allowZeroValued:
+          type: boolean
+        isOptionalByDefault:
+          type: boolean
+        printAfterSave:
+          type: boolean
+        shortcutKey:
+          type: [string, 'null']
+        isSystemType:
+          type: boolean
+        active:
+          type: boolean
+        masterSeqId:
+          type: integer
+          format: int64
+        alterId:
+          type: integer
+          format: int64
+        versionNo:
+          type: integer
+          format: int64
+
+    CreateOrUpdateVoucherTypeRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        abbreviation:
+          type: [string, 'null']
+        parentVoucherTypeId:
+          type: [string, 'null']
+          format: uuid
+        parentVoucherType:
+          type: [string, 'null']
+        category:
+          type: [string, 'null']
+        postsAccountingEntries:
+          type: boolean
+        movesInventory:
+          type: boolean
+        defaultEntryMode:
+          type: [string, 'null']
+        numberingMethod:
+          type: [string, 'null']
+        approvalPolicy:
+          type: [string, 'null']
+        preventDuplicates:
+          type: boolean
+        allowZeroValued:
+          type: boolean
+        isOptionalByDefault:
+          type: boolean
+        printAfterSave:
+          type: boolean
+        shortcutKey:
+          type: [string, 'null']
+        active:
+          type: boolean
+        versionNo:
+          type: integer
+          format: int64

@@ -434,6 +434,7 @@ export class AdminConsoleComponent implements OnInit {
 
   readonly statusMessage = signal<string | null>(null);
   readonly errorMessage = signal<string | null>(null);
+  readonly principals = signal<readonly AdminPrincipalRecord[]>([]);
   readonly issuedServiceKey = signal<CreatedServiceKeyResponse | null>(null);
   readonly auditVerification = signal<AuditChainVerifyResponse | null>(null);
 
@@ -441,6 +442,24 @@ export class AdminConsoleComponent implements OnInit {
     const active = this.companyContext.activeCompany();
     if (active) {
       this.grantCompanyId = active.id;
+    }
+    void this.loadPrincipals();
+  }
+
+  async loadPrincipals(): Promise<void> {
+    try {
+      const list = await firstValueFrom(
+        this.http.get<readonly AdminPrincipalRecord[]>(
+          this.runtimeConfig.url('/admin/principals'),
+          { withCredentials: true },
+        ),
+      );
+      this.principals.set(list);
+      if (!this.grantPrincipalId && list.length > 0) {
+        this.grantPrincipalId = list[0].id;
+      }
+    } catch {
+      // Non-fatal if principal directory is unavailable
     }
   }
 
@@ -461,6 +480,7 @@ export class AdminConsoleComponent implements OnInit {
         ),
       );
       this.grantPrincipalId = created.id;
+      this.principals.set([...this.principals(), created]);
       this.newPassword = '';
       this.statusMessage.set(`Created principal "${created.username}" (${created.id}).`);
     } catch (err: unknown) {
@@ -484,7 +504,9 @@ export class AdminConsoleComponent implements OnInit {
           {
             companyId: this.grantCompanyId,
             roleCode: this.grantRole,
+            voucherTypeAllowlist: [],
             backdatedDaysLimit: this.grantBackdatedDays,
+            exportPermitted: true,
           },
           { withCredentials: true },
         ),
@@ -501,6 +523,11 @@ export class AdminConsoleComponent implements OnInit {
       return;
     }
     this.errorMessage.set(null);
+    const isoExpiresAt = this.serviceKeyExpiry
+      ? this.serviceKeyExpiry.includes('T')
+        ? this.serviceKeyExpiry
+        : `${this.serviceKeyExpiry}T23:59:59Z`
+      : null;
     try {
       const issued = await firstValueFrom(
         this.http.post<CreatedServiceKeyResponse>(
@@ -508,7 +535,8 @@ export class AdminConsoleComponent implements OnInit {
           {
             label: this.serviceKeyLabel.trim(),
             companyIds: this.grantCompanyId ? [this.grantCompanyId] : [],
-            expiresAt: this.serviceKeyExpiry || null,
+            endpointAllowlist: [],
+            expiresAt: isoExpiresAt,
           },
           { withCredentials: true },
         ),
@@ -556,11 +584,12 @@ export class AdminConsoleComponent implements OnInit {
 
   async recoverFromQuarantine(): Promise<void> {
     this.errorMessage.set(null);
+    const receipt = this.quarantineReasonInput.trim();
     try {
       await firstValueFrom(
         this.http.post<void>(
           this.runtimeConfig.url('/admin/quarantine/recover'),
-          { recoveryReceipt: this.quarantineReasonInput.trim() },
+          { recoveryReceipt: receipt, recoveryReceiptCode: receipt },
           { withCredentials: true },
         ),
       );

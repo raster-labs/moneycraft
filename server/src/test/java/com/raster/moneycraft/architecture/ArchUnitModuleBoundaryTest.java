@@ -40,6 +40,23 @@ class ArchUnitModuleBoundaryTest {
     }
 
     @Test
+    void accountingMustDependOnlyOnFoundationAndNeverOnDownstreamContexts() {
+        ArchRule rule = ArchRuleDefinition.noClasses()
+            .that().resideInAPackage("com.raster.moneycraft.accounting..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage(
+                "com.raster.moneycraft.inventory..",
+                "com.raster.moneycraft.statutory..",
+                "com.raster.moneycraft.banking..",
+                "com.raster.moneycraft.reporting..",
+                "com.raster.moneycraft.migration..",
+                "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.ops.."
+            );
+        rule.check(serverClasses);
+    }
+
+    @Test
     void opsMustNotDependOnBusinessAccountingContexts() {
         ArchRule rule = ArchRuleDefinition.noClasses()
             .that().resideInAPackage("com.raster.moneycraft.ops..")

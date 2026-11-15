@@ -4933,8 +4933,10 @@ export class VoucherGridComponent implements OnInit {
     const vt =
       this.coaStore.voucherTypes().find((t) => t.id === detail.voucherTypeId) ??
       this.coaStore.voucherTypes().find((t) => t.name === detail.voucherTypeName);
+    const wireCat = (detail as { voucherTypeCategory?: VoucherBaseCategory }).voucherTypeCategory;
     const category: VoucherBaseCategory =
       detail.voucherCategory ??
+      wireCat ??
       vt?.baseCategory ??
       (PREDEFINED_24_VOUCHER_SPECS.find(
         (s) => s.name.toLowerCase() === detail.voucherTypeName.toLowerCase(),
@@ -4954,14 +4956,24 @@ export class VoucherGridComponent implements OnInit {
     this.postingNature.set(detail.postingNature);
     this.supplierInvoiceNo.set(asDuplicateNew ? '' : detail.supplierInvoiceNo ?? '');
     this.supplierInvoiceDate.set(detail.supplierInvoiceDate ?? detail.voucherDate);
-    this.partyLedgerId.set(detail.partyLedgerId ?? null);
+    const resolvedPartyId =
+      detail.partyLedgerId ?? detail.lines.find((l) => l.lineRole === 'PARTY')?.ledgerId ?? null;
+    const fallbackParty = resolvedPartyId
+      ? this.coaStore.ledgers().find((l) => l.id === resolvedPartyId)
+      : undefined;
+    this.partyLedgerId.set(resolvedPartyId);
     this.accountingLedgerId.set(detail.accountingLedgerId ?? null);
     this.placeOfSupplyState.set(
-      detail.placeOfSupplyState ?? this.companyContext.activeCompany()?.stateCode ?? '33',
+      detail.placeOfSupplyState ??
+        fallbackParty?.stateCode ??
+        this.companyContext.activeCompany()?.stateCode ??
+        '33',
     );
-    this.partyGstin.set(detail.partyGstin ?? null);
-    this.partyMailingName.set(detail.partyMailingName ?? null);
-    this.partyStateCode.set(detail.partyStateCode ?? null);
+    this.partyGstin.set(detail.partyGstin ?? fallbackParty?.gstin ?? null);
+    this.partyMailingName.set(
+      detail.partyMailingName ?? fallbackParty?.mailingName ?? fallbackParty?.name ?? null,
+    );
+    this.partyStateCode.set(detail.partyStateCode ?? fallbackParty?.stateCode ?? null);
     this.isReverseCharge.set(Boolean(detail.isReverseCharge));
     this.narration.set(detail.narration ?? '');
 

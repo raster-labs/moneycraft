@@ -41,6 +41,12 @@ function ifMatchHeader(versionNo?: number): Readonly<Record<string, string>> {
   return versionNo !== undefined ? { 'If-Match': `"v${versionNo}"` } : {};
 }
 
+const UUID_WIRE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuidWire(val: string | null | undefined): val is string {
+  return typeof val === 'string' && UUID_WIRE_RE.test(val.trim());
+}
+
 function unwrapList<T>(body: CursorPage<T> | readonly T[] | null | undefined): readonly T[] {
   if (!body) {
     return [];
@@ -480,8 +486,8 @@ export class StatutoryService {
 
   async getGstr9(companyId: string, fiscalYearId?: string): Promise<Gstr9ReportDto> {
     let params = new HttpParams();
-    if (fiscalYearId) {
-      params = params.set('fiscalYearId', fiscalYearId);
+    if (isUuidWire(fiscalYearId)) {
+      params = params.set('fiscalYearId', fiscalYearId.trim());
     }
     const raw = await firstValueFrom(
       this.http.get<Gstr9ReportDto>(this.companyUrl(companyId, '/gst/gstr9'), {
@@ -515,13 +521,15 @@ export class StatutoryService {
     autoDownload = true,
   ): Promise<Blob> {
     let params = new HttpParams().set('format', format);
-    if (fiscalYearId) {
-      params = params.set('fiscalYearId', fiscalYearId);
+    const fyUuid = isUuidWire(fiscalYearId) ? fiscalYearId.trim() : undefined;
+    if (fyUuid) {
+      params = params.set('fiscalYearId', fyUuid);
     }
+    const bodyPayload = fyUuid ? { fiscalYearId: fyUuid, format } : { format };
     const blob = await firstValueFrom(
       this.http.post(
         this.companyUrl(companyId, '/gst/gstr9/export'),
-        { fiscalYearId, format },
+        bodyPayload,
         {
           params,
           responseType: 'blob',
@@ -683,8 +691,11 @@ export class StatutoryService {
     companyId: string,
     payload: CreateTdsChallanRequest,
   ): Promise<TdsChallanDto> {
+    const wirePayload: CreateTdsChallanRequest = isUuidWire(payload.fiscalYearId)
+      ? payload
+      : { ...payload, fiscalYearId: undefined };
     return firstValueFrom(
-      this.http.post<TdsChallanDto>(this.companyUrl(companyId, '/tds/challans'), payload, {
+      this.http.post<TdsChallanDto>(this.companyUrl(companyId, '/tds/challans'), wirePayload, {
         withCredentials: true,
       }),
     );
@@ -696,8 +707,8 @@ export class StatutoryService {
     fiscalYearId?: string,
   ): Promise<TdsForm26qReportDto> {
     let params = new HttpParams().set('quarter', quarter);
-    if (fiscalYearId) {
-      params = params.set('fiscalYearId', fiscalYearId);
+    if (isUuidWire(fiscalYearId)) {
+      params = params.set('fiscalYearId', fiscalYearId.trim());
     }
     const raw = await firstValueFrom(
       this.http.get<TdsForm26qReportDto>(this.companyUrl(companyId, '/tds/form26q'), {
@@ -725,13 +736,15 @@ export class StatutoryService {
     autoDownload = true,
   ): Promise<Blob> {
     let params = new HttpParams().set('quarter', quarter);
-    if (fiscalYearId) {
-      params = params.set('fiscalYearId', fiscalYearId);
+    const fyUuid = isUuidWire(fiscalYearId) ? fiscalYearId.trim() : undefined;
+    if (fyUuid) {
+      params = params.set('fiscalYearId', fyUuid);
     }
+    const bodyPayload = fyUuid ? { quarter, fiscalYearId: fyUuid } : { quarter };
     const blob = await firstValueFrom(
       this.http.post(
         this.companyUrl(companyId, '/tds/export-fvu'),
-        { quarter, fiscalYearId },
+        bodyPayload,
         { params, responseType: 'blob', withCredentials: true },
       ),
     );

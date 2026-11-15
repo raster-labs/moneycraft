@@ -214,10 +214,11 @@ import { InventoryStore } from './inventory.store';
                 </button>
               }
               <button
-                type="submit"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 data-testid="uom-save-btn"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveUom()"
               >
                 Accept (<span class="mc-key-ctrl">A</span>)
               </button>

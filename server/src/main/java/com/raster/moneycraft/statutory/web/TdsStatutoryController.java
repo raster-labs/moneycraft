@@ -7,6 +7,7 @@ import com.raster.moneycraft.statutory.service.TdsAndEditLogService;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -63,26 +64,33 @@ public class TdsStatutoryController {
     public StatutoryDtos.TdsForm26qReportDto getForm26q(
         @PathVariable UUID companyId,
         @RequestParam(name = "quarter", required = false, defaultValue = "Q1") String quarter,
-        @RequestParam(name = "fiscalYearId", required = false) UUID fiscalYearId
+        @RequestParam(name = "fiscalYearId", required = false) String fiscalYearIdRaw
     ) {
         MoneyCraftPrincipal principal = rbacAuthorizationService.requireAuthenticatedPrincipal();
-        return tdsAndEditLogService.getForm26q(principal, companyId, quarter, fiscalYearId);
+        return tdsAndEditLogService.getForm26q(
+            principal,
+            companyId,
+            quarter,
+            parseOptionalUuid(fiscalYearIdRaw)
+        );
     }
 
     @PostMapping("/export-fvu")
     public ResponseEntity<byte[]> exportForm26qFvu(
         @PathVariable UUID companyId,
         @RequestParam(name = "quarter", required = false) String quarterParam,
-        @RequestParam(name = "fiscalYearId", required = false) UUID fiscalYearIdParam,
-        @RequestBody(required = false) StatutoryDtos.TdsExportFvuRequest body
+        @RequestParam(name = "fiscalYearId", required = false) String fiscalYearIdParam,
+        @RequestBody(required = false) Map<String, Object> body
     ) {
         MoneyCraftPrincipal actor = rbacAuthorizationService.requireAuthenticatedPrincipal();
+        Object bodyQuarter = body == null ? null : body.get("quarter");
+        Object bodyFy = body == null ? null : body.get("fiscalYearId");
         String quarter = quarterParam != null && !quarterParam.isBlank()
             ? quarterParam
-            : (body != null && body.quarter() != null ? body.quarter() : "Q1");
-        UUID fiscalYearId = fiscalYearIdParam != null
-            ? fiscalYearIdParam
-            : (body != null ? body.fiscalYearId() : null);
+            : (bodyQuarter instanceof String qStr && !qStr.isBlank() ? qStr : "Q1");
+        UUID fiscalYearId = parseOptionalUuid(fiscalYearIdParam) != null
+            ? parseOptionalUuid(fiscalYearIdParam)
+            : (bodyFy instanceof String fyStr ? parseOptionalUuid(fyStr) : null);
 
         byte[] fvuBytes = tdsAndEditLogService.exportForm26qFvu(
             actor,
@@ -95,5 +103,20 @@ public class TdsStatutoryController {
             .contentType(FVU_TEXT_UTF8)
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
             .body(fvuBytes);
+    }
+
+    private static UUID parseOptionalUuid(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.length() != 36) {
+            return null;
+        }
+        try {
+            return UUID.fromString(trimmed);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 }

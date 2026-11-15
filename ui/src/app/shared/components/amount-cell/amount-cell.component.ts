@@ -305,10 +305,11 @@ export class AmountCellComponent implements ControlValueAccessor {
       return;
     }
 
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      event.stopPropagation();
       this.commitRawText();
       if (this.validationError() === null) {
-        event.preventDefault();
         const currentWire = this.value() ?? this.wireValueSignal();
         if (!event.shiftKey) {
           this.enterPressed.emit(currentWire);

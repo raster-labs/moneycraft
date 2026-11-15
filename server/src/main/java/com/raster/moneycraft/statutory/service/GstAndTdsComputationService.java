@@ -108,6 +108,55 @@ public class GstAndTdsComputationService implements VoucherStatutoryBridge {
 
     @Override
     @Transactional(transactionManager = "transactionManager", propagation = Propagation.MANDATORY)
+    public void recomputeOpenPeriodStatutoryForLedger(UUID companyId, UUID ledgerId) {
+        if (companyId == null || ledgerId == null) {
+            return;
+        }
+        List<UUID> affectedJournalIds = businessJdbcTemplate.query(
+            """
+            SELECT DISTINCT j.id
+              FROM mc_journal j
+              JOIN mc_period p
+                ON p.company_id = j.company_id AND p.id = j.period_id
+             WHERE j.company_id = ?
+               AND j.status = 'POSTED'
+               AND j.posting_nature = 'NORMAL'
+               AND j.reversal_of_journal_id IS NULL
+               AND p.state = 'OPEN'
+               AND (
+                   j.party_ledger_id = ?
+                   OR j.accounting_ledger_id = ?
+                   OR EXISTS (
+                       SELECT 1
+                         FROM mc_journal_line jl
+                        WHERE jl.company_id = j.company_id
+                          AND jl.journal_id = j.id
+                          AND jl.ledger_id = ?
+                   )
+               )
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM mc_tax_allocation ta
+                    WHERE ta.company_id = j.company_id
+                      AND ta.journal_id = j.id
+                      AND ta.conflict_accepted_by IS NOT NULL
+               )
+             ORDER BY j.id ASC
+            """,
+            (rs, rowNum) -> rs.getObject("id", UUID.class),
+            companyId,
+            ledgerId,
+            ledgerId,
+            ledgerId
+        );
+        for (UUID journalId : affectedJournalIds) {
+            clearJournalStatutoryAllocations(companyId, journalId);
+            computeAndPersistJournalStatutory(companyId, journalId);
+        }
+    }
+
+    @Override
+    @Transactional(transactionManager = "transactionManager", propagation = Propagation.MANDATORY)
     public void computeAndPersistJournalStatutory(UUID companyId, UUID journalId) {
         List<StoredJournalHeader> headers = businessJdbcTemplate.query(
             """
@@ -2439,7 +2488,21 @@ public class GstAndTdsComputationService implements VoucherStatutoryBridge {
             LedgerTaxMeta lm = ledgerMap.get(jl.ledgerId());
             if (lm != null) {
                 String gn = lm.groupName() == null ? "" : lm.groupName().toLowerCase(Locale.ROOT);
-                if ("sundry creditors".equals(gn) || "sundry debtors".equals(gn) || lm.tdsApplicable()) {
+                if ("sundry creditors".equals(gn) || "sundry debtors".equals(gn)) {
+                    return jl.ledgerId();
+                }
+            }
+        }
+        for (StoredJournalLine jl : lines) {
+            LedgerTaxMeta lm = ledgerMap.get(jl.ledgerId());
+            if (lm != null) {
+                String gn = lm.groupName() == null ? "" : lm.groupName().toLowerCase(Locale.ROOT);
+                String nature = lm.groupNature() == null ? "" : lm.groupNature().toUpperCase(Locale.ROOT);
+                boolean isTaxOrPnl = !"NONE".equals(lm.taxType() == null ? "NONE" : lm.taxType())
+                    || "duties & taxes".equals(gn)
+                    || "EXPENSES".equals(nature)
+                    || "INCOME".equals(nature);
+                if (!isTaxOrPnl && (lm.tdsDeducteeType() != null || lm.hasPanSiv())) {
                     return jl.ledgerId();
                 }
             }

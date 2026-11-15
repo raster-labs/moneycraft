@@ -413,9 +413,10 @@ import {
           <div class="mc-form-footer">
             <button type="button" class="mc-btn" (click)="activeTab.set('list')">Cancel (Esc)</button>
             <button
-              type="submit"
+              type="button"
               class="mc-btn mc-btn-primary"
               [disabled]="companyContext.quarantined()"
+              (click)="saveCompanyForm()"
             >
               Accept (<span class="mc-key-ctrl">A</span>)
             </button>

@@ -36,6 +36,9 @@ export const authenticatedGuard: CanActivateFn = async () => {
   }
 
   if (authStore.isAuthenticated()) {
+    if (!companyContext.companiesLoaded()) {
+      await companyContext.loadCompanies();
+    }
     return true;
   }
 

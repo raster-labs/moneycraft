@@ -409,13 +409,27 @@ export class AccountingMastersService {
   // ---------------------------------------------------------------------------
 
   async listAccountGroups(companyId: string): Promise<readonly AccountGroup[]> {
-    const body = await firstValueFrom(
-      this.http.get<CursorPage<AccountGroup> | readonly AccountGroup[]>(
-        this.companyBase(companyId, '/account-groups'),
-        { withCredentials: true },
-      ),
-    );
-    return unwrapItems(body);
+    const all: AccountGroup[] = [];
+    let cursor: string | undefined;
+    for (let guard = 0; guard < 10; guard += 1) {
+      let params = new HttpParams().set('limit', '200');
+      if (cursor) {
+        params = params.set('cursor', cursor);
+      }
+      const body = await firstValueFrom(
+        this.http.get<CursorPage<AccountGroup> | readonly AccountGroup[]>(
+          this.companyBase(companyId, '/account-groups'),
+          { params, withCredentials: true },
+        ),
+      );
+      const page = toCursorPage(body);
+      all.push(...page.items);
+      if (!page.hasMore || !page.nextCursor) {
+        break;
+      }
+      cursor = page.nextCursor;
+    }
+    return all;
   }
 
   async getAccountGroup(companyId: string, groupId: string): Promise<AccountGroup> {
@@ -515,8 +529,17 @@ export class AccountingMastersService {
   }
 
   async listLedgers(companyId: string): Promise<readonly Ledger[]> {
-    const page = await this.listLedgersPage(companyId, { limit: 500 });
-    return page.items;
+    const all: Ledger[] = [];
+    let cursor: string | undefined;
+    for (let guard = 0; guard < 20; guard += 1) {
+      const page = await this.listLedgersPage(companyId, { limit: 200, cursor });
+      all.push(...page.items);
+      if (!page.hasMore || !page.nextCursor) {
+        break;
+      }
+      cursor = page.nextCursor;
+    }
+    return all;
   }
 
   async searchLedgerTypeahead(

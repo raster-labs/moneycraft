@@ -731,10 +731,12 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
               Enter = Next &bull; Shift+Enter = Prev &bull; <mc-code-badge code="Ctrl+A" /> = Save
             </span>
             <button
-              type="submit"
+              id="ledger-accept"
+              type="button"
               class="mc-btn mc-btn-primary"
               data-testid="accept-ledger-btn"
               [disabled]="saving() || companyContext.quarantined()"
+              (click)="saveLedger()"
             >
               Accept (<span class="mc-key-ctrl">A</span>)
             </button>
@@ -1318,17 +1320,20 @@ export class LedgerWorkbenchComponent implements OnInit {
       this.formTaxType.set('NONE');
     } else if (flags.isDutiesAndTaxes) {
       this.formBillWise.set(false);
+      this.formPartyRegType.set('UNKNOWN');
       if (this.formTaxType() === 'NONE') {
         this.formTaxType.set('GST');
         this.formDutyHead.set('CGST');
       }
     } else if (flags.isSalesOrPurchase) {
       this.formBillWise.set(false);
+      this.formPartyRegType.set('UNKNOWN');
       this.formInventoryAffected.set(true);
       this.formGstApplicability.set('APPLICABLE');
       this.formTaxType.set('NONE');
     } else {
       this.formBillWise.set(false);
+      this.formPartyRegType.set('UNKNOWN');
       this.formTaxType.set('NONE');
     }
 
@@ -1553,7 +1558,7 @@ export class LedgerWorkbenchComponent implements OnInit {
       appropriationBasis: this.formAppropriationBasis(),
       roundingMethod: this.formRoundingMethod(),
       roundingLimit: this.formRoundingMethod() === 'NONE' ? null : '1.00',
-      partyRegistrationType: this.formPartyRegType(),
+      partyRegistrationType: flags.isPartyGroup ? this.formPartyRegType() : 'UNKNOWN',
       gstin: cleanGstin || null,
       countryCode: this.formCountryCode().trim() || 'IN',
       stateCode: this.formStateCode() || null,

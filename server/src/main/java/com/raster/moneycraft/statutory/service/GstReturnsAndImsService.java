@@ -327,12 +327,15 @@ public class GstReturnsAndImsService {
             window.toDate(),
             gstRegistrationId
         );
-        int uncertainCount = computationService.listUncertainTransactions(
+        int uncertainCount = (int) computationService.listUncertainTransactions(
             principal,
             companyId,
             window.fromDate(),
             window.toDate()
-        ).size();
+        ).stream()
+            .filter(u -> u.voucherTypeName() == null
+                || !"purchase".equalsIgnoreCase(u.voucherTypeName().trim()))
+            .count();
 
         BigDecimal totalTax = totalIgst.add(totalCgst).add(totalSgst).add(totalCess);
         return new StatutoryDtos.Gstr1ReportDto(

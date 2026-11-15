@@ -183,10 +183,11 @@ import { InventoryStore } from './inventory.store';
                 </button>
               }
               <button
-                type="submit"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 data-testid="godown-save-btn"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveGodown()"
               >
                 Accept (<span class="mc-key-ctrl">A</span>)
               </button>

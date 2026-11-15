@@ -53,6 +53,7 @@ export class GridCellNavDirective {
         return;
       }
       event.preventDefault();
+      event.stopPropagation();
       moveGridCellFocusFrom(target, event.shiftKey ? -1 : 1);
       return;
     }

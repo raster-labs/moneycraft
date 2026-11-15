@@ -246,26 +246,31 @@ public class GstStatutoryController {
     @GetMapping("/gst/gstr9")
     public StatutoryDtos.Gstr9ReportDto getGstr9(
         @PathVariable UUID companyId,
-        @RequestParam(name = "fiscalYearId", required = false) UUID fiscalYearId
+        @RequestParam(name = "fiscalYearId", required = false) String fiscalYearIdRaw
     ) {
         MoneyCraftPrincipal principal = rbacAuthorizationService.requireAuthenticatedPrincipal();
-        return gstReturnsAndImsService.getGstr9(principal, companyId, fiscalYearId);
+        return gstReturnsAndImsService.getGstr9(
+            principal,
+            companyId,
+            parseOptionalUuid(fiscalYearIdRaw)
+        );
     }
 
     @PostMapping("/gst/gstr9/export")
     public ResponseEntity<byte[]> exportGstr9(
         @PathVariable UUID companyId,
-        @RequestParam(name = "fiscalYearId", required = false) UUID fiscalYearIdParam,
+        @RequestParam(name = "fiscalYearId", required = false) String fiscalYearIdParam,
         @RequestParam(name = "format", required = false) String formatParam,
-        @RequestBody(required = false) StatutoryDtos.Gstr9ExportRequest body
+        @RequestBody(required = false) Map<String, Object> body
     ) {
         MoneyCraftPrincipal principal = rbacAuthorizationService.requireAuthenticatedPrincipal();
-        UUID fiscalYearId = fiscalYearIdParam != null
-            ? fiscalYearIdParam
-            : (body != null ? body.fiscalYearId() : null);
+        UUID fiscalYearId = parseOptionalUuid(fiscalYearIdParam) != null
+            ? parseOptionalUuid(fiscalYearIdParam)
+            : parseUuidFromMap(body, "fiscalYearId");
+        Object bodyFormat = body == null ? null : body.get("format");
         String rawFormat = formatParam != null && !formatParam.isBlank()
             ? formatParam
-            : (body != null && body.format() != null ? body.format() : "XLSX");
+            : (bodyFormat instanceof String fmtStr && !fmtStr.isBlank() ? fmtStr : "XLSX");
         String normalizedFormat = rawFormat.trim().toUpperCase(Locale.ROOT);
 
         byte[] payload = gstReturnsAndImsService.exportGstr9(
@@ -404,8 +409,23 @@ public class GstStatutoryController {
         }
         Object raw = body.get(key);
         if (raw instanceof String str && !str.isBlank()) {
-            return UUID.fromString(str.trim());
+            return parseOptionalUuid(str);
         }
         return null;
+    }
+
+    private static UUID parseOptionalUuid(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.length() != 36) {
+            return null;
+        }
+        try {
+            return UUID.fromString(trimmed);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 }

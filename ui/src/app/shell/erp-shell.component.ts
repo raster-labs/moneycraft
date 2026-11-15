@@ -23,6 +23,7 @@ import { StockItemWorkbenchComponent } from '../features/inventory/stock-item-wo
 import { StockSummaryComponent } from '../features/inventory/stock-summary.component';
 import { UomWorkbenchComponent } from '../features/inventory/uom-workbench.component';
 import { CoaExplorerComponent } from '../features/masters/coa-explorer.component';
+import { ChartOfAccountsStore } from '../features/masters/chart-of-accounts.store';
 import { CostCentreWorkbenchComponent } from '../features/masters/cost-centre-workbench.component';
 import { CurrencyWorkbenchComponent } from '../features/masters/currency-workbench.component';
 import { GroupWorkbenchComponent } from '../features/masters/group-workbench.component';
@@ -1066,6 +1067,7 @@ export class ErpShellComponent implements OnInit {
   readonly smartFind = inject(SmartFindStore);
 
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
+  private readonly coaStore = inject(ChartOfAccountsStore);
   private readonly inventoryStore = inject(InventoryStore);
   private readonly sseStream = inject(SseStreamService);
   private readonly router = inject(Router);
@@ -1075,6 +1077,8 @@ export class ErpShellComponent implements OnInit {
     effect(() => {
       const cid = this.companyContext.activeCompany()?.id;
       if (cid) {
+        void this.coaStore.ensureAccountingMastersLoaded(cid);
+        void this.coaStore.loadVoucherTypes(cid);
         void this.inventoryStore.ensureLoaded(cid);
       }
     });
@@ -1139,7 +1143,9 @@ export class ErpShellComponent implements OnInit {
   ]);
 
   ngOnInit(): void {
-    void this.companyContext.loadCompanies();
+    if (!this.companyContext.companiesLoaded()) {
+      void this.companyContext.loadCompanies();
+    }
     this.sseStream.connect();
 
     this.shortcutRegistry.configureSmartFindPassthrough(

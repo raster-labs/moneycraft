@@ -336,7 +336,47 @@ public class InventoryVoucherBridgeService implements VoucherInventoryBridge {
             journalId
         );
         businessJdbcTemplate.update(
-            "DELETE FROM mc_order_line_fulfillment WHERE company_id = ? AND order_journal_id = ?",
+            """
+            DELETE FROM mc_order_line_fulfillment
+             WHERE company_id = ?
+               AND (
+                   order_journal_id = ?
+                   OR order_allocation_id IN (
+                       SELECT id FROM mc_inventory_allocation WHERE company_id = ? AND journal_id = ?
+                   )
+               )
+            """,
+            companyId,
+            journalId,
+            companyId,
+            journalId
+        );
+        businessJdbcTemplate.update(
+            """
+            DELETE FROM mc_stock_cost_layer
+             WHERE company_id = ?
+               AND (
+                   source_journal_id = ?
+                   OR source_allocation_id IN (
+                       SELECT id FROM mc_inventory_allocation WHERE company_id = ? AND journal_id = ?
+                   )
+               )
+            """,
+            companyId,
+            journalId,
+            companyId,
+            journalId
+        );
+        businessJdbcTemplate.update(
+            """
+            UPDATE mc_tax_allocation
+               SET inventory_allocation_id = NULL
+             WHERE company_id = ?
+               AND inventory_allocation_id IN (
+                   SELECT id FROM mc_inventory_allocation WHERE company_id = ? AND journal_id = ?
+               )
+            """,
+            companyId,
             companyId,
             journalId
         );
@@ -499,7 +539,7 @@ public class InventoryVoucherBridgeService implements VoucherInventoryBridge {
             }
         }
 
-        if (isActive && cmd.movesInventory()) {
+        if (!cmd.context().touchedStockItemIds().isEmpty()) {
             valuationService.syncCostLayersForItems(cmd.companyId(), cmd.context().touchedStockItemIds());
         }
     }

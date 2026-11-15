@@ -2,6 +2,7 @@ package com.raster.moneycraft.accounting.service;
 
 import com.raster.moneycraft.accounting.dto.CursorPage;
 import com.raster.moneycraft.accounting.dto.LedgerDtos;
+import com.raster.moneycraft.accounting.spi.VoucherStatutoryBridge;
 import com.raster.moneycraft.foundation.audit.AuditChainService;
 import com.raster.moneycraft.foundation.audit.EditLogSnapshotService;
 import com.raster.moneycraft.foundation.authority.AuthorityGuard;
@@ -25,6 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -45,6 +47,12 @@ public class LedgerService {
     private static final Set<String> VALID_TAX_TYPES = Set.of("NONE", "GST", "TDS", "TCS", "OTHERS");
     private static final Set<String> VALID_DUTY_HEADS = Set.of(
         "CGST", "SGST_UTGST", "IGST", "CESS", "TDS_SEC", "TCS_SEC", "OTHERS"
+    );
+    private static final Set<String> VALID_GST_APPLICABILITY = Set.of(
+        "APPLICABLE", "NOT_APPLICABLE", "UNDEFINED"
+    );
+    private static final Set<String> VALID_GST_SUPPLY_TYPES = Set.of(
+        "GOODS", "SERVICES", "CAPITAL_GOODS"
     );
     private static final Set<String> VALID_PARTY_REG_TYPES = Set.of(
         "UNKNOWN", "REGULAR", "COMPOSITION", "UNREGISTERED",
@@ -67,6 +75,7 @@ public class LedgerService {
     private final ObjectMapper objectMapper;
     private final JdbcTemplate businessJdbcTemplate;
     private final TransactionTemplate businessTxTemplate;
+    private final ObjectProvider<VoucherStatutoryBridge> statutoryBridgeProvider;
 
     public LedgerService(
         AuthorityGuard authorityGuard,
@@ -79,7 +88,8 @@ public class LedgerService {
         AuditChainService auditChainService,
         ObjectMapper objectMapper,
         @Qualifier("businessJdbcTemplate") JdbcTemplate businessJdbcTemplate,
-        @Qualifier("transactionManager") PlatformTransactionManager businessTransactionManager
+        @Qualifier("transactionManager") PlatformTransactionManager businessTransactionManager,
+        ObjectProvider<VoucherStatutoryBridge> statutoryBridgeProvider
     ) {
         this.authorityGuard = authorityGuard;
         this.rbacGuard = rbacGuard;
@@ -92,6 +102,7 @@ public class LedgerService {
         this.objectMapper = objectMapper;
         this.businessJdbcTemplate = businessJdbcTemplate;
         this.businessTxTemplate = new TransactionTemplate(businessTransactionManager);
+        this.statutoryBridgeProvider = statutoryBridgeProvider;
     }
 
     public CursorPage<LedgerDtos.LedgerResponse> listLedgers(
@@ -311,7 +322,7 @@ public class LedgerService {
                     maintain_balances_bill_by_bill, default_credit_period_days,
                     check_credit_days_during_voucher, credit_limit,
                     inventory_values_affected, cost_centres_applicable,
-                    tax_type, duty_head, gst_applicability, hsn_sac_code, gst_rate_pct,
+                    tax_type, duty_head, gst_applicability, gst_supply_type, hsn_sac_code, gst_rate_pct,
                     appropriate_for, appropriation_basis,
                     party_registration_type, gstin, country_code, state_code, state_name, pincode,
                     pan_siv, pan_plain_masked, msme_udyam_no,
@@ -325,7 +336,7 @@ public class LedgerService {
                     ?, ?,
                     ?, ?,
                     ?, ?,
-                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
                     ?, ?,
                     ?, ?, ?, ?, ?, ?,
                     ?, ?, ?,
@@ -352,6 +363,7 @@ public class LedgerService {
                 spec.taxType(),
                 spec.dutyHead(),
                 spec.gstApplicability(),
+                spec.gstSupplyType(),
                 spec.hsnSacCode(),
                 spec.gstRatePct(),
                 spec.dbAppropriateFor(),
@@ -481,6 +493,7 @@ public class LedgerService {
                        tax_type = ?,
                        duty_head = ?,
                        gst_applicability = ?,
+                       gst_supply_type = ?,
                        hsn_sac_code = ?,
                        gst_rate_pct = ?,
                        appropriate_for = ?,
@@ -525,6 +538,7 @@ public class LedgerService {
                 spec.taxType(),
                 spec.dutyHead(),
                 spec.gstApplicability(),
+                spec.gstSupplyType(),
                 spec.hsnSacCode(),
                 spec.gstRatePct(),
                 spec.dbAppropriateFor(),
@@ -554,6 +568,11 @@ public class LedgerService {
                 companyId,
                 ledgerId
             );
+
+            VoucherStatutoryBridge statBridge = statutoryBridgeProvider.getIfAvailable();
+            if (statBridge != null) {
+                statBridge.recomputeOpenPeriodStatutoryForLedger(companyId, ledgerId);
+            }
 
             LedgerDtos.LedgerResponse after = requireLedgerById(companyId, ledgerId, seq.currencyScale());
             editLogSnapshotService.recordVersion(
@@ -842,6 +861,8 @@ public class LedgerService {
             dto.costCentresApplicable(),
             dto.taxType(),
             dto.dutyHead(),
+            dto.gstApplicability(),
+            dto.gstSupplyType(),
             dto.gstRatePct(),
             dto.hsnSacCode(),
             dto.appropriateFor(),
@@ -952,7 +973,8 @@ public class LedgerService {
                    l.maintain_balances_bill_by_bill, l.default_credit_period_days,
                    l.check_credit_days_during_voucher, l.credit_limit,
                    l.inventory_values_affected, l.cost_centres_applicable,
-                   l.tax_type, l.duty_head, l.gst_rate_pct, l.hsn_sac_code,
+                   l.tax_type, l.duty_head, l.gst_applicability, l.gst_supply_type,
+                   l.gst_rate_pct, l.hsn_sac_code,
                    l.appropriate_for, l.party_registration_type,
                    l.country_code, l.state_code, l.state_name, l.pincode,
                    l.gstin, l.pan_plain_masked,
@@ -994,6 +1016,8 @@ public class LedgerService {
             rs.getBoolean("cost_centres_applicable"),
             rs.getString("tax_type"),
             rs.getString("duty_head"),
+            rs.getString("gst_applicability"),
+            rs.getString("gst_supply_type"),
             ExactMoneyValidator.formatPlainDecimal(gstRate),
             rs.getString("hsn_sac_code"),
             toWireAppropriateFor(rs.getString("appropriate_for")),
@@ -1170,9 +1194,34 @@ public class LedgerService {
             );
         }
 
-        String gstApplicability = (gstRatePct != null || "GST".equals(taxType) || req.hsnSacCode() != null)
-            ? "APPLICABLE"
-            : "NOT_APPLICABLE";
+        String gstApplicability;
+        if (req.gstApplicability() != null && !req.gstApplicability().isBlank()) {
+            gstApplicability = req.gstApplicability().trim().toUpperCase(Locale.ROOT);
+            if (!VALID_GST_APPLICABILITY.contains(gstApplicability)) {
+                throw new MoneyCraftException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "MC-ACC-GST-APP-INVALID",
+                    "Invalid GST Applicability",
+                    "gstApplicability must be APPLICABLE, NOT_APPLICABLE, or UNDEFINED."
+                );
+            }
+        } else {
+            gstApplicability = (gstRatePct != null || "GST".equals(taxType) || req.hsnSacCode() != null)
+                ? "APPLICABLE"
+                : "NOT_APPLICABLE";
+        }
+
+        String gstSupplyType = req.gstSupplyType() == null || req.gstSupplyType().isBlank()
+            ? "GOODS"
+            : req.gstSupplyType().trim().toUpperCase(Locale.ROOT);
+        if (!VALID_GST_SUPPLY_TYPES.contains(gstSupplyType)) {
+            throw new MoneyCraftException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "MC-ACC-GST-SUPPLY-INVALID",
+                "Invalid GST Supply Type",
+                "gstSupplyType must be GOODS, SERVICES, or CAPITAL_GOODS."
+            );
+        }
 
         String appropBasis = req.appropriationBasis() == null || req.appropriationBasis().isBlank()
             ? "BY_VALUE"
@@ -1267,6 +1316,7 @@ public class LedgerService {
             taxType,
             dutyHead,
             gstApplicability,
+            gstSupplyType,
             trimToNull(req.hsnSacCode()),
             gstRatePct,
             dbApprop,
@@ -1326,6 +1376,7 @@ public class LedgerService {
         String taxType,
         String dutyHead,
         String gstApplicability,
+        String gstSupplyType,
         String hsnSacCode,
         BigDecimal gstRatePct,
         String dbAppropriateFor,

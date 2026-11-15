@@ -102,6 +102,38 @@ export interface CreateOrUpdateCompanyPayload {
   readonly features: CompanyFeaturesConfig;
 }
 
+const SESSION_ACTIVE_COMPANY_KEY = 'mc.activeCompanyId';
+const SESSION_PERIOD_PREFIX = 'mc.period.';
+const SESSION_WORKDATE_PREFIX = 'mc.workDate.';
+
+function isBrowserStorageAvailable(): boolean {
+  if (typeof sessionStorage === 'undefined') {
+    return false;
+  }
+  if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) {
+    return false;
+  }
+  return true;
+}
+
+function readSessionValue(key: string): string | null {
+  try {
+    return isBrowserStorageAvailable() ? sessionStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionValue(key: string, value: string): void {
+  try {
+    if (isBrowserStorageAvailable()) {
+      sessionStorage.setItem(key, value);
+    }
+  } catch {
+    // Ignore storage quota or restricted context errors
+  }
+}
+
 @Injectable({ providedIn: 'root' })
 export class CompanyContextStore {
   private readonly http = inject(HttpClient);
@@ -110,11 +142,14 @@ export class CompanyContextStore {
 
   private readonly systemStatusSignal = signal<InstallationSecurityState>('ACTIVE');
   private readonly statusLoadedSignal = signal<boolean>(false);
+  private readonly companiesLoadedSignal = signal<boolean>(false);
   private readonly fenceEpochSignal = signal<number>(1);
   private readonly quarantineReasonSignal = signal<string | null>(null);
 
   private readonly openCompaniesSignal = signal<readonly CompanySummary[]>([]);
-  private readonly activeCompanyIdSignal = signal<string | null>(null);
+  private readonly activeCompanyIdSignal = signal<string | null>(
+    readSessionValue(SESSION_ACTIVE_COMPANY_KEY),
+  );
   private readonly periodsSignal = signal<readonly FiscalPeriodSummary[]>([]);
 
   private readonly periodFromSignal = signal<string>('2025-04-01');
@@ -124,6 +159,7 @@ export class CompanyContextStore {
 
   readonly systemStatus = this.systemStatusSignal.asReadonly();
   readonly statusLoaded = this.statusLoadedSignal.asReadonly();
+  readonly companiesLoaded = this.companiesLoadedSignal.asReadonly();
   readonly fenceEpoch = this.fenceEpochSignal.asReadonly();
   readonly quarantineReason = this.quarantineReasonSignal.asReadonly();
 
@@ -168,6 +204,10 @@ export class CompanyContextStore {
   setWorkingDate(isoDate: string): void {
     if (/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
       this.workingDateSignal.set(isoDate);
+      const activeId = this.activeCompany()?.id;
+      if (activeId) {
+        writeSessionValue(SESSION_WORKDATE_PREFIX + activeId, isoDate);
+      }
     }
   }
 
@@ -177,10 +217,15 @@ export class CompanyContextStore {
     }
     this.periodFromSignal.set(fromDate);
     this.periodToSignal.set(toDate);
+    const activeId = this.activeCompany()?.id;
+    if (activeId) {
+      writeSessionValue(SESSION_PERIOD_PREFIX + activeId, `${fromDate}..${toDate}`);
+    }
   }
 
   setCompanies(companies: readonly CompanySummary[], selectId?: string): void {
     this.openCompaniesSignal.set(companies);
+    this.companiesLoadedSignal.set(true);
     const chosenId = selectId ?? this.activeCompanyIdSignal() ?? companies[0]?.id ?? null;
     if (chosenId) {
       this.selectActiveCompany(chosenId, true);
@@ -206,12 +251,33 @@ export class CompanyContextStore {
     }
 
     this.activeCompanyIdSignal.set(found.id);
+    writeSessionValue(SESSION_ACTIVE_COMPANY_KEY, found.id);
     const fyStart = found.financialYearFrom || '2025-04-01';
     const startYear = Number.parseInt(fyStart.slice(0, 4), 10);
     const fyEnd = Number.isNaN(startYear) ? '2026-03-31' : `${startYear + 1}-03-31`;
-    this.periodFromSignal.set(fyStart);
-    this.periodToSignal.set(fyEnd);
-    this.workingDateSignal.set(found.lastEntryDate ?? fyStart);
+
+    const savedPeriod = readSessionValue(SESSION_PERIOD_PREFIX + found.id);
+    const savedParts = savedPeriod ? savedPeriod.split('..') : [];
+    if (
+      savedParts.length === 2 &&
+      /^\d{4}-\d{2}-\d{2}$/.test(savedParts[0]) &&
+      /^\d{4}-\d{2}-\d{2}$/.test(savedParts[1]) &&
+      savedParts[0] <= savedParts[1]
+    ) {
+      this.periodFromSignal.set(savedParts[0]);
+      this.periodToSignal.set(savedParts[1]);
+    } else {
+      this.periodFromSignal.set(fyStart);
+      this.periodToSignal.set(fyEnd);
+    }
+
+    const savedWorkDate = readSessionValue(SESSION_WORKDATE_PREFIX + found.id);
+    if (savedWorkDate && /^\d{4}-\d{2}-\d{2}$/.test(savedWorkDate)) {
+      this.workingDateSignal.set(savedWorkDate);
+    } else {
+      this.workingDateSignal.set(found.lastEntryDate ?? fyStart);
+    }
+
     if (forceDiscardDraft) {
       this.hasUnsavedDraftSignal.set(false);
     }
@@ -259,6 +325,8 @@ export class CompanyContextStore {
       return companies;
     } catch {
       return this.openCompaniesSignal();
+    } finally {
+      this.companiesLoadedSignal.set(true);
     }
   }
 

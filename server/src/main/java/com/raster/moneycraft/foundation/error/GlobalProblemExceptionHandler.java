@@ -20,6 +20,9 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalProblemExceptionHandler {
@@ -75,6 +78,22 @@ public class GlobalProblemExceptionHandler {
             "Request body could not be parsed as valid JSON.",
             request.getRequestURI(),
             Map.of()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).contentType(PROBLEM_JSON).body(pd);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ProblemDetail> handleTypeMismatch(
+        MethodArgumentTypeMismatchException ex,
+        HttpServletRequest request
+    ) {
+        ProblemDetail pd = buildProblem(
+            HttpStatus.BAD_REQUEST,
+            "MC-REQ-PARAM-INVALID",
+            "Invalid Request Parameter",
+            "Parameter '" + ex.getName() + "' has an invalid format.",
+            request.getRequestURI(),
+            Map.of(ex.getName(), "Invalid parameter value")
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).contentType(PROBLEM_JSON).body(pd);
     }
@@ -473,6 +492,31 @@ public class GlobalProblemExceptionHandler {
             Map.of()
         );
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).contentType(PROBLEM_JSON).body(pd);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ProblemDetail> handleNoResourceFound(
+        NoResourceFoundException ex,
+        HttpServletRequest request
+    ) {
+        ProblemDetail pd = buildProblem(
+            HttpStatus.NOT_FOUND,
+            "MC-NOT-FOUND",
+            "Resource Not Found",
+            "No API endpoint or resource matches '" + request.getRequestURI() + "'.",
+            request.getRequestURI(),
+            Map.of()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).contentType(PROBLEM_JSON).body(pd);
+    }
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public ResponseEntity<Void> handleAsyncClientDisconnect(
+        AsyncRequestNotUsableException ex,
+        HttpServletRequest request
+    ) {
+        LOG.debug("Async client stream disconnected on {}: {}", request.getRequestURI(), ex.getMessage());
+        return null;
     }
 
     @ExceptionHandler(Exception.class)

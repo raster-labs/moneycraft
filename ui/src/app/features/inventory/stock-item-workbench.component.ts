@@ -704,10 +704,12 @@ interface EditableBomCostRuleRow {
                 </button>
               }
               <button
-                type="submit"
+                id="si-accept"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 data-testid="stock-item-save-btn"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveStockItem()"
               >
                 Accept (<span class="mc-key-ctrl">A</span>)
               </button>

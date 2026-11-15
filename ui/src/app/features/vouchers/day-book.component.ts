@@ -1230,7 +1230,7 @@ export class DayBookComponent implements OnInit {
         ledgerId: this.filterLedgerId() ?? undefined,
         includeOptional: this.includeOptional(),
         includeCancelled: this.includeCancelled(),
-        limit: 250,
+        limit: 200,
       });
       this.rawVouchers.set(page.items);
       this.nextCursor.set(page.nextCursor);
@@ -1259,7 +1259,7 @@ export class DayBookComponent implements OnInit {
         ledgerId: this.filterLedgerId() ?? undefined,
         includeOptional: this.includeOptional(),
         includeCancelled: this.includeCancelled(),
-        limit: 250,
+        limit: 200,
         cursor,
       });
       this.rawVouchers.set([...this.rawVouchers(), ...page.items]);

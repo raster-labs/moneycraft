@@ -177,9 +177,10 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
             <div class="mc-cur-footer">
               <span>Enter = Next Field</span>
               <button
-                type="submit"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveCurrency()"
               >
                 Accept (<span class="mc-key-ctrl">A</span>)
               </button>
@@ -286,9 +287,10 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
             <div class="mc-cur-footer">
               <span>Exact 4-decimal BigInt rate valuation</span>
               <button
-                type="submit"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveForexRate()"
               >
                 Accept Rate (<span class="mc-key-ctrl">A</span>)
               </button>

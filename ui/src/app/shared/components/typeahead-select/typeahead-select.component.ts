@@ -404,9 +404,10 @@ export class TypeaheadSelectComponent {
       return;
     }
 
-    if (event.key === 'Enter') {
+    if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey) {
       if (event.shiftKey) {
         event.preventDefault();
+        event.stopPropagation();
         this.dropdownOpen.set(false);
         const inputEl = this.comboInputRef()?.nativeElement;
         if (inputEl && this.advanceFocusOnEnter()) {
@@ -418,6 +419,7 @@ export class TypeaheadSelectComponent {
       const trimmed = this.queryText().trim();
       if (trimmed.length === 0 && this.allowEmptyOnEnter()) {
         event.preventDefault();
+        event.stopPropagation();
         this.dropdownOpen.set(false);
         this.lastSyncedSelectedId = null;
         this.emptyConfirmed.emit();
@@ -441,6 +443,7 @@ export class TypeaheadSelectComponent {
       }
 
       event.preventDefault();
+      event.stopPropagation();
       const chosen = matches[this.highlightedIndex()] ?? matches[0];
       this.commitSelection(chosen);
       const inputEl = this.comboInputRef()?.nativeElement;

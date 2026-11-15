@@ -201,9 +201,10 @@ import {
         <div class="mc-vt-footer">
           <span class="mc-vt-hint">Enter = Next Field &bull; 24 TallyPrime 7.2 Voucher Categories</span>
           <button
-            type="submit"
+            type="button"
             class="mc-btn mc-btn-primary"
             [disabled]="saving() || companyContext.quarantined()"
+            (click)="saveVoucherType()"
           >
             Accept (<span class="mc-key-ctrl">A</span>)
           </button>

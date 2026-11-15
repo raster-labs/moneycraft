@@ -4753,6 +4753,10 @@ components:
           type: string
         dutyHead:
           type: [string, 'null']
+        gstApplicability:
+          type: string
+        gstSupplyType:
+          type: [string, 'null']
         gstRatePct:
           type: [string, 'null']
         hsnSacCode:
@@ -4832,6 +4836,10 @@ components:
         taxType:
           type: string
         dutyHead:
+          type: [string, 'null']
+        gstApplicability:
+          type: string
+        gstSupplyType:
           type: [string, 'null']
         gstRatePct:
           type: [string, 'null']

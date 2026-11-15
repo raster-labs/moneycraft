@@ -219,10 +219,11 @@ import { InventoryStore } from './inventory.store';
             <footer class="mc-inv-footer">
               <span class="mc-inv-hint">6-Tier GST Inheritance: Stock Group feeds child Stock Items</span>
               <button
-                type="submit"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 data-testid="stock-group-save-btn"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveActiveForm()"
               >
                 Accept (<span class="mc-key-ctrl">A</span>)
               </button>
@@ -272,9 +273,10 @@ import { InventoryStore } from './inventory.store';
             <footer class="mc-inv-footer">
               <span class="mc-inv-hint">Parallel Stock Category reporting dimension</span>
               <button
-                type="submit"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveActiveForm()"
               >
                 Accept (<span class="mc-key-ctrl">A</span>)
               </button>

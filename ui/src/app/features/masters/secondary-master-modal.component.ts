@@ -35,6 +35,7 @@ import {
   LedgerDutyHead,
   LedgerTaxType,
   PartyRegistrationType,
+  TDS_DEDUCTEE_TYPES,
   TDS_NATURE_SECTIONS,
   resolveGroupLineageFlags,
 } from './masters.models';
@@ -295,6 +296,36 @@ import { SecondaryMasterKind, SecondaryMasterModalService } from './secondary-ma
                     @if (ledgerGstin().trim().length > 0 && !secGstinCheck().valid) {
                       <div class="mc-field-error" role="alert">{{ secGstinCheck().error }}</div>
                     }
+                    <div class="mc-sec-grid-2">
+                      <div>
+                        <label class="mc-field-label" for="sec-led-pan">PAN / IT No.</label>
+                        <input
+                          id="sec-led-pan"
+                          type="text"
+                          maxlength="10"
+                          name="secLedgerPan"
+                          class="mc-input mc-code"
+                          mcGridCellNav
+                          [(ngModel)]="ledgerPan"
+                          placeholder="AABFA4321K"
+                        />
+                      </div>
+                      <div>
+                        <label class="mc-field-label" for="sec-led-deductee">TDS Deductee Type</label>
+                        <select
+                          id="sec-led-deductee"
+                          name="secLedgerDeductee"
+                          class="mc-select"
+                          mcGridCellNav
+                          [(ngModel)]="ledgerDeducteeType"
+                        >
+                          <option value="">Not Specified</option>
+                          @for (dt of deducteeTypes; track dt.code) {
+                            <option [value]="dt.code">{{ dt.label }}</option>
+                          }
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 }
 
@@ -810,9 +841,11 @@ import { SecondaryMasterKind, SecondaryMasterModalService } from './secondary-ma
                 Quit (Esc)
               </button>
               <button
-                type="submit"
+                id="sec-master-accept"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveActiveSecondaryMaster()"
               >
                 Accept (<span class="mc-key-ctrl">A</span>)
               </button>
@@ -949,6 +982,7 @@ export class SecondaryMasterModalComponent {
 
   readonly states = INDIAN_GST_STATES;
   readonly tdsSections = TDS_NATURE_SECTIONS;
+  readonly deducteeTypes = TDS_DEDUCTEE_TYPES;
   readonly uqcOptions = GST_UQC_OPTIONS;
   readonly costingMethods = STOCK_COSTING_METHOD_OPTIONS;
 
@@ -973,6 +1007,8 @@ export class SecondaryMasterModalComponent {
   readonly ledgerStateCode = signal<string>('33');
   ledgerRegType: PartyRegistrationType = 'REGULAR';
   readonly ledgerGstin = signal<string>('');
+  ledgerPan = '';
+  ledgerDeducteeType = '';
   readonly ledgerTaxType = signal<LedgerTaxType>('GST');
   ledgerDutyHead: LedgerDutyHead = 'CGST';
   ledgerTdsNatureCode = '194J';
@@ -1225,7 +1261,10 @@ export class SecondaryMasterModalComponent {
             pincode: null,
             mailingName: name,
             mailingAddress: null,
-            pan: flags.isPartyGroup && gstinClean.length === 15 ? gstinClean.slice(2, 12) : null,
+            pan: flags.isPartyGroup
+              ? this.ledgerPan.trim().toUpperCase() ||
+                (gstinClean.length === 15 ? gstinClean.slice(2, 12) : null)
+              : null,
             msmeRegistrationType: null,
             msmeUdyamNo: null,
             tdsApplicable: flags.isDutiesAndTaxes && this.ledgerTaxType() === 'TDS',
@@ -1234,7 +1273,7 @@ export class SecondaryMasterModalComponent {
               (this.ledgerTaxType() === 'TDS' || this.ledgerTaxType() === 'TCS')
                 ? this.ledgerTdsNatureCode
                 : null,
-            tdsDeducteeType: null,
+            tdsDeducteeType: flags.isPartyGroup ? this.ledgerDeducteeType || null : null,
             bankAccountHolder: null,
             bankAccountNumber: null,
             bankIfscCode: null,
@@ -1453,6 +1492,8 @@ export class SecondaryMasterModalComponent {
       this.ledgerStateCode.set(this.companyContext.activeCompany()?.stateCode ?? '33');
       this.ledgerRegType = 'REGULAR';
       this.ledgerGstin.set('');
+      this.ledgerPan = '';
+      this.ledgerDeducteeType = '';
       this.ledgerTaxType.set('GST');
       this.ledgerDutyHead = 'CGST';
       return;

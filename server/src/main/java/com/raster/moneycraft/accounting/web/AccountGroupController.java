@@ -47,7 +47,7 @@ public class AccountGroupController {
         return accountGroupService.getChartOfAccountsTree(principal, companyId);
     }
 
-    @GetMapping("/account-groups")
+    @GetMapping({"/account-groups", "/groups"})
     public CursorPage<AccountGroupDtos.AccountGroupResponse> listAccountGroups(
         @PathVariable("companyId") UUID companyId,
         @RequestParam(value = "cursor", required = false) String cursor,
@@ -58,7 +58,7 @@ public class AccountGroupController {
         return accountGroupService.listAccountGroups(principal, companyId, cursor, limit, q);
     }
 
-    @PostMapping("/account-groups")
+    @PostMapping({"/account-groups", "/groups"})
     public ResponseEntity<AccountGroupDtos.AccountGroupResponse> createAccountGroup(
         @PathVariable("companyId") UUID companyId,
         @RequestBody AccountGroupDtos.CreateOrUpdateAccountGroupRequest payload
@@ -72,7 +72,7 @@ public class AccountGroupController {
             .body(created);
     }
 
-    @GetMapping("/account-groups/{groupId}")
+    @GetMapping({"/account-groups/{groupId}", "/groups/{groupId}"})
     public ResponseEntity<AccountGroupDtos.AccountGroupResponse> getAccountGroup(
         @PathVariable("companyId") UUID companyId,
         @PathVariable("groupId") UUID groupId
@@ -85,7 +85,7 @@ public class AccountGroupController {
             .body(group);
     }
 
-    @PutMapping("/account-groups/{groupId}")
+    @PutMapping({"/account-groups/{groupId}", "/groups/{groupId}"})
     public ResponseEntity<AccountGroupDtos.AccountGroupResponse> updateAccountGroup(
         @PathVariable("companyId") UUID companyId,
         @PathVariable("groupId") UUID groupId,
@@ -100,7 +100,7 @@ public class AccountGroupController {
             .body(updated);
     }
 
-    @DeleteMapping("/account-groups/{groupId}")
+    @DeleteMapping({"/account-groups/{groupId}", "/groups/{groupId}"})
     public ResponseEntity<Void> deleteAccountGroup(
         @PathVariable("companyId") UUID companyId,
         @PathVariable("groupId") UUID groupId

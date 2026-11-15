@@ -15,4 +15,7 @@ public interface VoucherStatutoryBridge {
     void clearJournalStatutoryAllocations(UUID companyId, UUID journalId);
 
     void computeAndPersistJournalStatutory(UUID companyId, UUID journalId);
+
+    default void recomputeOpenPeriodStatutoryForLedger(UUID companyId, UUID ledgerId) {
+    }
 }

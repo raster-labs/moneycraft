@@ -216,10 +216,11 @@ interface EditablePriceTierRow {
               Enter = Next Cell &bull; Leave "Less Than" blank for open-ended upper slab &bull; Ctrl+A = Accept
             </span>
             <button
-              type="submit"
+              type="button"
               class="mc-btn mc-btn-primary"
               data-testid="pl-save-btn"
               [disabled]="saving() || companyContext.quarantined()"
+              (click)="savePriceList()"
             >
               Accept (<span class="mc-key-ctrl">A</span>)
             </button>

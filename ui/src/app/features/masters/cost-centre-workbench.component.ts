@@ -147,9 +147,10 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
                 }
               </div>
               <button
-                type="submit"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveCostCentre()"
               >
                 Accept (<span class="mc-key-ctrl">A</span>)
               </button>
@@ -224,9 +225,10 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
             <div class="mc-cc-footer">
               <span>At least one allocation scope must be enabled</span>
               <button
-                type="submit"
+                type="button"
                 class="mc-btn mc-btn-primary"
                 [disabled]="saving() || companyContext.quarantined()"
+                (click)="saveCostCategory()"
               >
                 Accept (<span class="mc-key-ctrl">A</span>)
               </button>

@@ -592,7 +592,12 @@ public class CompanyService {
                    c.bill_wise_enabled, c.cost_centres_enabled, c.maintain_inventory,
                    c.inventory_integrated, c.gst_enabled, c.multi_gstin_enabled,
                    c.tds_enabled, c.mca_edit_log_enforced, c.version_no,
-                   g.registration_type, g.gstin, g.periodicity, g.effective_from
+                   g.registration_type, g.gstin, g.periodicity, g.effective_from,
+                   (SELECT MAX(j.voucher_date)
+                      FROM mc_journal j
+                     WHERE j.company_id = c.id
+                       AND j.status = 'POSTED'
+                       AND j.posting_nature = 'NORMAL') AS last_voucher_date
               FROM mc_company c
               LEFT JOIN mc_gst_registration g
                 ON g.company_id = c.id AND g.is_default = true AND g.active = true
@@ -638,7 +643,7 @@ public class CompanyService {
             rs.getShort("currency_scale"),
             fyStart,
             rs.getObject("books_beginning_from", LocalDate.class),
-            null,
+            rs.getObject("last_voucher_date", LocalDate.class),
             rs.getLong("version_no"),
             features
         );

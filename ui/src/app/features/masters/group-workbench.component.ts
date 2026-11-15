@@ -264,9 +264,10 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
           <div class="mc-footer-right">
             <span class="mc-footer-hint">Enter = Next &bull; Shift+Enter = Prev</span>
             <button
-              type="submit"
+              type="button"
               class="mc-btn mc-btn-primary"
               [disabled]="saving() || companyContext.quarantined()"
+              (click)="saveGroup()"
             >
               Accept (<span class="mc-key-ctrl">A</span>)
             </button>

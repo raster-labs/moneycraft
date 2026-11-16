@@ -1,10 +1,10 @@
 # ==============================================================================
-# MoneyCraft 1.0.0 — Local Developer Compose Overlay (`docker-compose.dev.yml`)
-# Binds strictly to `127.0.0.1` on non-conflicting local ports:
-#   - Gateway HTTP:  `127.0.0.1:18080 -> 8080`
-#   - Gateway HTTPS: `127.0.0.1:18443 -> 8443`
-#   - Business PG18: `127.0.0.1:55480 -> 5432`
-#   - Authority PG18:`127.0.0.1:55481 -> 5432`
+# MoneyCraft 1.0.0 — Local Developer & LAN Compose Overlay (`docker-compose.dev.yml`)
+# Defaults to `127.0.0.1`; set `MC_GATEWAY_BIND_ADDR=0.0.0.0` in `.env.dev` for LAN access:
+#   - Gateway HTTP:  `${MC_GATEWAY_BIND_ADDR:-127.0.0.1}:18080 -> 8080`
+#   - Gateway HTTPS: `${MC_GATEWAY_BIND_ADDR:-127.0.0.1}:18443 -> 8443`
+#   - Business PG18: `127.0.0.1:55480 -> 5432` (always loopback-only)
+#   - Authority PG18:`127.0.0.1:55481 -> 5432` (always loopback-only)
 # ==============================================================================
 
 services:
@@ -19,11 +19,13 @@ services:
   moneycraft-api:
     environment:
       SPRING_PROFILES_ACTIVE: dev
-      MC_BASE_URL: https://localhost:${MC_GATEWAY_HTTPS_PORT:-18443}
+      MC_BASE_URL: ${MC_BASE_URL:-https://localhost:${MC_GATEWAY_HTTPS_PORT:-18443}}
       MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_0: https://localhost:${MC_GATEWAY_HTTPS_PORT:-18443}
       MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_1: https://127.0.0.1:${MC_GATEWAY_HTTPS_PORT:-18443}
       MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_2: http://localhost:${MC_GATEWAY_HTTP_PORT:-18080}
       MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_3: http://127.0.0.1:${MC_GATEWAY_HTTP_PORT:-18080}
+      MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_4: https://${MC_PUBLIC_HOSTNAME:-localhost}:${MC_GATEWAY_HTTPS_PORT:-18443}
+      MONEYCRAFT_WEBAUTHN_ALLOWEDORIGINS_5: http://${MC_PUBLIC_HOSTNAME:-localhost}:${MC_GATEWAY_HTTP_PORT:-18080}
       JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:InitialRAMPercentage=25.0 -XX:MaxRAMPercentage=65.0 -XX:+UseZGC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -Djava.awt.headless=true"
 
   moneycraft-migrator:
@@ -37,8 +39,8 @@ services:
 
   moneycraft-gateway:
     ports:
-      - "127.0.0.1:${MC_GATEWAY_HTTP_PORT:-18080}:8080"
-      - "127.0.0.1:${MC_GATEWAY_HTTPS_PORT:-18443}:8443"
+      - "${MC_GATEWAY_BIND_ADDR:-127.0.0.1}:${MC_GATEWAY_HTTP_PORT:-18080}:8080"
+      - "${MC_GATEWAY_BIND_ADDR:-127.0.0.1}:${MC_GATEWAY_HTTPS_PORT:-18443}:8443"
     environment:
       MC_HTTPS_REDIRECT_PORT: ${MC_GATEWAY_HTTPS_PORT:-18443}
       MC_ALLOW_SELF_SIGNED_TLS: "true"

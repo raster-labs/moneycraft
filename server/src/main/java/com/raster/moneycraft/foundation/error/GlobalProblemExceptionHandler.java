@@ -43,7 +43,15 @@ public class GlobalProblemExceptionHandler {
             request.getRequestURI(),
             ex.fieldErrors()
         );
-        return ResponseEntity.status(ex.status()).contentType(PROBLEM_JSON).body(pd);
+        for (Map.Entry<String, Object> extra : ex.extraProperties().entrySet()) {
+            pd.setProperty(extra.getKey(), extra.getValue());
+        }
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(ex.status()).contentType(PROBLEM_JSON);
+        if (ex.responseEtag() != null && !ex.responseEtag().isBlank()) {
+            builder.header("ETag", ex.responseEtag());
+            builder.header("Cache-Control", "no-store");
+        }
+        return builder.body(pd);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

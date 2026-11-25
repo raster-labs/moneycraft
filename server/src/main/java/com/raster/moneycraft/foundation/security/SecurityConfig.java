@@ -43,7 +43,9 @@ public class SecurityConfig {
         "/api/v1/auth/login",
         "/api/v1/auth/passkeys/authenticate/options",
         "/api/v1/auth/passkeys/authenticate/verify",
-        "/api/v1/auth/oidc/callback"
+        "/api/v1/auth/oidc/callback",
+        "/api/v1/auth/native/token",
+        "/api/v1/auth/native/revoke"
     );
 
     @Bean
@@ -66,6 +68,7 @@ public class SecurityConfig {
         @Qualifier("authorityJdbcTemplate") JdbcTemplate authorityJdbcTemplate,
         RbacAuthorizationService rbacAuthorizationService,
         AuthorityGuard authorityGuard,
+        OidcClockSource oidcClockSource,
         IdempotencyService idempotencyService,
         JcsCanonicalizer jcsCanonicalizer,
         ObjectMapper objectMapper
@@ -74,13 +77,26 @@ public class SecurityConfig {
         requestHandler.setCsrfRequestAttributeName(null);
 
         CspNonceFilter cspNonceFilter = new CspNonceFilter();
+        MixedCredentialsGuardFilter mixedCredentialsGuardFilter = new MixedCredentialsGuardFilter(objectMapper);
         ServiceApiKeyAuthFilter serviceApiKeyAuthFilter = new ServiceApiKeyAuthFilter(
             authorityJdbcTemplate,
             rbacAuthorizationService,
             jcsCanonicalizer,
             objectMapper
         );
+        NativeBearerTokenAuthFilter nativeBearerTokenAuthFilter = new NativeBearerTokenAuthFilter(
+            authorityJdbcTemplate,
+            rbacAuthorizationService,
+            oidcClockSource,
+            jcsCanonicalizer,
+            objectMapper
+        );
         QuarantineEnforcementFilter quarantineFilter = new QuarantineEnforcementFilter(authorityGuard, objectMapper);
+        OidcSessionFreshnessFilter oidcFreshnessFilter = new OidcSessionFreshnessFilter(
+            authorityJdbcTemplate,
+            oidcClockSource,
+            objectMapper
+        );
         CompanyTenantFilter companyTenantFilter = new CompanyTenantFilter(rbacAuthorizationService, objectMapper);
         IdempotencyFilter idempotencyFilter = new IdempotencyFilter(idempotencyService, objectMapper);
 
@@ -104,8 +120,14 @@ public class SecurityConfig {
                     "/api/v1/auth/logout",
                     "/api/v1/auth/passkeys/authenticate/options",
                     "/api/v1/auth/passkeys/authenticate/verify",
+                    "/api/v1/auth/oidc/issuers",
                     "/api/v1/auth/oidc/*/authorize",
-                    "/api/v1/auth/oidc/callback"
+                    "/api/v1/auth/oidc/callback",
+                    "/api/v1/auth/native/.well-known/openid-configuration",
+                    "/api/v1/auth/native/jwks.json",
+                    "/api/v1/auth/native/authorize",
+                    "/api/v1/auth/native/token",
+                    "/api/v1/auth/native/revoke"
                 ).permitAll()
                 .requestMatchers("/api/v1/**").authenticated()
                 .anyRequest().denyAll()
@@ -118,7 +140,7 @@ public class SecurityConfig {
                     HttpStatus.UNAUTHORIZED,
                     "MC-AUTH-REQUIRED",
                     "Authentication Required",
-                    "Sign in via session cookie, WebAuthn passkey, OIDC PKCE, or scoped service API key."
+                    "Sign in via session cookie, WebAuthn passkey, OIDC PKCE, native OAuth Bearer, or service API key."
                 ))
                 .accessDeniedHandler((request, response, accessDeniedException) -> {
                     boolean csrfFailure = accessDeniedException instanceof org.springframework.security.web.csrf.CsrfException;
@@ -139,10 +161,13 @@ public class SecurityConfig {
             .formLogin(form -> form.disable())
             .logout(logout -> logout.disable())
             .addFilterBefore(cspNonceFilter, CsrfFilter.class)
+            .addFilterBefore(mixedCredentialsGuardFilter, CsrfFilter.class)
             .addFilterAfter(new EagerCsrfCookieFilter(), CsrfFilter.class)
             .addFilterBefore(serviceApiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterAfter(nativeBearerTokenAuthFilter, ServiceApiKeyAuthFilter.class)
             .addFilterAfter(quarantineFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterAfter(companyTenantFilter, QuarantineEnforcementFilter.class)
+            .addFilterAfter(oidcFreshnessFilter, QuarantineEnforcementFilter.class)
+            .addFilterAfter(companyTenantFilter, OidcSessionFreshnessFilter.class)
             .addFilterAfter(idempotencyFilter, CompanyTenantFilter.class);
 
         return http.build();
@@ -152,7 +177,11 @@ public class SecurityConfig {
         if (SAFE_METHODS.contains(request.getMethod().toUpperCase())) {
             return false;
         }
-        if (ServiceApiKeyAuthFilter.extractServiceKeyToken(request) != null) {
+        if (!NativeBearerTokenAuthFilter.hasMixedCredentials(request)
+            && ServiceApiKeyAuthFilter.extractServiceKeyToken(request) != null) {
+            return false;
+        }
+        if (NativeBearerTokenAuthFilter.hasPureNativeBearer(request)) {
             return false;
         }
         String path = stripContextPath(request);
@@ -192,6 +221,36 @@ public class SecurityConfig {
         objectMapper.writeValue(response.getOutputStream(), problem);
     }
 
+    private static final class MixedCredentialsGuardFilter extends OncePerRequestFilter {
+
+        private final ObjectMapper objectMapper;
+
+        MixedCredentialsGuardFilter(ObjectMapper objectMapper) {
+            this.objectMapper = objectMapper;
+        }
+
+        @Override
+        protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+        ) throws ServletException, IOException {
+            if (NativeBearerTokenAuthFilter.hasMixedCredentials(request)) {
+                writeProblem(
+                    request,
+                    response,
+                    objectMapper,
+                    HttpStatus.BAD_REQUEST,
+                    "MC-MIXED-CREDENTIALS",
+                    "Mixed Authentication Credentials Forbidden",
+                    "Combining Authorization Bearer token, browser session cookie, or X-API-Key on a single request is prohibited."
+                );
+                return;
+            }
+            filterChain.doFilter(request, response);
+        }
+    }
+
     private static final class EagerCsrfCookieFilter extends OncePerRequestFilter {
         @Override
         protected void doFilterInternal(
@@ -199,9 +258,12 @@ public class SecurityConfig {
             HttpServletResponse response,
             FilterChain filterChain
         ) throws ServletException, IOException {
-            CsrfToken csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
-            if (csrfToken != null) {
-                csrfToken.getToken();
+            if (!NativeBearerTokenAuthFilter.hasPureNativeBearer(request)
+                && ServiceApiKeyAuthFilter.extractServiceKeyToken(request) == null) {
+                CsrfToken csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+                if (csrfToken != null) {
+                    csrfToken.getToken();
+                }
             }
             filterChain.doFilter(request, response);
         }

@@ -5,6 +5,7 @@ import {
   HostListener,
   OnInit,
   computed,
+  effect,
   inject,
   input,
   signal,
@@ -12,9 +13,15 @@ import {
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { isEditableTextElement } from '../../core/keyboard/collision-guard';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
+import { ReportOutputModalComponent } from '../../shared/components/report-output-modal/report-output-modal.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { CompanyContextStore } from '../../state/company-context.store';
 import { NavigationStackStore } from '../../state/navigation-stack.store';
 import {
@@ -27,7 +34,13 @@ import { ReportsService } from './reports.service';
 @Component({
   selector: 'mc-balance-sheet',
   standalone: true,
-  imports: [FormsModule, RouterLink, IndianCurrencyPipe],
+  imports: [
+    FormsModule,
+    RouterLink,
+    IndianCurrencyPipe,
+    SemanticIconComponent,
+    ReportOutputModalComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="bs-page">
@@ -71,8 +84,42 @@ import { ReportsService } from './reports.service';
           <button type="button" class="mc-btn" (click)="toggleOptional()">
             Ctrl+B: {{ includeOptional() ? 'Postings Only' : 'Incl. Optional' }}
           </button>
-          <button type="button" class="mc-btn" (click)="openDateModal()">
-            F2: As-of Date
+          <select
+            class="mc-input"
+            aria-label="Scale Factor"
+            data-testid="bs-scale-factor-select"
+            [ngModel]="scaleFactor()"
+            (ngModelChange)="setScaleFactor($event)"
+          >
+            <option value="DEFAULT">Scale: Default</option>
+            <option value="HUNDREDS">In Hundreds</option>
+            <option value="THOUSANDS">In Thousands</option>
+            <option value="LAKHS">In Lakhs</option>
+            <option value="MILLIONS">In Millions</option>
+            <option value="CRORES">In Crores</option>
+          </select>
+          <button type="button" class="mc-btn mc-btn-secondary" (click)="openDateModal()">
+            <mc-icon name="calendar" [size]="16" />
+            <span>F2: As-of Date</span>
+          </button>
+          @if (removedKeys().length > 0) {
+            <button
+              type="button"
+              class="mc-btn mc-btn-secondary"
+              data-testid="bs-restore-line-btn"
+              (click)="restoreLastRemovedLine()"
+            >
+              Restore Hidden ({{ removedKeys().length }}) &bull; Alt+U
+            </button>
+          }
+          <button
+            type="button"
+            class="mc-btn mc-btn-secondary"
+            data-testid="bs-output-btn"
+            (click)="outputModalOpen.set(true)"
+          >
+            <mc-icon name="export" [size]="16" />
+            <span>Output</span>
           </button>
           <button
             type="button"
@@ -80,7 +127,8 @@ import { ReportsService } from './reports.service';
             data-testid="bs-print-pdf-btn"
             (click)="exportPdf()"
           >
-            Print PDF (Ctrl+P)
+            <mc-icon name="print" [size]="16" />
+            <span>Print PDF (Ctrl+P)</span>
           </button>
         </div>
       </header>
@@ -107,7 +155,7 @@ import { ReportsService } from './reports.service';
                   </div>
                 </div>
                 <ul class="bs-list">
-                  @for (line of r.liabilityLines; track line.id + '-' + line.name) {
+                  @for (line of visibleLiabilityLines(); track line.id + '-' + line.name) {
                     <li
                       class="bs-row"
                       [class.bs-row-active]="selectedKey() === 'L:' + line.id"
@@ -119,18 +167,23 @@ import { ReportsService } from './reports.service';
                         <div class="amt-pair">
                           @if (autoColumnar()) {
                             <span class="mc-amount muted-amt">
-                              {{ (line.comparativeAmount ?? '0.00') | mcIndianCurrency }}
+                              {{ scaleAmount(line.comparativeAmount ?? '0.00') | mcIndianCurrency }}
                             </span>
                           }
-                          <span class="mc-amount">{{ line.amount | mcIndianCurrency }}</span>
+                          <span class="mc-amount">{{ scaleAmount(line.amount) | mcIndianCurrency }}</span>
                         </div>
                       </div>
                       @if (detailedMode() && line.children.length > 0) {
                         <ul class="bs-sublist">
                           @for (sub of line.children; track sub.id + '-' + sub.name) {
-                            <li class="bs-subrow" (dblclick)="drillLine(sub)">
+                            <li
+                              class="bs-subrow"
+                              [class.bs-subrow-active]="selectedKey() === 'L:' + line.id + ':' + sub.id"
+                              (click)="selectedKey.set('L:' + line.id + ':' + sub.id); $event.stopPropagation()"
+                              (dblclick)="drillLine(sub); $event.stopPropagation()"
+                            >
                               <span>{{ sub.name }}</span>
-                              <span class="mc-amount">{{ sub.amount | mcIndianCurrency }}</span>
+                              <span class="mc-amount">{{ scaleAmount(sub.amount) | mcIndianCurrency }}</span>
                             </li>
                           }
                         </ul>
@@ -141,7 +194,7 @@ import { ReportsService } from './reports.service';
                 <div class="bs-col-total">
                   <strong>Total Liabilities</strong>
                   <strong class="mc-amount" data-testid="bs-total-liabilities">
-                    {{ r.totalLiabilities | mcIndianCurrency }}
+                    {{ scaleAmount(r.totalLiabilities) | mcIndianCurrency }}
                   </strong>
                 </div>
               </div>
@@ -158,7 +211,7 @@ import { ReportsService } from './reports.service';
                   </div>
                 </div>
                 <ul class="bs-list">
-                  @for (line of r.assetLines; track line.id + '-' + line.name) {
+                  @for (line of visibleAssetLines(); track line.id + '-' + line.name) {
                     <li
                       class="bs-row"
                       [class.bs-row-active]="selectedKey() === 'A:' + line.id"
@@ -170,18 +223,23 @@ import { ReportsService } from './reports.service';
                         <div class="amt-pair">
                           @if (autoColumnar()) {
                             <span class="mc-amount muted-amt">
-                              {{ (line.comparativeAmount ?? '0.00') | mcIndianCurrency }}
+                              {{ scaleAmount(line.comparativeAmount ?? '0.00') | mcIndianCurrency }}
                             </span>
                           }
-                          <span class="mc-amount">{{ line.amount | mcIndianCurrency }}</span>
+                          <span class="mc-amount">{{ scaleAmount(line.amount) | mcIndianCurrency }}</span>
                         </div>
                       </div>
                       @if (detailedMode() && line.children.length > 0) {
                         <ul class="bs-sublist">
                           @for (sub of line.children; track sub.id + '-' + sub.name) {
-                            <li class="bs-subrow" (dblclick)="drillLine(sub)">
+                            <li
+                              class="bs-subrow"
+                              [class.bs-subrow-active]="selectedKey() === 'A:' + line.id + ':' + sub.id"
+                              (click)="selectedKey.set('A:' + line.id + ':' + sub.id); $event.stopPropagation()"
+                              (dblclick)="drillLine(sub); $event.stopPropagation()"
+                            >
                               <span>{{ sub.name }}</span>
-                              <span class="mc-amount">{{ sub.amount | mcIndianCurrency }}</span>
+                              <span class="mc-amount">{{ scaleAmount(sub.amount) | mcIndianCurrency }}</span>
                             </li>
                           }
                         </ul>
@@ -192,7 +250,7 @@ import { ReportsService } from './reports.service';
                 <div class="bs-col-total">
                   <strong>Total Assets</strong>
                   <strong class="mc-amount" data-testid="bs-total-assets">
-                    {{ r.totalAssets | mcIndianCurrency }}
+                    {{ scaleAmount(r.totalAssets) | mcIndianCurrency }}
                   </strong>
                 </div>
               </div>
@@ -203,7 +261,7 @@ import { ReportsService } from './reports.service';
           <section class="mc-card bs-card" data-testid="bs-vertical-view">
             <div class="vertical-section-title">I. Sources of Funds (Equity &amp; Liabilities)</div>
             <ul class="bs-list">
-              @for (line of r.liabilityLines; track line.id + '-' + line.name) {
+              @for (line of visibleLiabilityLines(); track line.id + '-' + line.name) {
                 <li
                   class="bs-row"
                   [class.bs-row-active]="selectedKey() === 'L:' + line.id"
@@ -212,14 +270,19 @@ import { ReportsService } from './reports.service';
                 >
                   <div class="bs-row-main">
                     <strong>{{ line.name }}</strong>
-                    <span class="mc-amount">{{ line.amount | mcIndianCurrency }}</span>
+                    <span class="mc-amount">{{ scaleAmount(line.amount) | mcIndianCurrency }}</span>
                   </div>
                   @if (detailedMode() && line.children.length > 0) {
                     <ul class="bs-sublist">
                       @for (sub of line.children; track sub.id + '-' + sub.name) {
-                        <li class="bs-subrow" (dblclick)="drillLine(sub)">
+                        <li
+                          class="bs-subrow"
+                          [class.bs-subrow-active]="selectedKey() === 'L:' + line.id + ':' + sub.id"
+                          (click)="selectedKey.set('L:' + line.id + ':' + sub.id); $event.stopPropagation()"
+                          (dblclick)="drillLine(sub); $event.stopPropagation()"
+                        >
                           <span>{{ sub.name }}</span>
-                          <span class="mc-amount">{{ sub.amount | mcIndianCurrency }}</span>
+                          <span class="mc-amount">{{ scaleAmount(sub.amount) | mcIndianCurrency }}</span>
                         </li>
                       }
                     </ul>
@@ -230,13 +293,13 @@ import { ReportsService } from './reports.service';
             <div class="bs-col-total">
               <strong>Total Sources of Funds</strong>
               <strong class="mc-amount" data-testid="bs-total-liabilities">
-                {{ r.totalLiabilities | mcIndianCurrency }}
+                {{ scaleAmount(r.totalLiabilities) | mcIndianCurrency }}
               </strong>
             </div>
 
             <div class="vertical-section-title">II. Application of Funds (Assets)</div>
             <ul class="bs-list">
-              @for (line of r.assetLines; track line.id + '-' + line.name) {
+              @for (line of visibleAssetLines(); track line.id + '-' + line.name) {
                 <li
                   class="bs-row"
                   [class.bs-row-active]="selectedKey() === 'A:' + line.id"
@@ -245,14 +308,19 @@ import { ReportsService } from './reports.service';
                 >
                   <div class="bs-row-main">
                     <strong>{{ line.name }}</strong>
-                    <span class="mc-amount">{{ line.amount | mcIndianCurrency }}</span>
+                    <span class="mc-amount">{{ scaleAmount(line.amount) | mcIndianCurrency }}</span>
                   </div>
                   @if (detailedMode() && line.children.length > 0) {
                     <ul class="bs-sublist">
                       @for (sub of line.children; track sub.id + '-' + sub.name) {
-                        <li class="bs-subrow" (dblclick)="drillLine(sub)">
+                        <li
+                          class="bs-subrow"
+                          [class.bs-subrow-active]="selectedKey() === 'A:' + line.id + ':' + sub.id"
+                          (click)="selectedKey.set('A:' + line.id + ':' + sub.id); $event.stopPropagation()"
+                          (dblclick)="drillLine(sub); $event.stopPropagation()"
+                        >
                           <span>{{ sub.name }}</span>
-                          <span class="mc-amount">{{ sub.amount | mcIndianCurrency }}</span>
+                          <span class="mc-amount">{{ scaleAmount(sub.amount) | mcIndianCurrency }}</span>
                         </li>
                       }
                     </ul>
@@ -263,7 +331,7 @@ import { ReportsService } from './reports.service';
             <div class="bs-col-total">
               <strong>Total Application of Funds</strong>
               <strong class="mc-amount" data-testid="bs-total-assets">
-                {{ r.totalAssets | mcIndianCurrency }}
+                {{ scaleAmount(r.totalAssets) | mcIndianCurrency }}
               </strong>
             </div>
           </section>
@@ -311,11 +379,37 @@ import { ReportsService } from './reports.service';
               </label>
             </div>
             <div class="mc-modal-footer">
-              <button type="submit" class="mc-btn mc-btn-primary">Apply (Enter)</button>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="dateModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+                @if (dateDialogHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
+              <button type="submit" class="mc-btn mc-btn-primary">
+                <mc-icon name="calendar" [size]="16" />
+                <span>Apply</span>
+                @if (dateDialogHint('context.applyDate', 'A/a'); as aHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ aHint }}]</span>
+                }
+              </button>
             </div>
           </form>
         </div>
       }
+
+      <mc-report-output-modal
+        [open]="outputModalOpen()"
+        reportTitle="Balance Sheet"
+        [boundsLabel]="'As at ' + asOfDate()"
+        (printRequested)="exportPdf()"
+        (exportRequested)="exportPdf()"
+        (closed)="outputModalOpen.set(false)"
+      />
     </div>
   `,
   styles: `
@@ -462,12 +556,19 @@ import { ReportsService } from './reports.service';
     }
 
     .bs-subrow {
-      padding: 0.22rem 0;
+      padding: 0.22rem 0.35rem;
       display: flex;
       justify-content: space-between;
       font-size: 0.78rem;
       color: #475569;
       font-weight: 500;
+      border-radius: 3px;
+    }
+
+    .bs-subrow-active {
+      background: #006d68;
+      color: #ffffff;
+      font-weight: 600;
     }
 
     .bs-col-total {
@@ -543,23 +644,103 @@ export class BalanceSheetComponent implements OnInit {
   readonly includeOptional = signal<boolean>(false);
   readonly detailedMode = signal<boolean>(false);
   readonly autoColumnar = signal<boolean>(false);
+  readonly scaleFactor = signal<
+    'DEFAULT' | 'HUNDREDS' | 'THOUSANDS' | 'LAKHS' | 'MILLIONS' | 'CRORES'
+  >('DEFAULT');
 
   readonly loading = signal<boolean>(false);
   readonly report = signal<BalanceSheetReportDto | null>(null);
   readonly selectedKey = signal<string>('');
   readonly statusMessage = signal<string | null>(null);
   readonly dateModalOpen = signal<boolean>(false);
+  readonly outputModalOpen = signal<boolean>(false);
+  readonly removedKeys = signal<readonly string[]>([]);
 
   draftAsOf = '';
+  private dateModalHandle: ActiveModalContextHandle | null = null;
+
+  dateDialogHint(commandId: string, pairSpec: 'A/a' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'context.dateDialog',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
+
+  constructor() {
+    effect(() => {
+      const open = this.dateModalOpen();
+      if (this.dateModalHandle) {
+        this.dateModalHandle.close();
+        this.dateModalHandle = null;
+      }
+      if (open) {
+        this.dateModalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'context.dateDialog',
+              locale: 'en-GB',
+              commandId: 'context.applyDate',
+              label: 'Apply',
+              letterPair: asciiPair('A/a'),
+              permissionRef: 'report.read',
+              effect: 'Apply Balance Sheet As-of Date.',
+              normalActivation: () => this.applyDate(),
+              iconSemanticId: 'mc.icon.calendar',
+              stateTokenRole: 'action.primary',
+            },
+            {
+              contextId: 'context.dateDialog',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Close',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close Balance Sheet As-of Date dialog.',
+              normalActivation: () => this.dateModalOpen.set(false),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
+      }
+    });
+  }
+
+  readonly visibleLiabilityLines = computed<readonly FinancialStatementLineDto[]>(() => {
+    const r = this.report();
+    if (!r) return [];
+    return r.liabilityLines.filter((l) => !this.removedKeys().includes('L:' + l.id));
+  });
+
+  readonly visibleAssetLines = computed<readonly FinancialStatementLineDto[]>(() => {
+    const r = this.report();
+    if (!r) return [];
+    return r.assetLines.filter((l) => !this.removedKeys().includes('A:' + l.id));
+  });
 
   readonly navigableLines = computed<readonly { readonly key: string; readonly line: FinancialStatementLineDto }[]>(
     () => {
-      const r = this.report();
-      if (!r) return [];
-      return [
-        ...r.liabilityLines.map((line) => ({ key: 'L:' + line.id, line })),
-        ...r.assetLines.map((line) => ({ key: 'A:' + line.id, line })),
-      ];
+      const detailed = this.detailedMode();
+      const out: { readonly key: string; readonly line: FinancialStatementLineDto }[] = [];
+      for (const line of this.visibleLiabilityLines()) {
+        out.push({ key: 'L:' + line.id, line });
+        if (detailed && line.children?.length) {
+          for (const sub of line.children) {
+            out.push({ key: 'L:' + line.id + ':' + sub.id, line: sub });
+          }
+        }
+      }
+      for (const line of this.visibleAssetLines()) {
+        out.push({ key: 'A:' + line.id, line });
+        if (detailed && line.children?.length) {
+          for (const sub of line.children) {
+            out.push({ key: 'A:' + line.id + ':' + sub.id, line: sub });
+          }
+        }
+      }
+      return out;
     },
   );
 
@@ -583,11 +764,63 @@ export class BalanceSheetComponent implements OnInit {
       this.shortcutRegistry.bindHandler('menu.print', 'SCREEN', () => {
         void this.exportPdf();
       }),
+      this.shortcutRegistry.bindHandler('register.removeLine', 'SCREEN', () => {
+        this.removeSelectedLine();
+      }),
+      this.shortcutRegistry.bindHandler('register.restoreLine', 'SCREEN', () => {
+        this.restoreLastRemovedLine();
+      }),
+      this.shortcutRegistry.bindHandler('register.restoreAllLines', 'SCREEN', () => {
+        this.removedKeys.set([]);
+      }),
+      this.shortcutRegistry.bindHandler('report.explodeRow', 'SCREEN', () => {
+        this.detailedMode.set(!this.detailedMode());
+      }),
+      this.shortcutRegistry.bindHandler('report.addColumn', 'SCREEN', () => {
+        this.autoColumnar.set(!this.autoColumnar());
+      }),
+      this.shortcutRegistry.bindHandler(
+        'nav.escape',
+        'MODAL',
+        () => {
+          if (this.outputModalOpen()) {
+            this.outputModalOpen.set(false);
+            return true;
+          }
+          if (this.dateModalOpen()) {
+            this.dateModalOpen.set(false);
+            return true;
+          }
+          return false;
+        },
+        () => this.dateModalOpen() || this.outputModalOpen(),
+      ),
     ];
     this.destroyRef.onDestroy(() => {
       for (const d of disposers) d();
+      if (this.dateModalHandle) {
+        this.dateModalHandle.close();
+        this.dateModalHandle = null;
+      }
     });
     void this.reload();
+  }
+
+  removeSelectedLine(): void {
+    const items = this.navigableLines();
+    if (items.length === 0) return;
+    const currentKey = this.selectedKey() || items[0].key;
+    if (!this.removedKeys().includes(currentKey)) {
+      this.removedKeys.set([...this.removedKeys(), currentKey]);
+      const next = this.navigableLines()[0];
+      this.selectedKey.set(next ? next.key : '');
+    }
+  }
+
+  restoreLastRemovedLine(): void {
+    const stack = this.removedKeys();
+    if (stack.length === 0) return;
+    this.removedKeys.set(stack.slice(0, -1));
   }
 
   async reload(): Promise<void> {
@@ -619,6 +852,31 @@ export class BalanceSheetComponent implements OnInit {
   toggleOptional(): void {
     this.includeOptional.set(!this.includeOptional());
     void this.reload();
+  }
+
+  setScaleFactor(
+    factor: 'DEFAULT' | 'HUNDREDS' | 'THOUSANDS' | 'LAKHS' | 'MILLIONS' | 'CRORES',
+  ): void {
+    this.scaleFactor.set(factor);
+  }
+
+  scaleAmount(wire: string): string {
+    const factor = this.scaleFactor();
+    if (factor === 'DEFAULT') return wire;
+    const scale = this.companyContext.currencyScale();
+    const dec = ExactDecimal.tryParse(wire, scale, 'HALF_UP');
+    if (!dec) return wire;
+    const divisorInt =
+      factor === 'HUNDREDS'
+        ? 100
+        : factor === 'THOUSANDS'
+          ? 1000
+          : factor === 'LAKHS'
+            ? 100000
+            : factor === 'MILLIONS'
+              ? 1000000
+              : 10000000;
+    return dec.divHalfUp(ExactDecimal.fromInt(divisorInt, 0), scale).toWireString(scale);
   }
 
   openDateModal(): void {

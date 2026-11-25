@@ -161,6 +161,15 @@ import { StatutoryService } from './statutory.service';
           >
             Reject (Alt+R)
           </button>
+          <button
+            type="button"
+            class="mc-btn"
+            data-testid="ims-reset-btn"
+            [disabled]="!activeTargetInvoice()"
+            (click)="quickReset()"
+          >
+            Reset (NO_ACTION)
+          </button>
         </div>
       </section>
 
@@ -282,6 +291,7 @@ import { StatutoryService } from './statutory.service';
                     <option value="ACCEPT">ACCEPT</option>
                     <option value="REJECT">REJECT</option>
                     <option value="PENDING">PENDING</option>
+                    <option value="NO_ACTION">NO_ACTION (Reset)</option>
                   </select>
                 </div>
 
@@ -934,6 +944,24 @@ export class ImsWorkbenchComponent implements OnInit {
         action: 'PENDING',
         itcReductionAmount: '0.00',
         remarks: inv.remarks ?? 'Deferred to subsequent tax period',
+      });
+      this.replaceInvoice(updated);
+    }
+  }
+
+  async quickReset(): Promise<void> {
+    const companyId = this.companyContext.activeCompany()?.id;
+    const targets = this.targetBatchForQuickAction();
+    if (!companyId || targets.length === 0) {
+      return;
+    }
+    for (const inv of targets) {
+      const updated = await this.statutoryService.applyImsAction(companyId, {
+        imsInvoiceId: inv.id,
+        action: 'NO_ACTION',
+        itcReductionAmount: '0.00',
+        remarks: null,
+        effectiveFilingPeriod: this.returnPeriod(),
       });
       this.replaceInvoice(updated);
     }

@@ -10,7 +10,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Clean-room binary TLV record decoder for TallyPrime .1800 streams (G1_BINARY_FORMAT_SPEC Section 5).
+ * Binary TLV record decoder for legacy .1800 company snapshot streams (G1_BINARY_FORMAT_SPEC Section 5).
  */
 public final class TlvRecordDecoder {
 

@@ -153,7 +153,10 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
             <div class="mc-led-section">
               <div class="mc-led-section-title">Accounting, Bill-Wise &amp; Statutory Rules</div>
 
-              @if (lineage().isPartyGroup) {
+              @if (
+                companyContext.isBillWiseEnabled() &&
+                (lineage().isPartyGroup || companyContext.f12Config().billWiseForNonTradingAccounts)
+              ) {
                 <div class="mc-led-conditional-box" data-testid="party-billwise-section">
                   <label class="mc-led-toggle">
                     <input
@@ -182,19 +185,21 @@ import { SecondaryMasterModalService } from './secondary-master-modal.service';
                           (ngModelChange)="formCreditDays.set($event); markDirty()"
                         />
                       </div>
-                      <div>
-                        <label class="mc-field-label" for="ledger-credit-limit">
-                          Specify credit limit
-                        </label>
-                        <mc-amount-cell
-                          inputId="ledger-credit-limit"
-                          name="creditLimit"
-                          [scale]="companyContext.currencyScale()"
-                          [currencySymbol]="companyContext.currencySymbol()"
-                          [ngModel]="formCreditLimit()"
-                          (ngModelChange)="formCreditLimit.set($event); markDirty()"
-                        />
-                      </div>
+                      @if (companyContext.f12Config().provideCreditLimits) {
+                        <div>
+                          <label class="mc-field-label" for="ledger-credit-limit">
+                            Specify credit limit
+                          </label>
+                          <mc-amount-cell
+                            inputId="ledger-credit-limit"
+                            name="creditLimit"
+                            [scale]="companyContext.currencyScale()"
+                            [currencySymbol]="companyContext.currencySymbol()"
+                            [ngModel]="formCreditLimit()"
+                            (ngModelChange)="formCreditLimit.set($event); markDirty()"
+                          />
+                        </div>
+                      }
                     </div>
 
                     <label class="mc-led-toggle">

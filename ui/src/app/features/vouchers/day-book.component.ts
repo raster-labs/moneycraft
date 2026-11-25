@@ -15,10 +15,16 @@ import {
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { isEditableTextElement } from '../../core/keyboard/collision-guard';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { ReportOutputModalComponent } from '../../shared/components/report-output-modal/report-output-modal.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { CompanyContextStore } from '../../state/company-context.store';
 import { NavigationStackStore } from '../../state/navigation-stack.store';
 import { ChartOfAccountsStore } from '../masters/chart-of-accounts.store';
@@ -55,7 +61,14 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
 @Component({
   selector: 'mc-day-book',
   standalone: true,
-  imports: [FormsModule, RouterLink, CodeBadgeComponent, IndianCurrencyPipe],
+  imports: [
+    FormsModule,
+    RouterLink,
+    CodeBadgeComponent,
+    IndianCurrencyPipe,
+    SemanticIconComponent,
+    ReportOutputModalComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mc-daybook-shell" [class.mc-daybook-embedded]="embeddedOverlay()">
@@ -76,18 +89,19 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
             }
           </div>
           <p class="mc-daybook-subtitle">
-            TallyPrime 7.2 canonical register sorted by Date &rarr; Voucher Type &rarr; Voucher No.
+            Canonical voucher register sorted by Date &rarr; Voucher Type &rarr; Voucher No.
           </p>
         </div>
 
         <div class="mc-daybook-toolbar" role="toolbar" aria-label="Day Book Actions">
           <button
             type="button"
-            class="mc-btn"
+            class="mc-btn mc-btn-secondary"
             data-testid="daybook-period-btn"
             (click)="openPeriodModal()"
           >
-            Period (F2 / <span class="mc-key-alt">F2</span>)
+            <mc-icon name="calendar" [size]="16" />
+            <span>Period (F2 / <span class="mc-key-alt">F2</span>)</span>
           </button>
           <button
             type="button"
@@ -155,13 +169,23 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
           </button>
           <button
             type="button"
-            class="mc-btn"
+            class="mc-btn mc-btn-secondary"
             data-testid="daybook-print-btn"
             (click)="printDayBookPdf()"
           >
-            Print PDF (<span class="mc-key-ctrl">P</span>)
+            <mc-icon name="print" [size]="16" />
+            <span>Print PDF (<span class="mc-key-ctrl">P</span>)</span>
           </button>
-          <a routerLink="/app/approvals" class="mc-btn">Approval Queue</a>
+          <button
+            type="button"
+            class="mc-btn mc-btn-secondary"
+            data-testid="daybook-output-btn"
+            (click)="outputModalOpen.set(true)"
+          >
+            <mc-icon name="export" [size]="16" />
+            <span>Output</span>
+          </button>
+          <a routerLink="/app/approvals" class="mc-btn mc-btn-secondary">Approval Queue</a>
         </div>
       </header>
 
@@ -230,8 +254,23 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
                         }
                       </div>
 
-                      @if (detailedMode() && vch.narration) {
-                        <div class="mc-particulars-narration">Narration: {{ vch.narration }}</div>
+                      @if (detailedMode()) {
+                        @if ((vch.lineBreakups?.length ?? 0) > 0) {
+                          <div class="mc-daybook-detail-breakup" data-testid="daybook-detail-breakup">
+                            @for (line of vch.lineBreakups; track (line.lineNo ?? $index) + '-' + line.ledgerName) {
+                              <div class="mc-daybook-breakup-line">
+                                <span class="mc-breakup-ledger">{{ line.ledgerName }}</span>
+                                <span class="mc-amount mc-breakup-amt">
+                                  {{ line.amount | mcIndianCurrency: companyContext.currencyScale() : true }}
+                                  {{ line.side === 'DR' ? 'Dr' : 'Cr' }}
+                                </span>
+                              </div>
+                            }
+                          </div>
+                        }
+                        @if (vch.narration) {
+                          <div class="mc-particulars-narration">Narration: {{ vch.narration }}</div>
+                        }
                       }
                     </td>
                     <td class="mc-col-vchtype">{{ vch.voucherTypeName }}</td>
@@ -249,10 +288,7 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="6" class="mc-daybook-empty">
-                      No vouchers recorded for {{ fromDate() }} to {{ toDate() }}. Press
-                      <strong>Alt+A</strong> to add a voucher or <strong>F2</strong> to change period.
-                    </td>
+                    <td colspan="6" class="mc-empty-records">No matching records</td>
                   </tr>
                 }
               </tbody>
@@ -346,10 +382,35 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
               </div>
             </div>
             <div class="mc-modal-footer">
-              <button type="button" class="mc-btn" (click)="periodModalOpen.set(false)">
-                Cancel (Esc)
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="resetPeriodDraftToCompany()"
+              >
+                <mc-icon name="clear-filter" [size]="16" />
+                <span>Clear</span>
+                @if (filterHint('report.clearFilters', 'L/l'); as lHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ lHint }}]</span>
+                }
               </button>
-              <button type="submit" class="mc-btn mc-btn-primary">Apply (Enter)</button>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="periodModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+                @if (filterHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
+              <button type="submit" class="mc-btn mc-btn-primary">
+                <mc-icon name="filter" [size]="16" />
+                <span>Apply</span>
+                @if (filterHint('report.applyFilters', 'A/a'); as aHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ aHint }}]</span>
+                }
+              </button>
             </div>
           </form>
         </div>
@@ -518,6 +579,14 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
           </form>
         </div>
       }
+      <mc-report-output-modal
+        [open]="outputModalOpen()"
+        reportTitle="Day Book Register"
+        [boundsLabel]="periodBadgeText()"
+        (printRequested)="printDayBookPdf()"
+        (exportRequested)="printDayBookPdf()"
+        (closed)="outputModalOpen.set(false)"
+      />
     </div>
   `,
   styles: `
@@ -647,7 +716,8 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
     }
 
     .mc-daybook-row-selected .mc-particulars-narration,
-    .mc-daybook-row-selected .mc-cancelled-label {
+    .mc-daybook-row-selected .mc-cancelled-label,
+    .mc-daybook-row-selected .mc-daybook-breakup-line {
       color: rgba(255, 255, 255, 0.88);
     }
 
@@ -698,6 +768,26 @@ function compareDayBookCanonical(a: VoucherSummaryDto, b: VoucherSummaryDto): nu
       font-size: var(--mc-font-size-xs);
       color: var(--mc-color-slate-600);
       font-weight: 400;
+    }
+
+    .mc-daybook-detail-breakup {
+      margin-top: 3px;
+      padding-left: 0.75rem;
+      border-left: 2px solid var(--mc-color-slate-200);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .mc-daybook-breakup-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--mc-space-3);
+      max-width: 440px;
+      font-size: var(--mc-font-size-xs);
+      color: var(--mc-color-slate-600);
+      font-style: italic;
     }
 
     .mc-badge-optional {
@@ -881,6 +971,7 @@ export class DayBookComponent implements OnInit {
 
   readonly selectedIndex = signal<number>(0);
   readonly removedIdsStack = signal<readonly string[]>([]);
+  readonly selectedRowIds = signal<ReadonlySet<string>>(new Set());
 
   // Local modals
   readonly periodModalOpen = signal<boolean>(false);
@@ -898,6 +989,21 @@ export class DayBookComponent implements OnInit {
   readonly typeFilterHighlightIdx = signal<number>(0);
 
   private lastLoadedCompanyId: string | null = null;
+  private dayBookModalHandle: ActiveModalContextHandle | null = null;
+  readonly outputModalOpen = signal<boolean>(false);
+
+  filterHint(commandId: string, pairSpec: 'A/a' | 'L/l' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'report.filters',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
+
+  resetPeriodDraftToCompany(): void {
+    this.draftFromDate = this.companyContext.periodFrom();
+    this.draftToDate = this.companyContext.periodTo();
+  }
 
   readonly periodBadgeText = computed(() => `${this.fromDate()} .. ${this.toDate()}`);
 
@@ -1004,6 +1110,85 @@ export class DayBookComponent implements OnInit {
         void this.reloadVouchers();
       }
     });
+
+    effect(() => {
+      const periodOpen = this.periodModalOpen();
+      const basisOpen = this.basisModalOpen();
+      const typeOpen = this.typeFilterModalOpen();
+      this.releaseDayBookModal();
+
+      if (periodOpen) {
+        this.dayBookModalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'report.filters',
+              locale: 'en-GB',
+              commandId: 'report.applyFilters',
+              label: 'Apply',
+              letterPair: asciiPair('A/a'),
+              permissionRef: 'report.read',
+              effect: 'Validate Day Book period bounds and reload register.',
+              normalActivation: () => this.applyPeriodFilter(),
+              iconSemanticId: 'mc.icon.filter',
+              stateTokenRole: 'action.primary',
+            },
+            {
+              contextId: 'report.filters',
+              locale: 'en-GB',
+              commandId: 'report.clearFilters',
+              label: 'Clear',
+              letterPair: asciiPair('L/l'),
+              permissionRef: 'report.read',
+              effect: 'Restore active fiscal period start and end in dialog.',
+              normalActivation: () => this.resetPeriodDraftToCompany(),
+              iconSemanticId: 'mc.icon.clear-filter',
+              stateTokenRole: 'action.secondary',
+            },
+            {
+              contextId: 'report.filters',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Close',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close Day Book period dialog without applying changes.',
+              normalActivation: () => this.periodModalOpen.set(false),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
+      } else if (basisOpen || typeOpen) {
+        this.dayBookModalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'message.details',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Close',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close Day Book filter dialog.',
+              normalActivation: () => {
+                this.basisModalOpen.set(false);
+                this.typeFilterModalOpen.set(false);
+              },
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
+      }
+    });
+  }
+
+  private releaseDayBookModal(): void {
+    if (this.dayBookModalHandle) {
+      this.dayBookModalHandle.close();
+      this.dayBookModalHandle = null;
+    }
   }
 
   ngOnInit(): void {
@@ -1104,6 +1289,36 @@ export class DayBookComponent implements OnInit {
         screenActive,
       ),
       this.shortcutRegistry.bindHandler(
+        'register.restoreAllLines',
+        'SCREEN',
+        () => this.restoreAllRemovedLines(),
+        screenActive,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'register.toggleSelectRow',
+        'SCREEN',
+        () => this.toggleSelectCurrentRow(),
+        screenActive,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'register.selectAllRows',
+        'SCREEN',
+        () => this.selectAllVisibleRows(),
+        screenActive,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'register.invertSelection',
+        'SCREEN',
+        () => this.invertSelection(),
+        screenActive,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'report.explodeRow',
+        'SCREEN',
+        () => this.toggleDetailedMode(),
+        screenActive,
+      ),
+      this.shortcutRegistry.bindHandler(
         'audit.editLog',
         'SCREEN',
         () => this.openSelectedEditLog(),
@@ -1117,12 +1332,46 @@ export class DayBookComponent implements OnInit {
         },
         screenActive,
       ),
+      this.shortcutRegistry.bindHandler(
+        'nav.escape',
+        'MODAL',
+        () => {
+          if (this.outputModalOpen()) {
+            this.outputModalOpen.set(false);
+            return true;
+          }
+          if (this.cancelModalOpen()) {
+            this.cancelModalOpen.set(false);
+            return true;
+          }
+          if (this.basisModalOpen()) {
+            this.basisModalOpen.set(false);
+            return true;
+          }
+          if (this.typeFilterModalOpen()) {
+            this.typeFilterModalOpen.set(false);
+            return true;
+          }
+          if (this.periodModalOpen()) {
+            this.periodModalOpen.set(false);
+            return true;
+          }
+          return false;
+        },
+        () =>
+          this.periodModalOpen() ||
+          this.typeFilterModalOpen() ||
+          this.basisModalOpen() ||
+          this.cancelModalOpen() ||
+          this.outputModalOpen(),
+      ),
     ];
 
     this.destroyRef.onDestroy(() => {
       for (const dispose of disposers) {
         dispose();
       }
+      this.releaseDayBookModal();
     });
   }
 
@@ -1136,6 +1385,64 @@ export class DayBookComponent implements OnInit {
       entityId: vch.id,
       entityLabel: `${vch.voucherTypeName} #${vch.voucherNumber}`,
     });
+  }
+
+  restoreAllRemovedLines(): void {
+    if (this.removedIdsStack().length > 0) {
+      this.removedIdsStack.set([]);
+    }
+  }
+
+  toggleSelectCurrentRow(): void {
+    const vch = this.selectedVoucher();
+    if (!vch) return;
+    const next = new Set(this.selectedRowIds());
+    if (next.has(vch.id)) {
+      next.delete(vch.id);
+    } else {
+      next.add(vch.id);
+    }
+    this.selectedRowIds.set(next);
+  }
+
+  selectAllVisibleRows(): void {
+    const allIds = this.visibleVouchers().map((v) => v.id);
+    const current = this.selectedRowIds();
+    if (allIds.length > 0 && allIds.every((id) => current.has(id))) {
+      this.selectedRowIds.set(new Set());
+    } else {
+      this.selectedRowIds.set(new Set(allIds));
+    }
+  }
+
+  invertSelection(): void {
+    const allIds = this.visibleVouchers().map((v) => v.id);
+    const current = this.selectedRowIds();
+    const next = new Set<string>();
+    for (const id of allIds) {
+      if (!current.has(id)) {
+        next.add(id);
+      }
+    }
+    this.selectedRowIds.set(next);
+  }
+
+  stepPeriod(delta: 1 | -1): void {
+    const shiftIsoDate = (iso: string, singleDay: boolean): string => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+      if (!m) return iso;
+      const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+      if (singleDay) {
+        d.setUTCDate(d.getUTCDate() + delta);
+      } else {
+        d.setUTCMonth(d.getUTCMonth() + delta);
+      }
+      return d.toISOString().slice(0, 10);
+    };
+    const isSingleDay = this.fromDate() === this.toDate();
+    this.fromDate.set(shiftIsoDate(this.fromDate(), isSingleDay));
+    this.toDate.set(shiftIsoDate(this.toDate(), isSingleDay));
+    void this.reloadVouchers();
   }
 
   async printDayBookPdf(): Promise<void> {
@@ -1169,11 +1476,42 @@ export class DayBookComponent implements OnInit {
     if (isEditableTextElement(event.target)) {
       return;
     }
-    if (event.altKey || event.ctrlKey || event.metaKey) {
+
+    if (event.altKey && !event.ctrlKey && !event.metaKey && event.key === 'Enter') {
+      event.preventDefault();
+      this.toggleDetailedMode();
       return;
     }
 
     const rows = this.visibleVouchers();
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && rows.length > 0) {
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        this.selectedIndex.set(0);
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        this.selectedIndex.set(rows.length - 1);
+        return;
+      }
+    }
+
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    if (event.key === '+' || event.key === '=') {
+      event.preventDefault();
+      this.stepPeriod(1);
+      return;
+    }
+    if (event.key === '-' || event.key === '_') {
+      event.preventDefault();
+      this.stepPeriod(-1);
+      return;
+    }
+
     if (rows.length === 0) {
       return;
     }

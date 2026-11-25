@@ -179,8 +179,8 @@ class FoundationSecurityAndTenantIsolationTest extends DualPostgres18Testcontain
             "SELECT COUNT(*) FROM flyway_schema_history WHERE success = true",
             Integer.class
         );
-        Assertions.assertThat(authMigrations).isGreaterThanOrEqualTo(1);
-        Assertions.assertThat(bizMigrations).isEqualTo(8);
+        Assertions.assertThat(authMigrations).isGreaterThanOrEqualTo(2);
+        Assertions.assertThat(bizMigrations).isGreaterThanOrEqualTo(8);
 
         Assertions.assertThat(authorityGuard.isLeaseHealthy()).isTrue();
         Assertions.assertThat(authorityDbHealthIndicator.health().getStatus()).isEqualTo(Status.UP);

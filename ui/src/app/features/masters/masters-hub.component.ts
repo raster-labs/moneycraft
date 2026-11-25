@@ -12,6 +12,10 @@ import {
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import {
+  CompanyContextStore,
+  CompanyFeaturesConfig,
+} from '../../state/company-context.store';
 import { InventoryStore } from '../inventory/inventory.store';
 import { ChartOfAccountsStore } from './chart-of-accounts.store';
 
@@ -20,6 +24,7 @@ export interface MasterCatalogEntry {
   readonly category:
     | 'Accounting Masters'
     | 'Inventory Masters'
+    | 'Payroll Masters'
     | 'Statutory Masters'
     | 'Cost & Multi-Currency'
     | 'Chart & Hierarchy';
@@ -27,6 +32,9 @@ export interface MasterCatalogEntry {
   readonly description: string;
   readonly route: string;
   readonly badge: string;
+  readonly requiredFeature?: keyof CompanyFeaturesConfig;
+  readonly requiredFeatureLabel?: string;
+  readonly showMoreOnly?: boolean;
   readonly extraParams?: Readonly<Record<string, string>>;
 }
 
@@ -56,12 +64,41 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     badge: '24 VCH TYPES',
   },
   {
+    id: 'budget',
+    category: 'Accounting Masters',
+    label: 'Budget',
+    description: 'Periodic Group, Ledger, and Cost Centre variance budgets',
+    route: '/app/masters/groups',
+    badge: 'BUDGET',
+    showMoreOnly: true,
+  },
+  {
+    id: 'scenario',
+    category: 'Accounting Masters',
+    label: 'Scenario',
+    description: 'Provisional what-if reporting combining Actuals + Optional / Reversing Journals',
+    route: '/app/masters/voucher-types',
+    badge: 'SCENARIO',
+    showMoreOnly: true,
+  },
+  {
+    id: 'credit-limits',
+    category: 'Accounting Masters',
+    label: 'Credit Limits',
+    description: 'Bulk party credit limit and credit period assignment table',
+    route: '/app/masters/ledgers',
+    badge: 'CREDIT LIMIT',
+    showMoreOnly: true,
+  },
+  {
     id: 'stock-group',
     category: 'Inventory Masters',
     label: 'Stock Group',
     description: 'Hierarchical product families with inherited HSN/SAC and GST tax rates',
     route: '/app/inventory/stock-groups',
     badge: 'STK GROUP',
+    requiredFeature: 'maintainInventory',
+    requiredFeatureLabel: 'Maintain Inventory',
   },
   {
     id: 'stock-category',
@@ -70,6 +107,9 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'Parallel inventory classification dimension across Stock Groups',
     route: '/app/inventory/stock-groups',
     badge: 'STK CAT',
+    requiredFeature: 'maintainInventory',
+    requiredFeatureLabel: 'Maintain Inventory',
+    showMoreOnly: true,
     extraParams: { tab: 'categories' },
   },
   {
@@ -79,6 +119,8 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'SKUs, Alternate UOMs, Batches, 8 Costing Methods, Tobacco MRP & Multi-BOM',
     route: '/app/inventory/stock-items',
     badge: 'SKU & BOM',
+    requiredFeature: 'maintainInventory',
+    requiredFeatureLabel: 'Maintain Inventory',
   },
   {
     id: 'uom',
@@ -87,6 +129,8 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'Simple and Compound Units of Measure mapped to GST UQC codes',
     route: '/app/inventory/uoms',
     badge: 'UOM / UQC',
+    requiredFeature: 'maintainInventory',
+    requiredFeatureLabel: 'Maintain Inventory',
   },
   {
     id: 'godown',
@@ -95,6 +139,18 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'Multi-warehouse storage hierarchy, bins, Job Work Out/In & Main Location',
     route: '/app/inventory/godowns',
     badge: 'WAREHOUSE',
+    requiredFeature: 'maintainInventory',
+    requiredFeatureLabel: 'Maintain Inventory',
+  },
+  {
+    id: 'price-levels',
+    category: 'Inventory Masters',
+    label: 'Price Levels',
+    description: 'Named commercial price levels (Wholesale, Dealer, Retail, Export)',
+    route: '/app/inventory/price-lists',
+    badge: 'PRICE LEVEL',
+    requiredFeature: 'multiplePriceLevelsEnabled',
+    requiredFeatureLabel: 'Enable multiple Price Levels',
   },
   {
     id: 'price-list',
@@ -103,6 +159,8 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'Date-effective Wholesale/Dealer/Retail staggered quantity slab pricing',
     route: '/app/inventory/price-lists',
     badge: 'SLAB PRICE',
+    requiredFeature: 'multiplePriceLevelsEnabled',
+    requiredFeatureLabel: 'Enable multiple Price Levels',
   },
   {
     id: 'currency',
@@ -119,6 +177,7 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'Date-effective Standard, Selling, and Buying foreign exchange rates',
     route: '/app/masters/currencies',
     badge: 'RATES',
+    showMoreOnly: true,
     extraParams: { tab: 'rates' },
   },
   {
@@ -128,6 +187,8 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'Parallel allocation dimensions for Revenue and Non-Revenue items',
     route: '/app/masters/cost-centres',
     badge: 'CATEGORY',
+    requiredFeature: 'costCentresEnabled',
+    requiredFeatureLabel: 'Enable Cost Centres',
     extraParams: { tab: 'categories' },
   },
   {
@@ -137,6 +198,49 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'Hierarchical profit/cost units under Primary or custom Cost Categories',
     route: '/app/masters/cost-centres',
     badge: 'CENTRE',
+    requiredFeature: 'costCentresEnabled',
+    requiredFeatureLabel: 'Enable Cost Centres',
+  },
+  {
+    id: 'cost-centre-class',
+    category: 'Cost & Multi-Currency',
+    label: 'Cost Centre Class',
+    description: 'Automated percentage-based cost allocation templates',
+    route: '/app/masters/cost-centres',
+    badge: 'CC CLASS',
+    requiredFeature: 'costCentresEnabled',
+    requiredFeatureLabel: 'Enable Cost Centres',
+    showMoreOnly: true,
+  },
+  {
+    id: 'employee-group',
+    category: 'Payroll Masters',
+    label: 'Employee Group',
+    description: 'Departmental and functional grouping of employees for Payroll',
+    route: '/app/masters/cost-centres',
+    badge: 'PAYROLL',
+    requiredFeature: 'payrollEnabled',
+    requiredFeatureLabel: 'Maintain Payroll',
+  },
+  {
+    id: 'employee',
+    category: 'Payroll Masters',
+    label: 'Employee',
+    description: 'Employee profile, statutory PF/ESI/UAN/PAN details, and salary structure',
+    route: '/app/masters/cost-centres',
+    badge: 'PAYROLL',
+    requiredFeature: 'payrollEnabled',
+    requiredFeatureLabel: 'Maintain Payroll',
+  },
+  {
+    id: 'pay-heads',
+    category: 'Payroll Masters',
+    label: 'Pay Heads',
+    description: 'Earnings, deductions, statutory contributions, and gratuity pay heads',
+    route: '/app/masters/ledgers',
+    badge: 'PAY HEAD',
+    requiredFeature: 'payrollEnabled',
+    requiredFeatureLabel: 'Maintain Payroll',
   },
   {
     id: 'gst-registration',
@@ -145,6 +249,40 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
     description: 'State-wise GSTIN registrations, LUT/Bond validity, e-Invoice & e-Way Bill thresholds',
     route: '/app/statutory/gst-registrations',
     badge: 'MULTI-GSTIN',
+    requiredFeature: 'gstEnabled',
+    requiredFeatureLabel: 'Enable Goods and Services Tax (GST)',
+  },
+  {
+    id: 'tds-nature',
+    category: 'Statutory Masters',
+    label: 'TDS Nature of Payment (26Q)',
+    description: 'Sections 194C, 194J, 194H, 194I, 194Q threshold & rate configurations',
+    route: '/app/statutory/tds-26q',
+    badge: 'TDS 26Q',
+    requiredFeature: 'tdsEnabled',
+    requiredFeatureLabel: 'Enable Tax Deducted at Source (TDS)',
+  },
+  {
+    id: 'tcs-nature',
+    category: 'Statutory Masters',
+    label: 'TCS Nature of Goods (27EQ)',
+    description: 'Section 206C Tax Collected at Source categories and threshold limits',
+    route: '/app/statutory/tds-26q',
+    badge: 'TCS 27EQ',
+    requiredFeature: 'tcsEnabled',
+    requiredFeatureLabel: 'Enable Tax Collected at Source (TCS)',
+  },
+  {
+    id: 'multiple-addresses',
+    category: 'Statutory Masters',
+    label: 'Multiple Addresses',
+    description: 'Maintain multiple named dispatch and branch mailing addresses for the company',
+    route: '/app/companies',
+    badge: 'ADDRESSES',
+    requiredFeature: 'multipleAddressesEnabled',
+    requiredFeatureLabel: 'Enable multiple addresses',
+    showMoreOnly: true,
+    extraParams: { mode: 'alter' },
   },
   {
     id: 'coa-explorer',
@@ -170,6 +308,24 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
             {{ hubMode() === 'alter' ? 'Master Alteration' : 'Master Creation' }} — List of Masters
           </span>
           <div class="mc-mode-pills">
+            <button
+              type="button"
+              class="mc-mode-pill"
+              [class.mc-mode-pill-active]="showMore()"
+              data-testid="masters-show-more-btn"
+              (click)="toggleShowMore()"
+            >
+              {{ showMore() ? 'Show Less' : 'Show More' }}
+            </button>
+            <button
+              type="button"
+              class="mc-mode-pill"
+              [class.mc-mode-pill-active]="showInactive()"
+              data-testid="masters-show-inactive-btn"
+              (click)="toggleShowInactive()"
+            >
+              {{ showInactive() ? 'Hide Inactive' : 'Show Inactive' }}
+            </button>
             <button
               type="button"
               class="mc-mode-pill"
@@ -208,12 +364,19 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
               role="option"
               class="mc-masters-item"
               [class.mc-masters-item-active]="idx === selectedIndex()"
+              [class.mc-masters-item-inactive]="isEntryInactive(entry)"
               [attr.aria-selected]="idx === selectedIndex()"
+              [attr.data-testid]="'master-catalog-item-' + entry.id"
               (mouseenter)="selectedIndex.set(idx)"
               (click)="openMasterWorkbench(entry)"
             >
               <div class="mc-masters-item-main">
-                <span class="mc-masters-item-title">{{ entry.label }}</span>
+                <span class="mc-masters-item-title">
+                  {{ entry.label }}
+                  @if (isEntryInactive(entry)) {
+                    <span class="mc-inactive-badge">(Inactive — F11)</span>
+                  }
+                </span>
                 <span class="mc-masters-item-desc">{{ entry.description }}</span>
               </div>
               <mc-code-badge [code]="entry.badge" />
@@ -277,6 +440,52 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
           <a routerLink="/app/gateway" class="mc-btn">Back to Gateway</a>
         </div>
       </aside>
+
+      @if (pendingFeatureEntry(); as pending) {
+        <div
+          class="mc-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Enable F11 Feature Confirmation"
+          data-testid="inactive-feature-enable-modal"
+          (keydown)="onFeaturePromptKeyDown($event)"
+        >
+          <div class="mc-modal-dialog mc-feature-prompt-dialog">
+            <div class="mc-modal-header">
+              <span>Activate Feature in F11: Company Features</span>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                data-testid="inactive-feature-enable-no-btn"
+                (click)="cancelFeatureActivation()"
+              >
+                No (Esc / N)
+              </button>
+            </div>
+            <div class="mc-modal-body">
+              <p>
+                You need to enable
+                <strong>{{ pending.requiredFeatureLabel ?? pending.requiredFeature }}</strong>
+                in <strong>F11: Company Features</strong> to use
+                <strong>{{ pending.label }}</strong>. Enable now?
+              </p>
+            </div>
+            <div class="mc-modal-footer">
+              <button type="button" class="mc-btn" (click)="cancelFeatureActivation()">
+                No (Esc / N)
+              </button>
+              <button
+                type="button"
+                class="mc-btn mc-btn-primary"
+                data-testid="inactive-feature-enable-yes-btn"
+                (click)="confirmFeatureActivation()"
+              >
+                Yes (Enter / Y)
+              </button>
+            </div>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: `
@@ -306,11 +515,14 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
       justify-content: space-between;
       align-items: center;
       font-weight: 700;
+      flex-wrap: wrap;
+      gap: 6px;
     }
 
     .mc-mode-pills {
       display: flex;
       gap: 4px;
+      flex-wrap: wrap;
     }
 
     .mc-mode-pill {
@@ -351,11 +563,24 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
       cursor: pointer;
     }
 
+    .mc-masters-item-inactive {
+      opacity: 0.85;
+      background: var(--mc-color-cool-alabaster);
+    }
+
+    .mc-inactive-badge {
+      margin-left: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--mc-color-slate-600);
+    }
+
     .mc-masters-item-active {
       background: var(--mc-color-verdigris-teal);
       color: var(--mc-color-surface);
 
-      .mc-masters-item-desc {
+      .mc-masters-item-desc,
+      .mc-inactive-badge {
         color: rgba(255, 255, 255, 0.88);
       }
     }
@@ -445,9 +670,14 @@ export const ACCOUNTING_MASTER_CATALOG: readonly MasterCatalogEntry[] = [
       gap: var(--mc-space-2);
       flex-wrap: wrap;
     }
+
+    .mc-feature-prompt-dialog {
+      width: min(460px, 94vw);
+    }
   `,
 })
 export class MastersHubComponent implements OnInit {
+  readonly companyContext = inject(CompanyContextStore);
   readonly coaStore = inject(ChartOfAccountsStore);
   readonly inventoryStore = inject(InventoryStore);
   private readonly route = inject(ActivatedRoute);
@@ -461,13 +691,23 @@ export class MastersHubComponent implements OnInit {
   readonly hubMode = signal<'create' | 'alter'>('create');
   readonly filterQuery = signal<string>('');
   readonly selectedIndex = signal<number>(0);
+  readonly showMore = signal<boolean>(true);
+  readonly showInactive = signal<boolean>(true);
+  readonly pendingFeatureEntry = signal<MasterCatalogEntry | null>(null);
 
   readonly filteredEntries = computed(() => {
     const q = this.filterQuery().trim().toLowerCase();
-    const base =
+    const more = this.showMore();
+    const inact = this.showInactive();
+    const base = (
       this.initialSection() === 'inventory'
         ? ACCOUNTING_MASTER_CATALOG.filter((e) => e.category === 'Inventory Masters')
-        : ACCOUNTING_MASTER_CATALOG;
+        : ACCOUNTING_MASTER_CATALOG
+    ).filter((e) => {
+      if (e.showMoreOnly && !more && !inact) return false;
+      if (this.isEntryInactive(e) && !inact && !q) return false;
+      return true;
+    });
     if (!q) {
       return base;
     }
@@ -501,6 +741,25 @@ export class MastersHubComponent implements OnInit {
     });
   }
 
+  toggleShowMore(): void {
+    this.showMore.update((v) => !v);
+  }
+
+  toggleShowInactive(): void {
+    const next = !this.showInactive();
+    this.showInactive.set(next);
+    if (next) {
+      this.showMore.set(true);
+    }
+  }
+
+  isEntryInactive(entry: MasterCatalogEntry): boolean {
+    if (!entry.requiredFeature) return false;
+    const comp = this.companyContext.activeCompany();
+    if (!comp) return false;
+    return !comp.features[entry.requiredFeature];
+  }
+
   onFilterChange(val: string): void {
     this.filterQuery.set(val);
     this.selectedIndex.set(0);
@@ -508,6 +767,16 @@ export class MastersHubComponent implements OnInit {
 
   onKeyDown(event: KeyboardEvent): void {
     const items = this.filteredEntries();
+    if ((event.ctrlKey || event.metaKey) && event.key === 'ArrowUp' && items.length > 0) {
+      event.preventDefault();
+      this.selectedIndex.set(0);
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === 'ArrowDown' && items.length > 0) {
+      event.preventDefault();
+      this.selectedIndex.set(items.length - 1);
+      return;
+    }
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       if (items.length > 0) {
@@ -531,7 +800,43 @@ export class MastersHubComponent implements OnInit {
     }
   }
 
+  onFeaturePromptKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Escape' || event.key === 'n' || event.key === 'N') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.cancelFeatureActivation();
+      return;
+    }
+    if (event.key === 'Enter' || event.key === 'y' || event.key === 'Y') {
+      event.preventDefault();
+      event.stopPropagation();
+      void this.confirmFeatureActivation();
+    }
+  }
+
+  cancelFeatureActivation(): void {
+    this.pendingFeatureEntry.set(null);
+  }
+
+  async confirmFeatureActivation(): Promise<void> {
+    const entry = this.pendingFeatureEntry();
+    this.pendingFeatureEntry.set(null);
+    if (!entry) return;
+    if (entry.requiredFeature) {
+      await this.companyContext.enableCompanyFeature(entry.requiredFeature);
+    }
+    this.navigateToMasterWorkbench(entry);
+  }
+
   openMasterWorkbench(entry: MasterCatalogEntry): void {
+    if (this.isEntryInactive(entry)) {
+      this.pendingFeatureEntry.set(entry);
+      return;
+    }
+    this.navigateToMasterWorkbench(entry);
+  }
+
+  private navigateToMasterWorkbench(entry: MasterCatalogEntry): void {
     if (entry.route === '/app/coa') {
       void this.router.navigate(['/app/coa']);
       return;

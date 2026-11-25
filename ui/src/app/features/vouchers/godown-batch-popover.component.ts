@@ -10,10 +10,15 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import {
   TypeaheadOption,
   TypeaheadSelectComponent,
@@ -45,6 +50,7 @@ export interface EditableBatchAllocationRow {
     FormsModule,
     IndianCurrencyPipe,
     CodeBadgeComponent,
+    SemanticIconComponent,
     TypeaheadSelectComponent,
     GridCellNavDirective,
   ],
@@ -291,14 +297,28 @@ export interface EditableBatchAllocationRow {
               Enter = Next Cell &bull; Ctrl+A = Accept Allocation
             </span>
             <div class="mc-gb-actions">
-              <button type="button" class="mc-btn" (click)="cancelled.emit()">Cancel</button>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="cancelled.emit()"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Cancel</span>
+                @if (actionHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
               <button
                 type="button"
                 class="mc-btn mc-btn-primary"
                 data-testid="gb-commit-btn"
                 (click)="commitAllocations()"
               >
-                Accept (<span class="mc-key-ctrl">A</span>)
+                <mc-icon name="save-document" [size]="16" />
+                <span>Save (<span class="mc-key-ctrl">A</span>)</span>
+                @if (actionHint('ledger.save', 'S/s'); as sHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ sHint }}]</span>
+                }
               </button>
             </div>
           </div>
@@ -493,14 +513,55 @@ export class GodownBatchPopoverComponent {
     };
   });
 
+  private modalHandle: ActiveModalContextHandle | null = null;
+
+  actionHint(commandId: string, pairSpec: 'S/s' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'ledger.create',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
+
   constructor() {
     effect(() => {
       const open = this.isOpen();
       if (open && !this.wasOpen) {
         this.wasOpen = true;
+        this.releaseModal();
+        this.modalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'ledger.save',
+              label: 'Save',
+              letterPair: asciiPair('S/s'),
+              permissionRef: 'voucher.create',
+              effect: 'Commit godown and batch allocations.',
+              normalActivation: () => this.commitAllocations(),
+              iconSemanticId: 'mc.icon.save-document',
+              stateTokenRole: 'action.primary',
+            },
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Cancel',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close godown and batch allocation popover.',
+              normalActivation: () => this.cancelled.emit(),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
         this.hydrateModal();
       } else if (!open && this.wasOpen) {
         this.wasOpen = false;
+        this.releaseModal();
       }
     });
 
@@ -510,7 +571,17 @@ export class GodownBatchPopoverComponent {
       () => this.commitAllocations(),
       () => this.isOpen() && !this.secondaryModal.isOpen(),
     );
-    this.destroyRef.onDestroy(disposeAccept);
+    this.destroyRef.onDestroy(() => {
+      disposeAccept();
+      this.releaseModal();
+    });
+  }
+
+  private releaseModal(): void {
+    if (this.modalHandle) {
+      this.modalHandle.close();
+      this.modalHandle = null;
+    }
   }
 
   private hydrateModal(): void {
@@ -751,10 +822,25 @@ export class GodownBatchPopoverComponent {
       return;
     }
 
+    const seenGodownBatchKeys = new Set<string>();
     for (const r of activeRows) {
       const cleanBatch = r.batchName.trim();
       if (this.maintainInBatches() && !cleanBatch) {
         this.validationError.set('Batch / Lot Name is required for batch-maintained items.');
+        return;
+      }
+
+      const effBatchKey = `${(r.godownId ?? r.godownName ?? 'MAIN').toLowerCase()}::${(this.maintainInBatches() ? cleanBatch : 'PRIMARY BATCH').toLowerCase()}`;
+      if (seenGodownBatchKeys.has(effBatchKey)) {
+        this.validationError.set('Duplicate Godown and Batch combination is not allowed in Item Allocations.');
+        return;
+      }
+      seenGodownBatchKeys.add(effBatchKey);
+
+      if (r.mfgDate && r.expiryDate && r.expiryDate < r.mfgDate) {
+        this.validationError.set(
+          `Expiry Date (${r.expiryDate}) cannot be earlier than Manufacturing Date (${r.mfgDate}).`,
+        );
         return;
       }
 

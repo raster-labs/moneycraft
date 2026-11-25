@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.Objects;
 
 /**
- * Immutable configuration options for {@link TallySnapshotReader}.
+ * Immutable configuration options for legacy .1800 company snapshot reading and reconciliation.
  */
 public record ReaderOptions(
         Path inputDirectory,

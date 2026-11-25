@@ -1665,6 +1665,20 @@ export class StockItemWorkbenchComponent implements OnInit {
       this.errorMsg.set('MRP / Unit is required when Tobacco / Retail Sale Price item is enabled.');
       return;
     }
+    if (this.alternateUomId()) {
+      const cleanNum = this.conversionNumerator.trim();
+      const cleanDen = this.conversionDenominator.trim();
+      if (!cleanNum || !cleanDen) {
+        this.errorMsg.set('Conversion factor for Alternate units is missing.');
+        return;
+      }
+      const parsedNum = ExactDecimal.tryParse(cleanNum);
+      const parsedDen = ExactDecimal.tryParse(cleanDen);
+      if (!parsedNum || !parsedNum.isPositive() || !parsedDen || !parsedDen.isPositive()) {
+        this.errorMsg.set('Conversion factor for Alternate units is invalid.');
+        return;
+      }
+    }
 
     const payload: UpsertStockItemRequest = {
       name: cleanName,
@@ -1675,10 +1689,8 @@ export class StockItemWorkbenchComponent implements OnInit {
       stockCategoryId: this.stockCategoryId(),
       baseUomId: uomId,
       alternateUomId: this.alternateUomId(),
-      conversionNumerator: this.alternateUomId() ? this.conversionNumerator.trim() || '1' : null,
-      conversionDenominator: this.alternateUomId()
-        ? this.conversionDenominator.trim() || '1'
-        : null,
+      conversionNumerator: this.alternateUomId() ? this.conversionNumerator.trim() : null,
+      conversionDenominator: this.alternateUomId() ? this.conversionDenominator.trim() : null,
       maintainInBatches: this.maintainInBatches(),
       trackDateOfMfg: this.maintainInBatches() ? this.trackDateOfMfg : false,
       useExpiryDates: this.maintainInBatches() ? this.useExpiryDates : false,

@@ -1,0 +1,93 @@
+{
+  "schema": "MC-EXECUTION-CONTEXT-1",
+  "recordId": "E01",
+  "version": 2,
+  "recordedAt": "2026-11-16T12:05:00Z",
+  "commission": {
+    "commissionId": "MoneyCraft_v1.1.0_Full_Convergence_And_Parity_Commission_2026-11-16",
+    "product": "MoneyCraft 1.1.0",
+    "owner": "Raster Images Pvt. Ltd.",
+    "operatorIdentity": "pushparaj@macos-arm64-workstation",
+    "documentaryBaseline": {
+      "package": "MoneyCraft_Development_Handoff_v1.1.0",
+      "promotedWorkspacePath": "/Users/pushparaj/projects/Money_Craft/argon_workspace/MoneyCraft_Development_Handoff_v1.1.0",
+      "archiveFilename": "MoneyCraft_Development_Handoff_v1.1.0.zip",
+      "archiveSha256": "31fbbfe9c3f75c514ad34776d3d6627bf742c92fc1397cd963dcb0c0831d615a",
+      "companionSwingPackage": "MoneyCraft_Java_Swing_Client_v1.0.0",
+      "companionSwingArchiveSha256": "ce7fe3e81ae742e8463b4b5b0bf75537785d6eb3363387970081dca68a744f80",
+      "companionSwingExecutionPromptSha256": "ebd2f5a889572e905cd2a0d037b754acb9017af1b20082d5e22e2a6194f9d83c",
+      "companionMobileApiPackage": "MoneyCraft_Mobile_API_v1.0.0",
+      "companionMobileApiArchiveSha256": "e0f5b0547d32f0c4fe22a502b6b1a93a88fefcaa456723fd3e038dbdefbc8f7a",
+      "predecessorPackage": "MoneyCraft_Development_Handoff_v1.0.0",
+      "predecessorArchiveSha256": "c1a509739b9cf88757296a1db02a49be382e654a6b957eac790df3055d45acf5",
+      "localExtensionContract": "/Users/pushparaj/projects/Money_Craft/argon_workspace/58_INCREMENT_X_AND_N_EXECUTION_CONTRACT.md",
+      "keyboardAndMenuParityContract": "/Users/pushparaj/projects/Money_Craft/argon_workspace/59_TALLY_KEYBOARD_AND_MENU_PARITY_MATRIX.md",
+      "userMandates": [
+        "UM-110-01",
+        "UM-110-02",
+        "UM-110-03",
+        "UM-110-04",
+        "UM-110-05"
+      ],
+      "requirementCount": 162,
+      "distinctAcceptanceIdCount": 233
+    }
+  },
+  "repository": {
+    "canonicalRoot": "/Users/pushparaj/projects/Money_Craft/moneycraft-target",
+    "vcs": "git",
+    "branch": "main",
+    "immutableBaseCommit": "52f103dc2d76c45d86ba525a8f38441e74876a6c",
+    "rootSymlinkFree": true,
+    "parentChainSymlinkFree": true,
+    "existingMultiModuleBaseline": [
+      "reader",
+      "ui",
+      "server",
+      "desktop",
+      "qa"
+    ]
+  },
+  "evidenceLocations": {
+    "argonWorkspaceRoot": "/Users/pushparaj/projects/Money_Craft/argon_workspace",
+    "immutableSourcePath": "/Users/pushparaj/projects/Money_Craft/argon_workspace/Source",
+    "immutableArchivePath": "/Users/pushparaj/projects/Money_Craft/argon_workspace/Archive",
+    "governmentRestrictedProvenancePath": "/Users/pushparaj/projects/Money_Craft/argon_workspace/drive_updates_staging_v1_1_0/Source_Updates/government_restricted_provenance.json",
+    "shippedProductIncludesRestrictedProvenance": false,
+    "immutableSourceOctalModes": {
+      "files": "0444",
+      "directories": "0555",
+      "writableEntriesObserved": 0
+    },
+    "windowsLabOraclesPath": "/Users/pushparaj/projects/Money_Craft/argon_workspace/windows_lab_oracles",
+    "windowsLabOracleArtifactCount": 127,
+    "referenceManualsPath": "/Users/pushparaj/projects/Money_Craft/argon_workspace/reference_manuals",
+    "referenceManualCount": 121
+  },
+  "observedRuntimeEnvironment": {
+    "os": "macOS (aarch64)",
+    "pythonVersion": "3.15.2",
+    "javaSdk": "OpenJDK 25.0.5.0.3 LTS",
+    "mavenVersion": "3.10.0",
+    "nodeVersion": "v24.18.1",
+    "postgresContainerImage": "postgres:18.6-bookworm"
+  },
+  "pendingOwnerDecisionsAndHolds": {
+    "DR-001": {
+      "status": "PENDING_OWNER_DECISION",
+      "effect": "Finite safety and concurrency bounds enforced as configurable engineering limits; no invented commercial seat/company quota."
+    },
+    "DR-002": {
+      "status": "PENDING_OWNER_DECISION",
+      "effect": "Both staffed operator capture (moneycraft-ops) and encrypted moneycraft-pg-backup sidecar preserved without claiming an owner-signed 24x7 roster SLA."
+    },
+    "NC-090-01": {
+      "status": "PENDING_OWNER_DECISION",
+      "effect": "92 original accepted records remain authoritative in preserved v0.7.0/BASE-080 archives; v1.0.0-v1.1.0 neutral editorial views are labelled projections."
+    },
+    "NC-090-02": {
+      "status": "EXPLICIT_WIRE_PROTOCOL_BOUNDARY_RECORDED",
+      "effect": "Product-owned code, routes, UI, and docs use neutral MoneyCraft naming; exact XML (<ENVELOPE>, <TALLYMESSAGE>) and JSONEx (tallyrequest) wire literals are isolated in DataExchangeService for 1:1 reference-system interoperability."
+    }
+  }
+}

@@ -289,6 +289,27 @@ public class AuthorityGuard implements SmartLifecycle {
             UUID newIncarnation = UUID.randomUUID();
             UUID incidentId = UUID.randomUUID();
 
+            // Doc 47 §4 REOPENING rule: clear all OIDC freshness stamps and delete remaining OIDC
+            // sessions/pending OIDC proofs before final OPEN release while preserving LOCAL sessions.
+            authorityJdbcTemplate.update("UPDATE ma_issuer SET checked_at = NULL WHERE checked_at IS NOT NULL");
+            authorityJdbcTemplate.update("UPDATE ma_oidc_link SET checked_at = NULL WHERE checked_at IS NOT NULL");
+            authorityJdbcTemplate.update(
+                """
+                DELETE FROM ma_auth_challenge
+                 WHERE purpose = 'OIDC_AUTHORIZE'
+                """
+            );
+            authorityJdbcTemplate.update(
+                """
+                DELETE FROM SPRING_SESSION
+                 WHERE PRIMARY_ID IN (
+                     SELECT SESSION_PRIMARY_ID
+                       FROM SPRING_SESSION_ATTRIBUTES
+                      WHERE ATTRIBUTE_NAME LIKE 'MC_OIDC_BINDING:%'
+                 )
+                """
+            );
+
             authorityJdbcTemplate.update(
                 """
                 INSERT INTO ma_recovery (

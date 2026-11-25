@@ -5,6 +5,7 @@ import com.raster.moneycraft.foundation.security.RbacAuthorizationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -17,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * MoneyCraft operator authentication, FIDO2 passkey ceremony, and OIDC PKCE endpoints.
+ * MoneyCraft operator authentication, step-up proof, FIDO2 passkey ceremony, and OIDC PKCE endpoints.
  */
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService moneyCraftAuthService;
+    private final StepUpAuthService stepUpAuthService;
     private final PasskeyWebAuthnService fidoPasskeyService;
     private final OidcPkceService enterpriseOidcService;
     private final RbacAuthorizationService rbacGuard;
@@ -32,12 +34,14 @@ public class AuthController {
 
     public AuthController(
         AuthService moneyCraftAuthService,
+        StepUpAuthService stepUpAuthService,
         PasskeyWebAuthnService fidoPasskeyService,
         OidcPkceService enterpriseOidcService,
         RbacAuthorizationService rbacGuard,
         CookieCsrfTokenRepository xsrfCookieRepository
     ) {
         this.moneyCraftAuthService = moneyCraftAuthService;
+        this.stepUpAuthService = stepUpAuthService;
         this.fidoPasskeyService = fidoPasskeyService;
         this.enterpriseOidcService = enterpriseOidcService;
         this.rbacGuard = rbacGuard;
@@ -74,12 +78,27 @@ public class AuthController {
         HttpServletResponse servletResponse
     ) {
         MoneyCraftPrincipal liveProfile = rbacGuard.requireAuthenticatedPrincipal();
+        if (liveProfile.isNativeBearerAuthenticated() || liveProfile.isServiceKeyAuthenticated()) {
+            servletResponse.setHeader("Cache-Control", "no-store");
+            return AuthDtos.AuthenticatedPrincipalDto.from(liveProfile, null);
+        }
         CsrfToken activeXsrf = xsrfCookieRepository.loadToken(servletRequest);
         if (activeXsrf == null) {
             activeXsrf = xsrfCookieRepository.generateToken(servletRequest);
             xsrfCookieRepository.saveToken(activeXsrf, servletRequest, servletResponse);
         }
         return AuthDtos.AuthenticatedPrincipalDto.from(liveProfile, activeXsrf.getToken());
+    }
+
+    @PostMapping("/step-up/password")
+    public ResponseEntity<AuthDtos.PasswordStepUpResponse> createPasswordStepUpIntent(
+        @RequestBody AuthDtos.PasswordStepUpRequest request
+    ) {
+        MoneyCraftPrincipal superAdmin = rbacGuard.requireSuperAdminPerson();
+        AuthDtos.PasswordStepUpResponse issued = stepUpAuthService.issuePasswordStepUp(superAdmin, request);
+        return ResponseEntity.ok()
+            .header("Cache-Control", "no-store")
+            .body(issued);
     }
 
     @PostMapping("/passkeys/register/options")
@@ -126,6 +145,11 @@ public class AuthController {
             xsrfCookieRepository,
             operator
         );
+    }
+
+    @GetMapping("/oidc/issuers")
+    public List<AuthDtos.PublicOidcIssuerDto> listPublicOidcIssuers() {
+        return enterpriseOidcService.listPublicIssuers();
     }
 
     @GetMapping("/oidc/{issuerId}/authorize")

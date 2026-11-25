@@ -1,7 +1,9 @@
 package com.raster.moneycraft.foundation.config;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -131,6 +133,12 @@ public class MoneyCraftProperties {
 
     public static class Security {
         private boolean cookieSecure = true;
+        private String initialSuperAdminUsername = "";
+        private String providerConfigPath = "";
+        private String providerCustodianPublicKey = "";
+        private boolean allowTestProviderProfile;
+        private Map<String, String> secretRegistry = new LinkedHashMap<>();
+        private Map<String, String> evidenceRegistry = new LinkedHashMap<>();
         private final Argon2 argon2 = new Argon2();
 
         public boolean isCookieSecure() {
@@ -139,6 +147,54 @@ public class MoneyCraftProperties {
 
         public void setCookieSecure(boolean cookieSecure) {
             this.cookieSecure = cookieSecure;
+        }
+
+        public String getInitialSuperAdminUsername() {
+            return initialSuperAdminUsername;
+        }
+
+        public void setInitialSuperAdminUsername(String initialSuperAdminUsername) {
+            this.initialSuperAdminUsername = initialSuperAdminUsername;
+        }
+
+        public String getProviderConfigPath() {
+            return providerConfigPath;
+        }
+
+        public void setProviderConfigPath(String providerConfigPath) {
+            this.providerConfigPath = providerConfigPath;
+        }
+
+        public String getProviderCustodianPublicKey() {
+            return providerCustodianPublicKey;
+        }
+
+        public void setProviderCustodianPublicKey(String providerCustodianPublicKey) {
+            this.providerCustodianPublicKey = providerCustodianPublicKey;
+        }
+
+        public boolean isAllowTestProviderProfile() {
+            return allowTestProviderProfile;
+        }
+
+        public void setAllowTestProviderProfile(boolean allowTestProviderProfile) {
+            this.allowTestProviderProfile = allowTestProviderProfile;
+        }
+
+        public Map<String, String> getSecretRegistry() {
+            return secretRegistry;
+        }
+
+        public void setSecretRegistry(Map<String, String> secretRegistry) {
+            this.secretRegistry = secretRegistry;
+        }
+
+        public Map<String, String> getEvidenceRegistry() {
+            return evidenceRegistry;
+        }
+
+        public void setEvidenceRegistry(Map<String, String> evidenceRegistry) {
+            this.evidenceRegistry = evidenceRegistry;
         }
 
         public Argon2 getArgon2() {
@@ -251,6 +307,7 @@ public class MoneyCraftProperties {
         private String imsBaseUrl = "https://services.gst.gov.in";
         private String clientId = "MC-STATUTORY-CLIENT";
         private String clientSecret = "MC-STATUTORY-SECRET";
+        private Map<String, String> endpointProfileOverrides = new LinkedHashMap<>();
 
         public boolean isEnabled() {
             return enabled;
@@ -314,6 +371,14 @@ public class MoneyCraftProperties {
 
         public void setClientSecret(String clientSecret) {
             this.clientSecret = clientSecret;
+        }
+
+        public Map<String, String> getEndpointProfileOverrides() {
+            return endpointProfileOverrides;
+        }
+
+        public void setEndpointProfileOverrides(Map<String, String> endpointProfileOverrides) {
+            this.endpointProfileOverrides = endpointProfileOverrides;
         }
     }
 }

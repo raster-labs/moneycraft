@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   computed,
   effect,
@@ -12,9 +13,15 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../../core/keyboard/shortcut-command.registry';
+import {
   MAX_NAVIGATION_STACK_DEPTH,
   NavigationStackStore,
 } from '../../../state/navigation-stack.store';
+import { SemanticIconComponent } from '../semantic-icon/semantic-icon.component';
 
 export interface GoToDestination {
   readonly id: string;
@@ -46,7 +53,7 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
   { id: 'reg-vouchers', group: 'Registers & Books', title: 'Voucher Register', route: '/app/daybook' },
   { id: 'reg-banking-brs', group: 'Registers & Books', title: 'Banking / Auto-BRS Reconciliation', route: '/app/banking/brs' },
   { id: 'reg-cheque-books', group: 'Registers & Books', title: 'Cheque Books & Leaf Register', route: '/app/banking/cheque-books' },
-  { id: 'reg-ocr-queue', group: 'Registers & Books', title: 'Docs by Ira — OCR Review Queue', route: '/app/banking/ocr-queue' },
+  { id: 'reg-ocr-queue', group: 'Registers & Books', title: 'OCR Document Staging Queue', route: '/app/banking/ocr-queue' },
   { id: 'rpt-bs', group: 'Financial Reports', title: 'Balance Sheet', route: '/app/reports/balance-sheet' },
   { id: 'rpt-pnl', group: 'Financial Reports', title: 'Profit & Loss A/c', route: '/app/reports/pnl' },
   { id: 'rpt-tb', group: 'Financial Reports', title: 'Trial Balance', route: '/app/reports/trial-balance' },
@@ -58,6 +65,15 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
   { id: 'rpt-stock', group: 'Financial Reports', title: 'Stock Summary', route: '/app/reports/stock-summary' },
   { id: 'rpt-godown', group: 'Financial Reports', title: 'Godown / Location Summary', route: '/app/reports/godown-summary' },
   { id: 'rpt-batch-ageing', group: 'Financial Reports', title: 'Batch / Expiry Ageing', route: '/app/reports/batch-ageing' },
+  { id: 'rpt-open-orders', group: 'Financial Reports', title: 'Open Sales & Purchase Orders', route: '/app/reports/open-orders' },
+  { id: 'rpt-cash-bank-books', group: 'Financial Reports', title: 'Cash / Bank Books', route: '/app/reports/account-books', params: { bookType: 'CASH_BANK_SUMMARY' } },
+  { id: 'rpt-group-summary', group: 'Financial Reports', title: 'Group Summary', route: '/app/reports/account-books', params: { bookType: 'GROUP_SUMMARY' } },
+  { id: 'rpt-sales-register', group: 'Financial Reports', title: 'Sales Register', route: '/app/reports/account-books', params: { bookType: 'SALES_REGISTER' } },
+  { id: 'rpt-purchase-register', group: 'Financial Reports', title: 'Purchase Register', route: '/app/reports/account-books', params: { bookType: 'PURCHASE_REGISTER' } },
+  { id: 'rpt-journal-register', group: 'Financial Reports', title: 'Journal Register', route: '/app/reports/account-books', params: { bookType: 'JOURNAL_REGISTER' } },
+  { id: 'rpt-statistics', group: 'Financial Reports', title: 'Statistics (Types of Vouchers & Masters)', route: '/app/reports/statistics' },
+  { id: 'rpt-stock-query', group: 'Financial Reports', title: 'Stock Query (360° Item View)', route: '/app/reports/stock-query' },
+  { id: 'rpt-exceptions', group: 'Financial Reports', title: 'Exception Reports (Negative Stock / Ledgers / Optional / Cancelled)', route: '/app/reports/exceptions' },
   { id: 'stat-gstr1', group: 'Statutory & Admin', title: 'GSTR-1 Outward Supplies', route: '/app/statutory/gstr1' },
   { id: 'stat-gstr3b', group: 'Statutory & Admin', title: 'GSTR-3B Monthly Return', route: '/app/statutory/gstr3b' },
   { id: 'stat-gstr9', group: 'Statutory & Admin', title: 'GSTR-9 Annual Return (One-Click)', route: '/app/statutory/gstr9' },
@@ -65,14 +81,17 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
   { id: 'stat-einvoice', group: 'Statutory & Admin', title: 'e-Invoice & e-Way Bill Exchange', route: '/app/statutory/einvoice' },
   { id: 'stat-tds-26q', group: 'Statutory & Admin', title: 'TDS Form 26Q & ITNS 281 Challans', route: '/app/statutory/tds-26q' },
   { id: 'stat-gst-reg', group: 'Statutory & Admin', title: 'GST Registrations (Multi-GSTIN)', route: '/app/statutory/gst-registrations' },
-  { id: 'exg-migrate-1800', group: 'Statutory & Admin', title: 'Migrate .1800 Company (Parity Proof)', route: '/app/exchange/migrate-1800' },
-  { id: 'exg-import-export', group: 'Statutory & Admin', title: 'Import / Export (XML, JSONEx, Excel)', route: '/app/exchange/import-export' },
+  { id: 'exg-migrate-1800', group: 'Statutory & Admin', title: 'Migrate Legacy .1800 Snapshot (Parity Proof)', route: '/app/exchange/migrate-1800' },
+  { id: 'exg-spreadsheet', group: 'Statutory & Admin', title: 'Guided Columnar Spreadsheet Import Wizard', route: '/app/exchange/spreadsheet-import' },
+  { id: 'exg-import-export', group: 'Statutory & Admin', title: 'Import / Export (Legacy XML, JSONEx, Spreadsheet)', route: '/app/exchange/import-export' },
+  { id: 'ext-workbench', group: 'Statutory & Admin', title: 'Extension Workbench & TDL Importer', route: '/app/extensions' },
   { id: 'adm-security', group: 'Statutory & Admin', title: 'Administration, RBAC & Audit Chain', route: '/app/admin' },
 ];
 
 @Component({
   selector: 'mc-go-to-palette',
   standalone: true,
+  imports: [SemanticIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (isOpen()) {
@@ -92,26 +111,41 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
                 Switch To (<span class="mc-key-ctrl">G</span>) — Replace Workspace View
               }
             </span>
-            <button type="button" class="mc-close-icon-btn" (click)="closed.emit()" aria-label="Close">
-              Esc
+            <button
+              type="button"
+              class="mc-btn mc-btn-secondary"
+              (click)="closed.emit()"
+              aria-label="Close"
+            >
+              <mc-icon name="close" [size]="16" />
+              <span>Close</span>
+              @if (closeHint(); as hint) {
+                <span class="mc-action-key-badge" aria-hidden="true">[{{ hint }}]</span>
+              }
             </button>
           </div>
 
           <div class="mc-goto-search-box">
-            <input
-              #searchInput
-              type="text"
-              class="mc-input"
-              [value]="filterQuery()"
-              (input)="onQueryInput($event)"
-              placeholder="Type report, master, voucher, or administration screen..."
-              aria-label="Filter Go To destinations"
-            />
+            <div class="mc-goto-search-input-wrap">
+              <mc-icon name="search" [size]="16" />
+              <input
+                #searchInput
+                type="text"
+                class="mc-input"
+                [value]="filterQuery()"
+                (input)="onQueryInput($event)"
+                placeholder="Type report, master, voucher, extension, or administration screen..."
+                aria-label="Filter Go To destinations"
+              />
+            </div>
           </div>
 
           @if (navStack.isAtMaxDepth() && mode() === 'GO_TO') {
-            <div class="mc-goto-limit-banner" role="alert">
-              Maximum Go To overlay depth ({{ maxDepth }}) reached. Press Esc to close an existing overlay first, or use Ctrl+G (Switch To).
+            <div class="mc-status-banner mc-status-warning" role="alert">
+              <mc-icon name="warning" [size]="20" />
+              <span>
+                Maximum Go To overlay depth ({{ maxDepth }}) reached. Press Esc to close an existing overlay first, or use Ctrl+G (Switch To).
+              </span>
             </div>
           }
 
@@ -130,9 +164,7 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
                 <span class="mc-badge mc-badge-slate">{{ dest.group }}</span>
               </li>
             } @empty {
-              <li class="mc-goto-empty">
-                No matching destination found for "{{ filterQuery() }}".
-              </li>
+              <li class="mc-empty-records">No matching records</li>
             }
           </ul>
 
@@ -147,17 +179,7 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
   `,
   styles: `
     .mc-goto-dialog {
-      width: min(560px, 94vw);
-    }
-
-    .mc-close-icon-btn {
-      background: rgba(255, 255, 255, 0.14);
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      color: var(--mc-color-surface);
-      border-radius: var(--mc-radius-xs);
-      padding: 0.1rem 0.45rem;
-      font-size: var(--mc-font-size-xs);
-      cursor: pointer;
+      width: min(580px, 94vw);
     }
 
     .mc-goto-search-box {
@@ -166,13 +188,11 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
       border-bottom: var(--mc-border-subtle);
     }
 
-    .mc-goto-limit-banner {
-      padding: var(--mc-space-2) var(--mc-space-3);
-      background: var(--mc-color-warning-50);
-      color: var(--mc-color-warning-700);
-      border-bottom: 1px solid var(--mc-color-warning-100);
-      font-size: var(--mc-font-size-xs);
-      font-weight: 600;
+    .mc-goto-search-input-wrap {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: var(--mc-space-2);
     }
 
     .mc-goto-list-header {
@@ -204,15 +224,8 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
     }
 
     .mc-goto-item-active {
-      background: var(--mc-color-verdigris-teal);
+      background: var(--mc-color-pressed-teal);
       color: var(--mc-color-surface);
-    }
-
-    .mc-goto-empty {
-      padding: var(--mc-space-4);
-      color: var(--mc-color-slate-600);
-      text-align: center;
-      font-weight: 500;
     }
 
     .mc-goto-footer-hint {
@@ -224,17 +237,24 @@ export const GOTO_DESTINATIONS: readonly GoToDestination[] = [
 })
 export class GoToPaletteComponent {
   readonly navStack = inject(NavigationStackStore);
+  private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly isOpen = input.required<boolean>();
   readonly mode = input<'GO_TO' | 'SWITCH_TO'>('GO_TO');
   readonly closed = output<void>();
 
   private readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
+  private modalHandle: ActiveModalContextHandle | null = null;
 
   readonly maxDepth = MAX_NAVIGATION_STACK_DEPTH;
   readonly filterQuery = signal<string>('');
   readonly selectedIndex = signal<number>(0);
+
+  readonly closeHint = computed(() =>
+    this.shortcutRegistry.effectiveActionHint('message.details', 'editor.close', asciiPair('C/c')),
+  );
 
   readonly filteredDestinations = computed(() => {
     const q = this.filterQuery().trim().toLowerCase();
@@ -251,10 +271,34 @@ export class GoToPaletteComponent {
       if (this.isOpen()) {
         this.filterQuery.set('');
         this.selectedIndex.set(0);
+        this.releaseModal();
+        this.modalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'message.details',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Close',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close Go To palette without abandoning draft.',
+              normalActivation: () => this.closed.emit(),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
         queueMicrotask(() => {
           this.searchInputRef()?.nativeElement.focus();
         });
+      } else {
+        this.releaseModal();
       }
+    });
+
+    this.destroyRef.onDestroy(() => {
+      this.releaseModal();
     });
   }
 
@@ -317,6 +361,13 @@ export class GoToPaletteComponent {
   onBackdropClick(event: MouseEvent): void {
     if (event.target === event.currentTarget) {
       this.closed.emit();
+    }
+  }
+
+  private releaseModal(): void {
+    if (this.modalHandle) {
+      this.modalHandle.close();
+      this.modalHandle = null;
     }
   }
 }

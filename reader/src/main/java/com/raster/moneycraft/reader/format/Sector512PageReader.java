@@ -23,7 +23,7 @@ import java.util.Locale;
 import java.util.stream.Stream;
 
 /**
- * Low-level 512-byte sector reader and Sector-0 header validator for TallyPrime .1800 stores.
+ * Low-level 512-byte sector reader and Sector-0 header validator for legacy .1800 company snapshot stores.
  * Strictly ignores any file containing 'lic' (SEC-015).
  */
 public final class Sector512PageReader {
@@ -33,7 +33,8 @@ public final class Sector512PageReader {
     public static final int DATA_SECTOR_PAYLOAD_BYTES = SECTOR_BYTES - DATA_SECTOR_HEADER_BYTES;
     public static final long STANDARD_SENTINEL_32 = 0xFFFFFFFFL;
 
-    private static final String TALLY_INDEX_MAGIC = "Tally Index";
+    // NC-090-02 binary format interoperability literal at Sector-0 offset [13..23] of .1800 index stores
+    private static final String LEGACY_INDEX_MAGIC = "Tally Index";
 
     public boolean isLicenseFile(Path path) {
         String lower = path.getFileName().toString().toLowerCase(Locale.ROOT);
@@ -107,7 +108,7 @@ public final class Sector512PageReader {
         byte[] versionBytes = Arrays.copyOfRange(fileBytes, 104, 114);
 
         String indexMagicCandidate = new String(fileBytes, 13, 11, StandardCharsets.US_ASCII);
-        boolean isIndexStore = TALLY_INDEX_MAGIC.equals(indexMagicCandidate);
+        boolean isIndexStore = LEGACY_INDEX_MAGIC.equals(indexMagicCandidate);
 
         if (isIndexStore) {
             TallyReleaseVersion indexVersion = detectIndexReleaseVersion(headerSignature32);

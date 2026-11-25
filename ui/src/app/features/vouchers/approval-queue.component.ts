@@ -16,10 +16,15 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthStore } from '../../core/auth/auth.store';
 import { isEditableTextElement } from '../../core/keyboard/collision-guard';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { CompanyContextStore } from '../../state/company-context.store';
 import { NavigationStackStore } from '../../state/navigation-stack.store';
 import { VoucherService } from './voucher.service';
@@ -30,7 +35,7 @@ export type QueueStatusTab = 'ALL_UNPOSTED' | 'PENDING_APPROVAL' | 'DRAFT';
 @Component({
   selector: 'mc-approval-queue',
   standalone: true,
-  imports: [FormsModule, RouterLink, CodeBadgeComponent, IndianCurrencyPipe],
+  imports: [FormsModule, RouterLink, CodeBadgeComponent, IndianCurrencyPipe, SemanticIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mc-queue-shell">
@@ -80,10 +85,11 @@ export type QueueStatusTab = 'ALL_UNPOSTED' | 'PENDING_APPROVAL' | 'DRAFT';
             </button>
           </div>
 
-          <button type="button" class="mc-btn" [disabled]="loading()" (click)="reloadQueue()">
-            Refresh
+          <button type="button" class="mc-btn mc-btn-secondary" [disabled]="loading()" (click)="reloadQueue()">
+            <mc-icon name="refresh" [size]="16" />
+            <span>Refresh</span>
           </button>
-          <a routerLink="/app/daybook" class="mc-btn">Day Book</a>
+          <a routerLink="/app/daybook" class="mc-btn mc-btn-secondary">Day Book</a>
         </div>
       </header>
 
@@ -175,7 +181,8 @@ export type QueueStatusTab = 'ALL_UNPOSTED' | 'PENDING_APPROVAL' | 'DRAFT';
                               [disabled]="busyAction() || companyContext.quarantined()"
                               (click)="openApproveModal(item); $event.stopPropagation()"
                             >
-                              Approve (<span class="mc-key-ctrl">A</span>)
+                              <mc-icon name="approve-shield" [size]="16" />
+                              <span>Approve (<span class="mc-key-ctrl">A</span>)</span>
                             </button>
                           }
                         } @else if (item.status === 'DRAFT') {
@@ -186,7 +193,8 @@ export type QueueStatusTab = 'ALL_UNPOSTED' | 'PENDING_APPROVAL' | 'DRAFT';
                             [disabled]="busyAction() || companyContext.quarantined()"
                             (click)="postDraftVoucher(item); $event.stopPropagation()"
                           >
-                            Post
+                            <mc-icon name="post-ledger" [size]="16" />
+                            <span>Post</span>
                           </button>
                         }
                       </div>
@@ -194,9 +202,7 @@ export type QueueStatusTab = 'ALL_UNPOSTED' | 'PENDING_APPROVAL' | 'DRAFT';
                   </tr>
                 } @empty {
                   <tr>
-                    <td colspan="8" class="mc-queue-empty">
-                      No vouchers currently awaiting approval or saved as draft.
-                    </td>
+                    <td colspan="8" class="mc-empty-records">No matching records</td>
                   </tr>
                 }
               </tbody>
@@ -260,8 +266,17 @@ export type QueueStatusTab = 'ALL_UNPOSTED' | 'PENDING_APPROVAL' | 'DRAFT';
               </div>
             </div>
             <div class="mc-modal-footer">
-              <button type="button" class="mc-btn" (click)="approveModalTarget.set(null)">
-                Cancel (Esc)
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                data-testid="approve-return-btn"
+                (click)="approveModalTarget.set(null)"
+              >
+                <mc-icon name="back" [size]="16" />
+                <span>Return</span>
+                @if (approveHint('editor.close', 'R/r'); as rHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ rHint }}]</span>
+                }
               </button>
               <button
                 type="submit"
@@ -269,7 +284,11 @@ export type QueueStatusTab = 'ALL_UNPOSTED' | 'PENDING_APPROVAL' | 'DRAFT';
                 data-testid="confirm-approve-btn"
                 [disabled]="busyAction()"
               >
-                {{ busyAction() ? 'Approving...' : 'Approve & Post (Enter)' }}
+                <mc-icon name="approve-shield" [size]="16" />
+                <span>{{ busyAction() ? 'Approving...' : 'Approve' }}</span>
+                @if (approveHint('journal.approve', 'A/a'); as aHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ aHint }}]</span>
+                }
               </button>
             </div>
           </form>
@@ -514,6 +533,15 @@ export class ApprovalQueueComponent implements OnInit {
   approvalRemarks = '';
 
   private lastLoadedCompanyId: string | null = null;
+  private approveModalHandle: ActiveModalContextHandle | null = null;
+
+  approveHint(commandId: string, pairSpec: 'A/a' | 'R/r'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'journal.approveConfirm',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
 
   readonly pendingCount = computed(
     () => this.unpostedItems().filter((i) => i.status === 'PENDING_APPROVAL').length,
@@ -562,6 +590,51 @@ export class ApprovalQueueComponent implements OnInit {
         void this.reloadQueue();
       }
     });
+
+    effect(() => {
+      const target = this.approveModalTarget();
+      this.releaseApproveModal();
+      if (target) {
+        this.approveModalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'journal.approveConfirm',
+              locale: 'en-GB',
+              commandId: 'journal.approve',
+              label: 'Approve',
+              letterPair: asciiPair('A/a'),
+              enabledWhen: () => !this.busyAction() && !this.companyContext.quarantined(),
+              permissionRef: 'voucher.approve',
+              effect: 'Confirm FOUR_EYES approval on current saved version in open period.',
+              normalActivation: () => this.confirmApprove(),
+              iconSemanticId: 'mc.icon.approve-shield',
+              stateTokenRole: 'action.primary',
+              isMutation: true,
+            },
+            {
+              contextId: 'journal.approveConfirm',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Return',
+              letterPair: asciiPair('R/r'),
+              permissionRef: 'authenticated',
+              effect: 'Close approval confirmation without approving.',
+              normalActivation: () => this.approveModalTarget.set(null),
+              iconSemanticId: 'mc.icon.back',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
+      }
+    });
+  }
+
+  private releaseApproveModal(): void {
+    if (this.approveModalHandle) {
+      this.approveModalHandle.close();
+      this.approveModalHandle = null;
+    }
   }
 
   ngOnInit(): void {
@@ -585,6 +658,7 @@ export class ApprovalQueueComponent implements OnInit {
 
     this.destroyRef.onDestroy(() => {
       disposeAccept();
+      this.releaseApproveModal();
     });
   }
 

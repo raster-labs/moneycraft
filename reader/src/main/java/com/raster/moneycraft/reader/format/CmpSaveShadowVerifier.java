@@ -11,7 +11,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Verifies the TallyPrime clean-shutdown shadow-commit invariant:
+ * Verifies the legacy .1800 clean-shutdown shadow-commit invariant:
  * CmpSave.1800 must exist and match Company.1800 byte-for-byte (MIG-002, AT-MIG-002).
  */
 public final class CmpSaveShadowVerifier {

@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import {
   authenticatedGuard,
   setupRouteGuard,
+  superAdminGuard,
   systemRoleGuard,
 } from './core/auth/permission.guard';
 
@@ -191,6 +192,44 @@ const REPORTS_CHILD_ROUTES: Routes = [
       import('./features/inventory/stock-summary.component').then((m) => m.StockSummaryComponent),
   },
   {
+    path: 'open-orders',
+    data: { reportTab: 'OPEN_ORDERS' },
+    loadComponent: () =>
+      import('./features/inventory/stock-summary.component').then((m) => m.StockSummaryComponent),
+  },
+  {
+    path: 'account-books',
+    data: { workbenchMode: 'ACCOUNT_BOOKS' },
+    loadComponent: () =>
+      import('./features/reports/account-books-and-exceptions.component').then(
+        (m) => m.AccountBooksAndExceptionsComponent,
+      ),
+  },
+  {
+    path: 'exceptions',
+    data: { workbenchMode: 'EXCEPTIONS' },
+    loadComponent: () =>
+      import('./features/reports/account-books-and-exceptions.component').then(
+        (m) => m.AccountBooksAndExceptionsComponent,
+      ),
+  },
+  {
+    path: 'statistics',
+    data: { workbenchMode: 'STATISTICS' },
+    loadComponent: () =>
+      import('./features/reports/account-books-and-exceptions.component').then(
+        (m) => m.AccountBooksAndExceptionsComponent,
+      ),
+  },
+  {
+    path: 'stock-query',
+    data: { workbenchMode: 'STOCK_QUERY' },
+    loadComponent: () =>
+      import('./features/reports/account-books-and-exceptions.component').then(
+        (m) => m.AccountBooksAndExceptionsComponent,
+      ),
+  },
+  {
     path: '',
     pathMatch: 'full',
     redirectTo: 'balance-sheet',
@@ -233,6 +272,14 @@ const EXCHANGE_CHILD_ROUTES: Routes = [
   {
     path: 'migrate-1800',
     data: { exchangeTab: 'MIGRATE_1800' },
+    loadComponent: () =>
+      import('./features/exchange/migration-and-exchange.component').then(
+        (m) => m.MigrationAndExchangeComponent,
+      ),
+  },
+  {
+    path: 'spreadsheet-import',
+    data: { exchangeTab: 'SPREADSHEET_WIZARD' },
     loadComponent: () =>
       import('./features/exchange/migration-and-exchange.component').then(
         (m) => m.MigrationAndExchangeComponent,
@@ -418,6 +465,21 @@ export const APP_ROUTES: Routes = [
     children: EXCHANGE_CHILD_ROUTES,
   },
   {
+    path: 'extensions',
+    canActivate: [authenticatedGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./features/extensions/extension-workbench.component').then(
+            (m) => m.ExtensionWorkbenchComponent,
+          ),
+      },
+    ],
+  },
+  {
     path: 'companies',
     canActivate: [authenticatedGuard],
     loadComponent: () =>
@@ -427,6 +489,21 @@ export const APP_ROUTES: Routes = [
         path: '',
         loadComponent: () =>
           import('./features/companies/company-hub.component').then((m) => m.CompanyHubComponent),
+      },
+    ],
+  },
+  {
+    path: 'admin/government-integrations',
+    canActivate: [authenticatedGuard, superAdminGuard],
+    loadComponent: () =>
+      import('./shell/erp-shell.component').then((m) => m.ErpShellComponent),
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./features/companies/government-integrations.component').then(
+            (m) => m.GovernmentIntegrationsComponent,
+          ),
       },
     ],
   },
@@ -505,9 +582,24 @@ export const APP_ROUTES: Routes = [
         children: EXCHANGE_CHILD_ROUTES,
       },
       {
+        path: 'extensions',
+        loadComponent: () =>
+          import('./features/extensions/extension-workbench.component').then(
+            (m) => m.ExtensionWorkbenchComponent,
+          ),
+      },
+      {
         path: 'companies',
         loadComponent: () =>
           import('./features/companies/company-hub.component').then((m) => m.CompanyHubComponent),
+      },
+      {
+        path: 'admin/government-integrations',
+        canActivate: [superAdminGuard],
+        loadComponent: () =>
+          import('./features/companies/government-integrations.component').then(
+            (m) => m.GovernmentIntegrationsComponent,
+          ),
       },
       {
         path: 'admin',

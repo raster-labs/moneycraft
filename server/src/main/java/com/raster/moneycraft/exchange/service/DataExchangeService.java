@@ -13,6 +13,7 @@ import com.raster.moneycraft.foundation.crypto.JcsCanonicalizer;
 import com.raster.moneycraft.foundation.error.MoneyCraftException;
 import com.raster.moneycraft.foundation.security.MoneyCraftPrincipal;
 import com.raster.moneycraft.foundation.security.RbacAuthorizationService;
+import com.raster.moneycraft.foundation.tenant.TenantContextHolder;
 import com.raster.moneycraft.inventory.dto.InventoryMasterDtos;
 import com.raster.moneycraft.inventory.service.InventoryMasterService;
 import java.io.ByteArrayInputStream;
@@ -24,8 +25,10 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -66,23 +69,38 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Tally `<ENVELOPE>` XML, Rel 7.2 `JSONEx`, and Apache POI `.xlsx` Data Exchange service.
- * Enforces universal Tally sign convention (-Dr / +Cr), XXE hardening, &#4; stripping,
+ * Canonical `<ENVELOPE>` XML, `JSONEx`, and Apache POI `.xlsx` Data Exchange service.
+ * Enforces universal signed ledger convention (-Dr / +Cr), XXE hardening, &#4; stripping,
  * and idempotent GUID/name upsert with exact fixed-point BigDecimal strings.
+ * Wire-format tags required for external XML/JSONEx interoperability are retained under NC-090-02.
  */
 @Service
 public class DataExchangeService {
 
-    private static final DateTimeFormatter TALLY_DATE_FMT = DateTimeFormatter.BASIC_ISO_DATE;
+    private static final DateTimeFormatter COMPACT_DATE_FMT = DateTimeFormatter.BASIC_ISO_DATE;
     private static final Pattern NUMERIC_ENTITY_CTRL_PATTERN = Pattern.compile(
         "&#(?:x0*[0-8bcef]|0*(?:[0-8]|1[124-9]|2[0-9]|3[01]));",
         Pattern.CASE_INSENSITIVE
     );
     private static final Pattern RAW_CTRL_CHARS_PATTERN = Pattern.compile("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F]");
+    private static final Pattern EXCEL_COL_PATTERN = Pattern.compile("^[A-Za-z]{1,2}$");
+    private static final String SYNC_RULE_SHEET_MARKER = "__MC_SYNC_RULE__";
+    private static final String META_SCOPE_KEY = "__mcMeta_templateScope";
+    private static final String META_FROM_COL_KEY = "__mcMeta_fromColumn";
+    private static final String META_TO_COL_KEY = "__mcMeta_toColumn";
+    private static final String META_EXCLUDE_COL_KEY = "__mcMeta_excludeRowColumn";
+    private static final String META_EXCLUDE_OP_KEY = "__mcMeta_excludeRowOperator";
+    private static final String META_EXCLUDE_VAL_KEY = "__mcMeta_excludeRowValue";
     private static final Set<String> VALID_TARGET_TYPES = Set.of(
         "LEDGERS", "STOCK_ITEMS", "ACCOUNTING_VOUCHERS", "ITEM_VOUCHERS", "BANK_STATEMENT"
     );
     private static final Set<String> VALID_DUP_MODES = Set.of("REJECT", "SKIP", "UPDATE_IF_DRAFT");
+    private static final Set<String> VALID_MASTER_DUP_RULES = Set.of(
+        "COMBINE_OPENING_BALANCES", "IGNORE_DUPLICATES", "MODIFY_WITH_NEW_DATA"
+    );
+    private static final Set<String> VALID_EXCEPTION_BEHAVIORS = Set.of(
+        "STOP_AT_FIRST_EXCEPTION", "RECORD_EXCEPTIONS_AND_IMPORT", "IGNORE_EXCEPTIONS_AND_IMPORT"
+    );
 
     private final AuthorityGuard authorityGuard;
     private final RbacAuthorizationService rbacGuard;
@@ -134,18 +152,50 @@ public class DataExchangeService {
         UUID companyId
     ) {
         rbacGuard.requireCompanyAccess(principal, companyId);
-        return businessJdbcTemplate.query(
+        List<ExchangeDtos.ExchangeMappingTemplateDto> local = businessJdbcTemplate.query(
             """
             SELECT id, name, target_type, sheet_name, header_row_index,
                    column_mappings_json, default_values_json, duplicate_handling,
                    active, version_no, created_at
               FROM mc_exchange_mapping_template
-             WHERE company_id = ? AND active = true
+             WHERE company_id = ? AND active = true AND COALESCE(sheet_name, '') <> '__MC_SYNC_RULE__'
              ORDER BY lower(name) ASC, id ASC
             """,
             (rs, rowNum) -> mapTemplateRow(rs),
             companyId
         );
+        List<ExchangeDtos.ExchangeMappingTemplateDto> shared = TenantContextHolder.callWithSystemBypass(
+            "exchange-list-shared-templates",
+            () -> businessJdbcTemplate.query(
+                """
+                SELECT id, name, target_type, sheet_name, header_row_index,
+                       column_mappings_json, default_values_json, duplicate_handling,
+                       active, version_no, created_at
+                  FROM mc_exchange_mapping_template
+                 WHERE company_id <> ?
+                   AND active = true
+                   AND COALESCE(sheet_name, '') <> '__MC_SYNC_RULE__'
+                   AND default_values_json->>'__mcMeta_templateScope' = 'ALL_COMPANIES'
+                 ORDER BY lower(name) ASC, id ASC
+                """,
+                (rs, rowNum) -> mapTemplateRow(rs),
+                companyId
+            )
+        );
+        if (shared == null || shared.isEmpty()) {
+            return local;
+        }
+        List<ExchangeDtos.ExchangeMappingTemplateDto> combined = new ArrayList<>(local);
+        Set<UUID> seen = new HashSet<>();
+        for (ExchangeDtos.ExchangeMappingTemplateDto t : local) {
+            seen.add(t.id());
+        }
+        for (ExchangeDtos.ExchangeMappingTemplateDto t : shared) {
+            if (seen.add(t.id())) {
+                combined.add(t);
+            }
+        }
+        return combined;
     }
 
     public ExchangeDtos.ExchangeMappingTemplateDto createTemplate(
@@ -172,7 +222,28 @@ public class DataExchangeService {
                 HttpStatus.BAD_REQUEST,
                 "MC-EXG-TEMPLATE-NAME-REQUIRED",
                 "Template Name Required",
-                "Specify name or templateName."
+                "Invalid mapping template name."
+            );
+        }
+        if (request.columnMappings() != null && request.columnMappings().isEmpty()
+            && (request.defaultValues() == null || request.defaultValues().isEmpty())) {
+            throw new MoneyCraftException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "MC-EXG-TEMPLATE-MAPPING-EMPTY",
+                "Empty Field Mappings",
+                "Unable to save the mapping template, as there is no mapping of TallyPrime fields with the Excel data."
+            );
+        }
+
+        String fromCol = normalizeAndValidateExcelColumn(request.fromColumn());
+        String toCol = normalizeAndValidateExcelColumn(request.toColumn());
+        if (fromCol != null && toCol != null && excelColumnToIndex(toCol) < excelColumnToIndex(fromCol)) {
+            throw new MoneyCraftException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "MC-EXG-TEMPLATE-COLUMN-RANGE",
+                "Invalid Column Range in Mapping Template",
+                "In the selected mapping template, the value in the 'to' field should be greater than or equal "
+                    + "to the value in the 'from' field."
             );
         }
 
@@ -190,7 +261,32 @@ public class DataExchangeService {
             ? "Sheet1"
             : request.sheetName().trim();
         Map<String, String> mappings = request.columnMappings() == null ? Map.of() : request.columnMappings();
-        Map<String, String> defaults = request.defaultValues() == null ? Map.of() : request.defaultValues();
+        Map<String, String> defaults = new LinkedHashMap<>(
+            request.defaultValues() == null ? Map.of() : request.defaultValues()
+        );
+        String scope = "ALL_COMPANIES".equalsIgnoreCase(request.templateScope())
+            ? "ALL_COMPANIES"
+            : "THIS_COMPANY";
+        defaults.put(META_SCOPE_KEY, scope);
+        if (fromCol != null) {
+            defaults.put(META_FROM_COL_KEY, fromCol);
+        }
+        if (toCol != null) {
+            defaults.put(META_TO_COL_KEY, toCol);
+        }
+        if (request.excludeRowColumn() != null && !request.excludeRowColumn().isBlank()) {
+            defaults.put(META_EXCLUDE_COL_KEY, request.excludeRowColumn().trim());
+            defaults.put(
+                META_EXCLUDE_OP_KEY,
+                request.excludeRowOperator() == null || request.excludeRowOperator().isBlank()
+                    ? "CONTAINS"
+                    : request.excludeRowOperator().trim().toUpperCase(Locale.ROOT)
+            );
+            defaults.put(
+                META_EXCLUDE_VAL_KEY,
+                request.excludeRowValue() == null ? "" : request.excludeRowValue().trim()
+            );
+        }
 
         String finalDupMode = dupMode;
         return businessTxTemplate.execute(tx -> {
@@ -225,7 +321,7 @@ public class DataExchangeService {
                 id.toString(),
                 "SUCCESS",
                 null,
-                Map.of("name", rawName, "targetType", targetType)
+                Map.of("name", rawName, "targetType", targetType, "templateScope", scope)
             );
 
             return businessJdbcTemplate.queryForObject(
@@ -243,8 +339,86 @@ public class DataExchangeService {
         });
     }
 
+    public void deleteTemplate(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        UUID templateId
+    ) {
+        authorityGuard.assertWritable();
+        CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
+        businessTxTemplate.executeWithoutResult(tx -> {
+            ensurePrincipalProjected(actor);
+            int affected = businessJdbcTemplate.update(
+                """
+                DELETE FROM mc_exchange_mapping_template
+                 WHERE company_id = ? AND id = ? AND COALESCE(sheet_name, '') <> '__MC_SYNC_RULE__'
+                """,
+                companyId,
+                templateId
+            );
+            if (affected == 0) {
+                Integer sharedAffected = TenantContextHolder.callWithSystemBypass(
+                    "exchange-delete-shared-template",
+                    () -> businessJdbcTemplate.update(
+                        """
+                        DELETE FROM mc_exchange_mapping_template
+                         WHERE id = ?
+                           AND COALESCE(sheet_name, '') <> '__MC_SYNC_RULE__'
+                           AND default_values_json->>'__mcMeta_templateScope' = 'ALL_COMPANIES'
+                        """,
+                        templateId
+                    )
+                );
+                if (sharedAffected == null || sharedAffected == 0) {
+                    throw new MoneyCraftException(
+                        HttpStatus.NOT_FOUND,
+                        "MC-EXG-TEMPLATE-NOT-FOUND",
+                        "Mapping Template Not Found",
+                        "Exchange mapping template " + templateId + " was not found."
+                    );
+                }
+            }
+            auditChainService.appendCompanyEvent(
+                companyId,
+                actor.principalId(),
+                actor.kind(),
+                "EXCHANGE_TEMPLATE_DELETE",
+                "EXCHANGE_TEMPLATE",
+                templateId.toString(),
+                "SUCCESS",
+                null,
+                Map.of("templateId", templateId.toString())
+            );
+        });
+    }
+
+    private static String normalizeAndValidateExcelColumn(String rawCol) {
+        if (rawCol == null || rawCol.isBlank()) {
+            return null;
+        }
+        String trimmed = rawCol.trim().toUpperCase(Locale.ROOT);
+        if (!EXCEL_COL_PATTERN.matcher(trimmed).matches()) {
+            throw new MoneyCraftException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "MC-EXG-TEMPLATE-COLUMN-RANGE",
+                "Invalid Column Letter in Mapping Template",
+                "The value entered for the from/to column in the mapping template is invalid. "
+                    + "Enter a value from A to ZZ and try again."
+            );
+        }
+        return trimmed;
+    }
+
+    private static int excelColumnToIndex(String col) {
+        int result = 0;
+        for (int i = 0; i < col.length(); i++) {
+            result = result * 26 + (col.charAt(i) - 'A' + 1);
+        }
+        return result;
+    }
+
     // =========================================================================
-    // 2. Tally <ENVELOPE> XML Export & Import
+    // 2. Canonical <ENVELOPE> XML Export & Import (NC-090-02 Wire Interoperability)
     // =========================================================================
 
     public ExchangeDtos.ExportDataResultDto exportXml(
@@ -252,13 +426,15 @@ public class DataExchangeService {
         UUID companyId,
         ExchangeDtos.ExportDataRequest request
     ) {
-        rbacGuard.requireCompanyAccess(principal, companyId);
+        rbacGuard.requireExportPermitted(principal, companyId);
         ExchangeDtos.JsonExDataDto bundle = collectCompanyExchangeBundle(principal, companyId, request);
         String companyName = queryCompanyName(companyId);
 
+        // NC-090-02: Exact external XML wire tags (<TALLYREQUEST>, <TALLYMESSAGE>, TallyUDF)
+        // preserved strictly for wire-level envelope interoperability.
         StringBuilder sb = new StringBuilder(16384);
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        sb.append("<!-- MoneyCraft 1.0.0 Canonical Tally XML Envelope Export (Universal Sign Law: -Dr / +Cr) -->\n");
+        sb.append("<!-- MoneyCraft 1.0.0 Canonical XML Envelope Export (Universal Sign Law: -Dr / +Cr) -->\n");
         sb.append("<ENVELOPE>\n");
         sb.append("  <HEADER>\n");
         sb.append("    <TALLYREQUEST>Import Data</TALLYREQUEST>\n");
@@ -342,7 +518,7 @@ public class DataExchangeService {
 
         for (ExchangeDtos.JsonExLedgerDto l : bundle.ledgers()) {
             BigDecimal ob = new BigDecimal(l.openingBalance());
-            String tallyOb = ob.signum() == 0
+            String signedOb = ob.signum() == 0
                 ? "0.00"
                 : ("DR".equals(l.openingSide()) ? "-" + l.openingBalance() : l.openingBalance());
             sb.append("        <TALLYMESSAGE xmlns:UDF=\"TallyUDF\">\n");
@@ -352,7 +528,7 @@ public class DataExchangeService {
             sb.append("            <PARENT>").append(escapeXml(nullToEmpty(l.groupName()))).append("</PARENT>\n");
             sb.append("            <ISBILLWISEON>").append(l.maintainBalancesBillByBill() ? "Yes" : "No")
                 .append("</ISBILLWISEON>\n");
-            sb.append("            <OPENINGBALANCE>").append(escapeXml(tallyOb)).append("</OPENINGBALANCE>\n");
+            sb.append("            <OPENINGBALANCE>").append(escapeXml(signedOb)).append("</OPENINGBALANCE>\n");
             if (l.gstin() != null && !l.gstin().isBlank()) {
                 sb.append("            <PARTYGSTIN>").append(escapeXml(l.gstin())).append("</PARTYGSTIN>\n");
             }
@@ -369,8 +545,8 @@ public class DataExchangeService {
                 .append("\" VCHTYPE=\"").append(escapeXml(v.voucherTypeName()))
                 .append("\" ACTION=\"Create\">\n");
             sb.append("            <GUID>").append(escapeXml(v.guid())).append("</GUID>\n");
-            sb.append("            <DATE>").append(v.voucherDate().format(TALLY_DATE_FMT)).append("</DATE>\n");
-            sb.append("            <EFFECTIVEDATE>").append(v.effectiveDate().format(TALLY_DATE_FMT))
+            sb.append("            <DATE>").append(v.voucherDate().format(COMPACT_DATE_FMT)).append("</DATE>\n");
+            sb.append("            <EFFECTIVEDATE>").append(v.effectiveDate().format(COMPACT_DATE_FMT))
                 .append("</EFFECTIVEDATE>\n");
             sb.append("            <VOUCHERTYPENAME>").append(escapeXml(v.voucherTypeName()))
                 .append("</VOUCHERTYPENAME>\n");
@@ -408,7 +584,7 @@ public class DataExchangeService {
                     String bSigned = bDr ? "-" + ba.amount() : ba.amount();
                     sb.append("              <BILLALLOCATIONS.LIST>\n");
                     sb.append("                <NAME>").append(escapeXml(ba.billName())).append("</NAME>\n");
-                    sb.append("                <BILLTYPE>").append(escapeXml(toTallyBillType(ba.allocationType())))
+                    sb.append("                <BILLTYPE>").append(escapeXml(toWireBillType(ba.allocationType())))
                         .append("</BILLTYPE>\n");
                     sb.append("                <AMOUNT>").append(escapeXml(bSigned)).append("</AMOUNT>\n");
                     sb.append("              </BILLALLOCATIONS.LIST>\n");
@@ -470,6 +646,18 @@ public class DataExchangeService {
         String rawXmlPayload,
         boolean dryRun
     ) {
+        return importXml(actor, companyId, rawXmlPayload, dryRun, "MODIFY_WITH_NEW_DATA", false, null);
+    }
+
+    public ExchangeDtos.ImportDataResultDto importXml(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        String rawXmlPayload,
+        boolean dryRun,
+        String masterDuplicateRule,
+        boolean overwriteVoucherByGuid,
+        String exceptionBehavior
+    ) {
         authorityGuard.assertWritable();
         CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
 
@@ -478,14 +666,25 @@ public class DataExchangeService {
                 HttpStatus.BAD_REQUEST,
                 "MC-EXG-XML-EMPTY",
                 "Empty XML Payload",
-                "Provide a non-empty Tally <ENVELOPE> XML payload."
+                "Provide a non-empty <ENVELOPE> XML payload."
             );
         }
 
-        String sanitizedXml = stripTallyControlCharacters(rawXmlPayload);
+        String sanitizedXml = stripXmlControlCharacters(rawXmlPayload);
         Document doc = parseXmlSafely(sanitizedXml);
         ExchangeDtos.JsonExDataDto parsed = parseEnvelopeDomToBundle(doc);
-        return applyExchangeBundle(actor, companyId, parsed, "XML", "IMPORT_XML", "TALLY_XML", dryRun);
+        return applyExchangeBundle(
+            actor,
+            companyId,
+            parsed,
+            "XML",
+            "IMPORT_XML",
+            "LEGACY_XML",
+            dryRun,
+            masterDuplicateRule,
+            overwriteVoucherByGuid,
+            exceptionBehavior
+        );
     }
 
     // =========================================================================
@@ -497,7 +696,7 @@ public class DataExchangeService {
         UUID companyId,
         ExchangeDtos.ExportDataRequest request
     ) {
-        rbacGuard.requireCompanyAccess(principal, companyId);
+        rbacGuard.requireExportPermitted(principal, companyId);
         ExchangeDtos.JsonExHeaderDto header = new ExchangeDtos.JsonExHeaderDto(
             1,
             "Export",
@@ -577,7 +776,18 @@ public class DataExchangeService {
         }
 
         boolean dryRun = Boolean.TRUE.equals(request.dryRun());
-        return applyExchangeBundle(actor, companyId, bundle, "JSONEX", "IMPORT_JSONEX", "TALLY_JSONEX", dryRun);
+        return applyExchangeBundle(
+            actor,
+            companyId,
+            bundle,
+            "JSONEX",
+            "IMPORT_JSONEX",
+            "LEGACY_JSONEX",
+            dryRun,
+            request.masterDuplicateRule(),
+            Boolean.TRUE.equals(request.overwriteVoucherByGuid()),
+            request.exceptionBehavior()
+        );
     }
 
     // =========================================================================
@@ -589,7 +799,7 @@ public class DataExchangeService {
         UUID companyId,
         ExchangeDtos.ExportDataRequest request
     ) {
-        rbacGuard.requireCompanyAccess(principal, companyId);
+        rbacGuard.requireExportPermitted(principal, companyId);
         ExchangeDtos.JsonExDataDto bundle = collectCompanyExchangeBundle(principal, companyId, request);
 
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -709,6 +919,23 @@ public class DataExchangeService {
         String targetType,
         boolean dryRun
     ) {
+        return importExcelBytes(
+            actor, companyId, workbookBytes, templateId, targetType, dryRun,
+            "MODIFY_WITH_NEW_DATA", false, "STOP_AT_FIRST_EXCEPTION"
+        );
+    }
+
+    public ExchangeDtos.ImportDataResultDto importExcelBytes(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        byte[] workbookBytes,
+        UUID templateId,
+        String targetType,
+        boolean dryRun,
+        String masterDuplicateRule,
+        boolean overwriteVoucherByGuid,
+        String exceptionBehavior
+    ) {
         authorityGuard.assertWritable();
         CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
 
@@ -744,7 +971,18 @@ public class DataExchangeService {
             );
         }
 
-        return applyExchangeBundle(actor, companyId, bundle, "EXCEL", "IMPORT_EXCEL", "EXCEL_MAPPED", dryRun);
+        return applyExchangeBundle(
+            actor,
+            companyId,
+            bundle,
+            "EXCEL",
+            "IMPORT_EXCEL",
+            "EXCEL_MAPPED",
+            dryRun,
+            masterDuplicateRule,
+            overwriteVoucherByGuid,
+            exceptionBehavior
+        );
     }
 
     public ExchangeDtos.ImportDataResultDto importExcelJsonRequest(
@@ -790,8 +1028,293 @@ public class DataExchangeService {
             decoded,
             request.templateId(),
             request.targetType(),
-            Boolean.TRUE.equals(request.dryRun())
+            Boolean.TRUE.equals(request.dryRun()),
+            request.masterDuplicateRule(),
+            Boolean.TRUE.equals(request.overwriteVoucherByGuid()),
+            request.exceptionBehavior()
         );
+    }
+
+    // =========================================================================
+    // 5. TallyPrime Gold ASCII (.csv), HTML Web-Publishing & Sample Excel Files
+    // =========================================================================
+
+    public ExchangeDtos.ExportDataResultDto exportAscii(
+        MoneyCraftPrincipal principal,
+        UUID companyId,
+        ExchangeDtos.ExportDataRequest request
+    ) {
+        rbacGuard.requireExportPermitted(principal, companyId);
+        ExchangeDtos.JsonExDataDto bundle = collectCompanyExchangeBundle(principal, companyId, request);
+        String scope = request == null || request.entityScope() == null || request.entityScope().isBlank()
+            ? "ALL"
+            : request.entityScope().trim().toUpperCase(Locale.ROOT);
+        boolean includeNarr = request == null || !Boolean.FALSE.equals(request.includeNarration());
+
+        StringBuilder sb = new StringBuilder(8192);
+        int recordCount = 0;
+        if ("MASTERS".equals(scope) || "TRIAL_BALANCE".equals(scope)) {
+            sb.append("RecordType,GUID,Name,GroupName,OpeningBalance,OpeningSide,BillWise,GSTIN,StateName\n");
+            for (ExchangeDtos.JsonExLedgerDto l : bundle.ledgers()) {
+                sb.append("LEDGER,")
+                    .append(csvSafe(l.guid())).append(',')
+                    .append(csvSafe(l.name())).append(',')
+                    .append(csvSafe(l.groupName())).append(',')
+                    .append(csvSafe(l.openingBalance())).append(',')
+                    .append(csvSafe(l.openingSide())).append(',')
+                    .append(l.maintainBalancesBillByBill() ? "Yes" : "No").append(',')
+                    .append(csvSafe(l.gstin())).append(',')
+                    .append(csvSafe(l.stateName())).append('\n');
+                recordCount++;
+            }
+        } else if ("REMINDER_LETTERS".equals(scope) || "CONFIRMATION_OF_ACCOUNTS".equals(scope)) {
+            sb.append("ReportType,PartyLedger,GroupName,OpeningBalance,OpeningSide,GSTIN,StateName\n");
+            for (ExchangeDtos.JsonExLedgerDto l : bundle.ledgers()) {
+                String grp = nullToEmpty(l.groupName()).toLowerCase(Locale.ROOT);
+                if (grp.contains("debtor") || grp.contains("creditor") || l.maintainBalancesBillByBill()) {
+                    sb.append(csvSafe(scope)).append(',')
+                        .append(csvSafe(l.name())).append(',')
+                        .append(csvSafe(l.groupName())).append(',')
+                        .append(csvSafe(l.openingBalance())).append(',')
+                        .append(csvSafe(l.openingSide())).append(',')
+                        .append(csvSafe(l.gstin())).append(',')
+                        .append(csvSafe(l.stateName())).append('\n');
+                    recordCount++;
+                }
+            }
+        } else {
+            sb.append("RecordType,GUID,VoucherType,VoucherNumber,Date,LedgerName,Side,Amount,Narration\n");
+            for (ExchangeDtos.JsonExLedgerDto l : bundle.ledgers()) {
+                sb.append("LEDGER,")
+                    .append(csvSafe(l.guid())).append(",,,")
+                    .append(csvSafe(l.name())).append(',')
+                    .append(csvSafe(l.openingSide())).append(',')
+                    .append(csvSafe(l.openingBalance())).append(',')
+                    .append(csvSafe(l.groupName())).append('\n');
+                recordCount++;
+            }
+            for (ExchangeDtos.JsonExVoucherDto v : bundle.vouchers()) {
+                String narr = includeNarr ? v.narration() : "";
+                for (ExchangeDtos.JsonExVoucherLineDto line : v.lines()) {
+                    sb.append("VOUCHER_LINE,")
+                        .append(csvSafe(v.guid())).append(',')
+                        .append(csvSafe(v.voucherTypeName())).append(',')
+                        .append(csvSafe(v.voucherNumber())).append(',')
+                        .append(v.voucherDate()).append(',')
+                        .append(csvSafe(line.ledgerName())).append(',')
+                        .append(csvSafe(line.side())).append(',')
+                        .append(csvSafe(line.amount())).append(',')
+                        .append(csvSafe(narr)).append('\n');
+                }
+                recordCount++;
+            }
+        }
+
+        String csv = sb.toString();
+        String shaHex = JcsCanonicalizer.toHex(jcsCanonicalizer.sha256(csv.getBytes(StandardCharsets.UTF_8)));
+        return new ExchangeDtos.ExportDataResultDto(
+            "ASCII",
+            "moneycraft-export.csv",
+            "text/csv",
+            csv,
+            csv,
+            recordCount,
+            shaHex
+        );
+    }
+
+    public ExchangeDtos.ExportDataResultDto exportHtml(
+        MoneyCraftPrincipal principal,
+        UUID companyId,
+        ExchangeDtos.ExportDataRequest request
+    ) {
+        rbacGuard.requireExportPermitted(principal, companyId);
+        ExchangeDtos.JsonExDataDto bundle = collectCompanyExchangeBundle(principal, companyId, request);
+        String companyName = queryCompanyName(companyId);
+        String scope = request == null || request.entityScope() == null || request.entityScope().isBlank()
+            ? "ALL"
+            : request.entityScope().trim().toUpperCase(Locale.ROOT);
+        boolean includeNarr = request == null || !Boolean.FALSE.equals(request.includeNarration());
+        String signer = request == null ? null : request.digitalSignatureSignerName();
+
+        StringBuilder sb = new StringBuilder(16384);
+        sb.append("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n");
+        sb.append("<title>").append(escapeXml(companyName)).append(" — ").append(escapeXml(scope))
+            .append(" Export</title>\n");
+        sb.append("<style>")
+            .append("body{font-family:'Manrope',sans-serif;color:#0F172A;margin:24px;}")
+            .append("table{width:100%;border-collapse:collapse;margin-top:16px;}")
+            .append("th,td{border:1px solid #CBD5E1;padding:6px 10px;text-align:left;font-size:13px;}")
+            .append("th{background:#F1F5F9;font-weight:700;}")
+            .append(".amt{text-align:right;font-variant-numeric:tabular-nums lining-nums;font-weight:600;}")
+            .append(".code{font-family:'JetBrains Mono',monospace;}")
+            .append("</style>\n</head>\n<body>\n");
+        sb.append("<h1>").append(escapeXml(companyName)).append("</h1>\n");
+        sb.append("<h2>Export Scope: ").append(escapeXml(scope)).append("</h2>\n");
+
+        if (!bundle.ledgers().isEmpty()) {
+            sb.append("<h3>Ledgers (").append(bundle.ledgers().size()).append(")</h3>\n");
+            sb.append("<table><thead><tr><th>Ledger Name</th><th>Group</th><th>Side</th>")
+                .append("<th class=\"amt\">Opening Balance</th><th>GSTIN</th></tr></thead><tbody>\n");
+            for (ExchangeDtos.JsonExLedgerDto l : bundle.ledgers()) {
+                sb.append("<tr><td>").append(escapeXml(l.name())).append("</td><td>")
+                    .append(escapeXml(nullToEmpty(l.groupName()))).append("</td><td class=\"code\">")
+                    .append(escapeXml(l.openingSide())).append("</td><td class=\"amt\">")
+                    .append(escapeXml(l.openingBalance())).append("</td><td class=\"code\">")
+                    .append(escapeXml(nullToEmpty(l.gstin()))).append("</td></tr>\n");
+            }
+            sb.append("</tbody></table>\n");
+        }
+
+        if (!bundle.vouchers().isEmpty()) {
+            sb.append("<h3>Vouchers (").append(bundle.vouchers().size()).append(")</h3>\n");
+            sb.append("<table><thead><tr><th>Date</th><th>Voucher Type</th><th>No.</th>")
+                .append("<th>Particulars</th><th>Side</th><th class=\"amt\">Amount</th>")
+                .append("<th>Narration</th></tr></thead><tbody>\n");
+            for (ExchangeDtos.JsonExVoucherDto v : bundle.vouchers()) {
+                String narr = includeNarr ? nullToEmpty(v.narration()) : "";
+                for (ExchangeDtos.JsonExVoucherLineDto line : v.lines()) {
+                    sb.append("<tr><td class=\"code\">").append(v.voucherDate()).append("</td><td>")
+                        .append(escapeXml(v.voucherTypeName())).append("</td><td class=\"code\">")
+                        .append(escapeXml(nullToEmpty(v.voucherNumber()))).append("</td><td>")
+                        .append(escapeXml(line.ledgerName())).append("</td><td class=\"code\">")
+                        .append(escapeXml(line.side())).append("</td><td class=\"amt\">")
+                        .append(escapeXml(line.amount())).append("</td><td>")
+                        .append(escapeXml(narr)).append("</td></tr>\n");
+                }
+            }
+            sb.append("</tbody></table>\n");
+        }
+
+        if (signer != null && !signer.isBlank()) {
+            sb.append("<footer style=\"margin-top:24px;padding:12px;border:1px solid #94A3B8;\">")
+                .append("<strong>Digital Signature Block:</strong> Signed by ")
+                .append(escapeXml(signer.trim()))
+                .append("</footer>\n");
+        }
+        sb.append("</body>\n</html>\n");
+
+        String html = sb.toString();
+        String shaHex = JcsCanonicalizer.toHex(jcsCanonicalizer.sha256(html.getBytes(StandardCharsets.UTF_8)));
+        return new ExchangeDtos.ExportDataResultDto(
+            "HTML",
+            "moneycraft-export.html",
+            "text/html",
+            html,
+            html,
+            totalBundleCount(bundle),
+            shaHex
+        );
+    }
+
+    public byte[] generateSampleExcel(
+        MoneyCraftPrincipal principal,
+        UUID companyId,
+        String sampleType
+    ) {
+        rbacGuard.requireCompanyAccess(principal, companyId);
+        String type = sampleType == null || sampleType.isBlank()
+            ? "ALL"
+            : sampleType.trim().toUpperCase(Locale.ROOT);
+
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            boolean all = "ALL".equals(type);
+            if (all || "ACCOUNTING_MASTERS".equals(type) || "LEDGERS".equals(type)) {
+                Sheet groupsSheet = wb.createSheet("Groups");
+                writeRow(groupsSheet, 0, "GUID", "Name", "Parent", "Nature", "AffectsGrossProfit", "Subledger");
+                writeRow(
+                    groupsSheet, 1, "sample-grp-01", "South Zone Debtors", "Sundry Debtors",
+                    "ASSETS", "false", "true"
+                );
+
+                Sheet ledSheet = wb.createSheet("Ledgers");
+                writeRow(
+                    ledSheet, 0, "GUID", "Name", "GroupName", "OpeningBalance",
+                    "OpeningSide", "BillWise", "GSTIN", "StateName"
+                );
+                writeRow(
+                    ledSheet, 1, "sample-led-01", "Sample Customer A/c", "Sundry Debtors",
+                    "15000.00", "DR", "true", "", "Tamil Nadu"
+                );
+                writeRow(
+                    ledSheet, 2, "sample-led-02", "Sample Sales A/c", "Sales Accounts",
+                    "0.00", "CR", "false", "", "Tamil Nadu"
+                );
+            }
+            if (all || "INVENTORY_MASTERS".equals(type) || "STOCK_ITEMS".equals(type)) {
+                Sheet uomSheet = wb.createSheet("UOMs");
+                writeRow(uomSheet, 0, "Symbol", "FormalName", "DecimalPlaces");
+                writeRow(uomSheet, 1, "NOS", "Numbers", "2");
+
+                Sheet gdSheet = wb.createSheet("Godowns");
+                writeRow(gdSheet, 0, "Name", "Parent");
+                writeRow(gdSheet, 1, "Main Location", "");
+
+                Sheet sgSheet = wb.createSheet("StockGroups");
+                writeRow(sgSheet, 0, "Name", "Parent");
+                writeRow(sgSheet, 1, "Finished Goods", "");
+
+                Sheet siSheet = wb.createSheet("StockItems");
+                writeRow(
+                    siSheet, 0, "GUID", "Name", "StockGroup", "BaseUom",
+                    "CostingMethod", "OpeningQty", "OpeningRate", "OpeningValue"
+                );
+                writeRow(
+                    siSheet, 1, "sample-item-01", "Sample Widget 100", "Finished Goods",
+                    "NOS", "FIFO", "10.00", "100.00", "1000.00"
+                );
+            }
+            if (all || "ACCOUNTING_VOUCHERS".equals(type) || "ITEM_VOUCHERS".equals(type)) {
+                Sheet vchSheet = wb.createSheet("Vouchers");
+                writeRow(
+                    vchSheet, 0, "GUID", "VoucherType", "VoucherNumber", "VoucherDate", "EffectiveDate",
+                    "PersistedView", "PostingNature", "PartyLedger", "Reference", "Narration"
+                );
+                writeRow(
+                    vchSheet, 1, "sample-vch-01", "Sales", "SAMPLE-001", "2026-04-01", "2026-04-01",
+                    "AS_VOUCHER", "NORMAL", "Sample Customer A/c", "REF-001", "Sample sales entry"
+                );
+
+                Sheet lineSheet = wb.createSheet("VoucherLines");
+                writeRow(
+                    lineSheet, 0, "VoucherGUID", "LineNo", "LineRole",
+                    "LedgerName", "Side", "Amount", "BillAllocationsJson"
+                );
+                writeRow(
+                    lineSheet, 1, "sample-vch-01", "1", "PARTY",
+                    "Sample Customer A/c", "DR", "5000.00", "[]"
+                );
+                writeRow(
+                    lineSheet, 2, "sample-vch-01", "2", "LEDGER",
+                    "Sample Sales A/c", "CR", "5000.00", "[]"
+                );
+
+                Sheet invSheet = wb.createSheet("InventoryLines");
+                writeRow(
+                    invSheet, 0, "VoucherGUID", "LineNo", "StockItemName", "Direction", "UomSymbol",
+                    "ActualQty", "BilledQty", "Rate", "Amount", "GodownName", "BatchName"
+                );
+            }
+            wb.write(out);
+            return out.toByteArray();
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to generate sample Excel workbook", ex);
+        }
+    }
+
+    private static String csvSafe(String val) {
+        if (val == null || val.isEmpty()) {
+            return "";
+        }
+        String sanitized = val.replace("\r", " ").replace("\n", " ");
+        char first = sanitized.charAt(0);
+        if (first == '=' || first == '+' || first == '-' || first == '@') {
+            sanitized = "'" + sanitized;
+        }
+        if (sanitized.contains(",") || sanitized.contains("\"")) {
+            return "\"" + sanitized.replace("\"", "\"\"") + "\"";
+        }
+        return sanitized;
     }
 
     // =========================================================================
@@ -931,13 +1454,18 @@ public class DataExchangeService {
 
             for (VoucherHeaderRow jRow : journalIds) {
                 VoucherDtos.VoucherDetailDto d = voucherService.getVoucher(principal, companyId, jRow.id());
+                boolean includeNarr = req == null || !Boolean.FALSE.equals(req.includeNarration());
+                boolean includeBills = req == null || !Boolean.FALSE.equals(req.includeBillWise());
+                boolean includeInv = req == null || !Boolean.FALSE.equals(req.includeInventory());
                 List<ExchangeDtos.JsonExVoucherLineDto> vLines = new ArrayList<>();
                 for (VoucherDtos.VoucherLineDetailDto l : d.lines()) {
                     List<ExchangeDtos.JsonExBillAllocationDto> bList = new ArrayList<>();
-                    for (VoucherDtos.BillAllocationDto ba : l.billAllocations()) {
-                        bList.add(new ExchangeDtos.JsonExBillAllocationDto(
-                            ba.allocationType(), ba.billName(), ba.side(), ba.amount()
-                        ));
+                    if (includeBills) {
+                        for (VoucherDtos.BillAllocationDto ba : l.billAllocations()) {
+                            bList.add(new ExchangeDtos.JsonExBillAllocationDto(
+                                ba.allocationType(), ba.billName(), ba.side(), ba.amount()
+                            ));
+                        }
                     }
                     vLines.add(new ExchangeDtos.JsonExVoucherLineDto(
                         l.lineNo(), l.lineRole(), l.ledgerName(), l.side(), l.amount(), bList
@@ -945,27 +1473,29 @@ public class DataExchangeService {
                 }
 
                 List<ExchangeDtos.JsonExInventoryLineDto> iLines = new ArrayList<>();
-                int iSeq = 1;
-                for (VoucherDtos.VoucherInventoryLineDto inv : d.inventoryLines()) {
-                    String gdName = null;
-                    String batchName = null;
-                    if (inv.batchAllocations() != null && !inv.batchAllocations().isEmpty()) {
-                        gdName = inv.batchAllocations().getFirst().godownName();
-                        batchName = inv.batchAllocations().getFirst().batchName();
+                if (includeInv) {
+                    int iSeq = 1;
+                    for (VoucherDtos.VoucherInventoryLineDto inv : d.inventoryLines()) {
+                        String gdName = null;
+                        String batchName = null;
+                        if (inv.batchAllocations() != null && !inv.batchAllocations().isEmpty()) {
+                            gdName = inv.batchAllocations().getFirst().godownName();
+                            batchName = inv.batchAllocations().getFirst().batchName();
+                        }
+                        iLines.add(new ExchangeDtos.JsonExInventoryLineDto(
+                            inv.lineNo() == null ? iSeq : inv.lineNo(),
+                            inv.stockItemName(),
+                            inv.movementDirection(),
+                            inv.uomSymbol(),
+                            inv.actualQty(),
+                            inv.billedQty(),
+                            inv.rate(),
+                            inv.amount(),
+                            gdName,
+                            batchName
+                        ));
+                        iSeq++;
                     }
-                    iLines.add(new ExchangeDtos.JsonExInventoryLineDto(
-                        inv.lineNo() == null ? iSeq : inv.lineNo(),
-                        inv.stockItemName(),
-                        inv.movementDirection(),
-                        inv.uomSymbol(),
-                        inv.actualQty(),
-                        inv.billedQty(),
-                        inv.rate(),
-                        inv.amount(),
-                        gdName,
-                        batchName
-                    ));
-                    iSeq++;
                 }
 
                 vouchers.add(new ExchangeDtos.JsonExVoucherDto(
@@ -978,7 +1508,7 @@ public class DataExchangeService {
                     d.postingNature(),
                     d.partyLedgerName(),
                     d.supplierInvoiceNo(),
-                    d.narration(),
+                    includeNarr ? d.narration() : null,
                     vLines,
                     iLines
                 ));
@@ -997,8 +1527,13 @@ public class DataExchangeService {
         String format,
         String journalOrigin,
         String jobType,
-        boolean dryRun
+        boolean dryRun,
+        String rawMasterDupRule,
+        boolean overwriteVoucherByGuid,
+        String rawExceptionBehavior
     ) {
+        String masterDupRule = normalizeMasterDuplicateRule(rawMasterDupRule);
+        String excBehavior = normalizeExceptionBehavior(rawExceptionBehavior);
         List<ExchangeDtos.JsonExGroupDto> groups = bundle.groups() == null ? List.of() : bundle.groups();
         List<ExchangeDtos.JsonExUomDto> uoms = bundle.uoms() == null ? List.of() : bundle.uoms();
         List<ExchangeDtos.JsonExGodownDto> godowns = bundle.godowns() == null ? List.of() : bundle.godowns();
@@ -1007,34 +1542,70 @@ public class DataExchangeService {
         List<ExchangeDtos.JsonExStockItemDto> stockItems =
             bundle.stockItems() == null ? List.of() : bundle.stockItems();
         List<ExchangeDtos.JsonExLedgerDto> ledgers = bundle.ledgers() == null ? List.of() : bundle.ledgers();
-        List<ExchangeDtos.JsonExVoucherDto> vouchers = bundle.vouchers() == null ? List.of() : bundle.vouchers();
+        List<ExchangeDtos.JsonExVoucherDto> allVouchers = bundle.vouchers() == null ? List.of() : bundle.vouchers();
 
         int scale = sequenceHelper.readCompanyCurrencyMeta(companyId).currencyScale();
         BigDecimal totalDr = BigDecimal.ZERO.setScale(scale, RoundingMode.UNNECESSARY);
         BigDecimal totalCr = BigDecimal.ZERO.setScale(scale, RoundingMode.UNNECESSARY);
-        for (ExchangeDtos.JsonExVoucherDto v : vouchers) {
-            if (v.lines() == null) {
-                continue;
-            }
-            for (ExchangeDtos.JsonExVoucherLineDto l : v.lines()) {
-                BigDecimal amt = ExactMoneyValidator.parseAndValidateExactScale(
-                    l.amount(), scale, "voucherLine.amount"
-                );
-                if ("DR".equalsIgnoreCase(l.side())) {
-                    totalDr = totalDr.add(amt);
-                } else {
-                    totalCr = totalCr.add(amt);
+        List<ExchangeDtos.JsonExVoucherDto> vouchers = new ArrayList<>();
+        UUID jobId = UUID.randomUUID();
+        List<ExchangeDtos.ImportExceptionItemDto> recordedExceptions = new ArrayList<>();
+
+        for (ExchangeDtos.JsonExVoucherDto v : allVouchers) {
+            BigDecimal vDr = BigDecimal.ZERO.setScale(scale, RoundingMode.UNNECESSARY);
+            BigDecimal vCr = BigDecimal.ZERO.setScale(scale, RoundingMode.UNNECESSARY);
+            if (v.lines() != null) {
+                for (ExchangeDtos.JsonExVoucherLineDto l : v.lines()) {
+                    BigDecimal amt = ExactMoneyValidator.parseAndValidateExactScale(
+                        l.amount(), scale, "voucherLine.amount"
+                    );
+                    if ("DR".equalsIgnoreCase(l.side())) {
+                        vDr = vDr.add(amt);
+                    } else {
+                        vCr = vCr.add(amt);
+                    }
                 }
             }
-        }
-        boolean balanced = totalDr.compareTo(totalCr) == 0;
-        if (!balanced) {
-            throw new MoneyCraftException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
-                "MC-EXG-UNBALANCED-PAYLOAD",
-                "Unbalanced Exchange Payload",
-                "Imported voucher lines total DR " + totalDr + " != total CR " + totalCr + "."
-            );
+            boolean vBalanced = vDr.compareTo(vCr) == 0 && (v.lines() == null || v.lines().isEmpty() || vDr.signum() > 0);
+            if (!vBalanced) {
+                if ("STOP_AT_FIRST_EXCEPTION".equals(excBehavior)) {
+                    throw new MoneyCraftException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "MC-EXG-UNBALANCED-PAYLOAD",
+                        "Unbalanced Exchange Payload",
+                        "Imported voucher lines total DR " + vDr + " != total CR " + vCr + "."
+                    );
+                }
+                if ("RECORD_EXCEPTIONS_AND_IMPORT".equals(excBehavior)) {
+                    String excId = "exc-" + UUID.randomUUID();
+                    String ident = firstNonBlank(v.voucherNumber(), v.guid(), "VOUCHER");
+                    Map<String, Object> rawSnap = new LinkedHashMap<>();
+                    rawSnap.put("voucherTypeName", v.voucherTypeName() == null ? "Journal" : v.voucherTypeName());
+                    rawSnap.put(
+                        "voucherDate",
+                        (v.voucherDate() == null ? LocalDate.of(2025, 4, 1) : v.voucherDate()).toString()
+                    );
+                    rawSnap.put("voucherDr", vDr.toPlainString());
+                    rawSnap.put("voucherCr", vCr.toPlainString());
+                    rawSnap.put("narration", nullToEmpty(v.narration()));
+                    recordedExceptions.add(new ExchangeDtos.ImportExceptionItemDto(
+                        excId,
+                        jobId,
+                        "VOUCHER",
+                        ident,
+                        "MC-EXG-UNBALANCED-VOUCHER",
+                        "Unbalanced voucher lines: DR " + vDr + " != CR " + vCr,
+                        rawSnap,
+                        false,
+                        null,
+                        Instant.now()
+                    ));
+                }
+                continue;
+            }
+            totalDr = totalDr.add(vDr);
+            totalCr = totalCr.add(vCr);
+            vouchers.add(v);
         }
 
         if (dryRun) {
@@ -1049,7 +1620,12 @@ public class DataExchangeService {
                 totalDr.toPlainString(),
                 totalCr.toPlainString(),
                 true,
-                format + " dry-run validation succeeded with zero balance variance."
+                format + " dry-run validation succeeded with zero balance variance.",
+                0,
+                0,
+                0,
+                recordedExceptions.size(),
+                recordedExceptions
             );
         }
 
@@ -1090,7 +1666,7 @@ public class DataExchangeService {
             }
 
             UpsertedLedgersResult ledgerRes = upsertLedgers(
-                actor, companyId, scale, baseCurrency, ledgers, billWiseLedgerNames
+                actor, companyId, scale, baseCurrency, ledgers, billWiseLedgerNames, masterDupRule
             );
 
             UUID salesLedger = ledgerRes.byLowerName().values().stream()
@@ -1106,29 +1682,38 @@ public class DataExchangeService {
 
             UpsertedItemsResult itemRes = upsertStockItems(
                 actor, companyId, scale, stockItems, uomMap, sgMap,
-                gdMap.get("main location"), salesLedger, purchaseLedger
+                gdMap.get("main location"), salesLedger, purchaseLedger, masterDupRule
             );
 
-            int createdVouchers = upsertVouchers(
+            UpsertedVouchersResult vchRes = upsertVouchers(
                 actor, companyId, scale, baseCurrency, journalOrigin,
-                vouchers, ledgerRes.byLowerName(), itemRes.byLowerName(), uomMap, gdMap
+                vouchers, ledgerRes.byLowerName(), itemRes.byLowerName(), uomMap, gdMap,
+                overwriteVoucherByGuid
             );
 
-            UUID jobId = UUID.randomUUID();
-            int totalRead = groups.size() + ledgers.size() + stockItems.size() + vouchers.size();
+            int totalRead = groups.size() + ledgers.size() + stockItems.size() + allVouchers.size();
+            int validCount = totalRead - recordedExceptions.size();
+            Map<String, Object> diagMap = new LinkedHashMap<>();
+            diagMap.put("sourceCompanyName", format + " Exchange Import");
+            diagMap.put("masterDuplicateRule", masterDupRule);
+            diagMap.put("overwriteVoucherByGuid", overwriteVoucherByGuid);
+            diagMap.put("exceptionBehavior", excBehavior);
+            diagMap.put("exceptions", recordedExceptions);
+
             businessJdbcTemplate.update(
                 """
                 INSERT INTO mc_import_job (
                     id, company_id, job_type, status, total_records_read, valid_records_count,
                     error_records_count, diagnostics_json, initiated_by, committed_by, completed_at
-                ) VALUES (?, ?, ?, 'COMMITTED', ?, ?, 0, ?::jsonb, ?, ?, clock_timestamp())
+                ) VALUES (?, ?, ?, 'COMMITTED', ?, ?, ?, ?::jsonb, ?, ?, clock_timestamp())
                 """,
                 jobId,
                 companyId,
                 jobType,
                 totalRead,
-                totalRead,
-                toJson(Map.of("sourceCompanyName", format + " Exchange Import")),
+                Math.max(0, validCount),
+                recordedExceptions.size(),
+                toJson(diagMap),
                 actor.principalId(),
                 actor.principalId()
             );
@@ -1146,10 +1731,13 @@ public class DataExchangeService {
                     "groupsImported", createdGroups,
                     "ledgersImported", ledgerRes.touchedCount(),
                     "stockItemsImported", itemRes.createdCount(),
-                    "vouchersImported", createdVouchers
+                    "vouchersImported", vchRes.importedCount(),
+                    "vouchersUpdated", vchRes.updatedCount(),
+                    "exceptionsRecorded", recordedExceptions.size()
                 )
             );
 
+            int totalMastersSkipped = ledgerRes.skippedCount() + itemRes.skippedCount();
             return new ExchangeDtos.ImportDataResultDto(
                 jobId,
                 format,
@@ -1157,11 +1745,16 @@ public class DataExchangeService {
                 createdGroups,
                 ledgerRes.touchedCount(),
                 itemRes.createdCount(),
-                createdVouchers,
+                vchRes.importedCount(),
                 finalDr.toPlainString(),
                 finalCr.toPlainString(),
                 true,
-                format + " import committed with zero double-entry variance."
+                format + " import committed with zero double-entry variance.",
+                totalMastersSkipped,
+                vchRes.updatedCount(),
+                vchRes.skippedCount(),
+                recordedExceptions.size(),
+                recordedExceptions
             );
         });
     }
@@ -1327,11 +1920,13 @@ public class DataExchangeService {
         int scale,
         String baseCurrency,
         List<ExchangeDtos.JsonExLedgerDto> ledgers,
-        Set<String> billWiseLedgerNames
+        Set<String> billWiseLedgerNames,
+        String masterDupRule
     ) {
         Map<String, ExistingGroup> groups = loadGroupsMap(companyId);
         Map<String, LedgerRef> byLower = loadLedgersMap(companyId);
         int touched = 0;
+        int skipped = 0;
 
         for (ExchangeDtos.JsonExLedgerDto l : ledgers) {
             if (l.name() == null || l.name().isBlank()) {
@@ -1349,6 +1944,22 @@ public class DataExchangeService {
 
             LedgerRef existing = byLower.get(lower);
             if (existing != null) {
+                if ("IGNORE_DUPLICATES".equals(masterDupRule)) {
+                    skipped++;
+                    continue;
+                }
+                BigDecimal targetOb = ob;
+                String targetSide = side;
+                if ("COMBINE_OPENING_BALANCES".equals(masterDupRule)) {
+                    ExistingLedgerBalance curBal = queryExistingLedgerBalance(companyId, existing.id(), scale);
+                    BigDecimal curSigned = "DR".equals(curBal.side()) ? curBal.balance().negate() : curBal.balance();
+                    BigDecimal impSigned = "DR".equals(side) ? ob.negate() : ob;
+                    BigDecimal netSigned = curSigned.add(impSigned);
+                    targetOb = netSigned.abs().setScale(scale, RoundingMode.UNNECESSARY);
+                    targetSide = netSigned.signum() <= 0 ? "DR" : "CR";
+                }
+                CompanyMasterSequenceHelper.AllocatedMasterSeq altSeq =
+                    sequenceHelper.allocateForAlterOrDelete(companyId, true);
                 businessJdbcTemplate.update(
                     """
                     UPDATE mc_ledger
@@ -1357,10 +1968,38 @@ public class DataExchangeService {
                            maintain_balances_bill_by_bill = maintain_balances_bill_by_bill OR ?,
                            gstin = COALESCE(?, gstin),
                            state_name = COALESCE(?, state_name),
+                           alter_id = ?,
+                           version_no = version_no + 1,
                            updated_at = clock_timestamp()
                      WHERE company_id = ? AND id = ?
                     """,
-                    ob, side, billWise, gstin, stateName, companyId, existing.id()
+                    targetOb, targetSide, billWise, gstin, stateName, altSeq.alterId(), companyId, existing.id()
+                );
+                Long verNo = businessJdbcTemplate.queryForObject(
+                    "SELECT version_no FROM mc_ledger WHERE company_id = ? AND id = ?",
+                    Long.class,
+                    companyId,
+                    existing.id()
+                );
+                Long masterSeq = businessJdbcTemplate.queryForObject(
+                    "SELECT master_seq_id FROM mc_ledger WHERE company_id = ? AND id = ?",
+                    Long.class,
+                    companyId,
+                    existing.id()
+                );
+                editLogSnapshotService.recordVersion(
+                    companyId, "LEDGER", existing.id(),
+                    masterSeq == null ? 1L : masterSeq,
+                    altSeq.alterId(),
+                    verNo == null ? 2L : verNo,
+                    "ALTER", actor.principalId(), actor.username(), existing.name(), null, null,
+                    Map.of(
+                        "id", existing.id().toString(),
+                        "name", existing.name(),
+                        "openingBalance", targetOb.toPlainString(),
+                        "openingSide", targetSide,
+                        "duplicateRule", masterDupRule
+                    )
                 );
                 byLower.put(lower, new LedgerRef(existing.id(), existing.name(), existing.nature(),
                     existing.billWise() || billWise));
@@ -1405,7 +2044,7 @@ public class DataExchangeService {
             );
             touched++;
         }
-        return new UpsertedLedgersResult(byLower, touched);
+        return new UpsertedLedgersResult(byLower, touched, skipped);
     }
 
     private UpsertedItemsResult upsertStockItems(
@@ -1417,24 +2056,100 @@ public class DataExchangeService {
         Map<String, UUID> sgMap,
         UUID mainGodownId,
         UUID salesLedger,
-        UUID purchaseLedger
+        UUID purchaseLedger,
+        String masterDupRule
     ) {
         Map<String, ItemRef> map = new HashMap<>();
+        Map<String, InventoryMasterDtos.StockItemDto> existingDtos = new HashMap<>();
         for (InventoryMasterDtos.StockItemDto existing : inventoryMasterService.listStockItems(
             actor, companyId, null, null
         )) {
-            map.put(
-                existing.name().trim().toLowerCase(Locale.ROOT),
-                new ItemRef(existing.id(), existing.name(), existing.baseUomId())
-            );
+            String key = existing.name().trim().toLowerCase(Locale.ROOT);
+            map.put(key, new ItemRef(existing.id(), existing.name(), existing.baseUomId()));
+            existingDtos.put(key, existing);
         }
         int createdCount = 0;
+        int skippedCount = 0;
         for (ExchangeDtos.JsonExStockItemDto si : items) {
             if (si.name() == null || si.name().isBlank()) {
                 continue;
             }
             String clean = si.name().trim();
-            if (map.containsKey(clean.toLowerCase(Locale.ROOT))) {
+            String lower = clean.toLowerCase(Locale.ROOT);
+            String openQty = si.openingQty() == null || si.openingQty().isBlank() ? "0" : si.openingQty();
+            String openVal = si.openingValue() == null || si.openingValue().isBlank()
+                ? ExactMoneyValidator.formatExactScale(BigDecimal.ZERO, scale)
+                : si.openingValue();
+            BigDecimal qDec = new BigDecimal(openQty).abs();
+            BigDecimal vDec = new BigDecimal(openVal).abs().setScale(scale, RoundingMode.HALF_UP);
+            String openRate = si.openingRate() != null && !si.openingRate().isBlank()
+                ? si.openingRate()
+                : (qDec.signum() > 0 ? vDec.divide(qDec, 6, RoundingMode.HALF_UP).toPlainString() : "0");
+
+            if (map.containsKey(lower)) {
+                if ("IGNORE_DUPLICATES".equals(masterDupRule)) {
+                    skippedCount++;
+                    continue;
+                }
+                InventoryMasterDtos.StockItemDto curItem = existingDtos.get(lower);
+                BigDecimal targetQty = qDec;
+                BigDecimal targetVal = vDec;
+                if ("COMBINE_OPENING_BALANCES".equals(masterDupRule) && curItem != null) {
+                    BigDecimal curQ = curItem.openingQty() == null
+                        ? BigDecimal.ZERO
+                        : new BigDecimal(curItem.openingQty()).abs();
+                    BigDecimal curV = curItem.openingValue() == null
+                        ? BigDecimal.ZERO
+                        : new BigDecimal(curItem.openingValue()).abs();
+                    targetQty = curQ.add(qDec);
+                    targetVal = curV.add(vDec).setScale(scale, RoundingMode.HALF_UP);
+                }
+                BigDecimal targetRate = targetQty.signum() > 0
+                    ? targetVal.divide(targetQty, scale, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO.setScale(scale, RoundingMode.UNNECESSARY);
+                CompanyMasterSequenceHelper.AllocatedMasterSeq altSeq =
+                    sequenceHelper.allocateForAlterOrDelete(companyId, true);
+                UUID itemId = map.get(lower).id();
+                businessJdbcTemplate.update(
+                    """
+                    UPDATE mc_stock_item
+                       SET opening_qty = ?,
+                           opening_rate = ?,
+                           opening_value = ?,
+                           alter_id = ?,
+                           version_no = version_no + 1,
+                           updated_at = clock_timestamp()
+                     WHERE company_id = ? AND id = ?
+                    """,
+                    targetQty, targetRate, targetVal, altSeq.alterId(), companyId, itemId
+                );
+                Long verNo = businessJdbcTemplate.queryForObject(
+                    "SELECT version_no FROM mc_stock_item WHERE company_id = ? AND id = ?",
+                    Long.class,
+                    companyId,
+                    itemId
+                );
+                Long masterSeq = businessJdbcTemplate.queryForObject(
+                    "SELECT master_seq_id FROM mc_stock_item WHERE company_id = ? AND id = ?",
+                    Long.class,
+                    companyId,
+                    itemId
+                );
+                editLogSnapshotService.recordVersion(
+                    companyId, "STOCK_ITEM", itemId,
+                    masterSeq == null ? 1L : masterSeq,
+                    altSeq.alterId(),
+                    verNo == null ? 2L : verNo,
+                    "ALTER", actor.principalId(), actor.username(), clean, null, null,
+                    Map.of(
+                        "id", itemId.toString(),
+                        "name", clean,
+                        "openingQty", targetQty.toPlainString(),
+                        "openingValue", targetVal.toPlainString(),
+                        "duplicateRule", masterDupRule
+                    )
+                );
+                createdCount++;
                 continue;
             }
             String sym = si.baseUom() == null || si.baseUom().isBlank() ? "Nos" : si.baseUom().trim();
@@ -1448,15 +2163,6 @@ public class DataExchangeService {
                 uomMap.put(sym.toLowerCase(Locale.ROOT), uomId);
             }
             UUID sgId = si.stockGroup() == null ? null : sgMap.get(si.stockGroup().trim().toLowerCase(Locale.ROOT));
-            String openQty = si.openingQty() == null || si.openingQty().isBlank() ? "0" : si.openingQty();
-            String openVal = si.openingValue() == null || si.openingValue().isBlank()
-                ? ExactMoneyValidator.formatExactScale(BigDecimal.ZERO, scale)
-                : si.openingValue();
-            BigDecimal qDec = new BigDecimal(openQty).abs();
-            BigDecimal vDec = new BigDecimal(openVal).abs().setScale(scale, RoundingMode.HALF_UP);
-            String openRate = si.openingRate() != null && !si.openingRate().isBlank()
-                ? si.openingRate()
-                : (qDec.signum() > 0 ? vDec.divide(qDec, 6, RoundingMode.HALF_UP).toPlainString() : "0");
 
             InventoryMasterDtos.StockItemDto created = inventoryMasterService.createStockItem(
                 actor,
@@ -1469,13 +2175,13 @@ public class DataExchangeService {
                     salesLedger, purchaseLedger, true, null
                 )
             );
-            map.put(clean.toLowerCase(Locale.ROOT), new ItemRef(created.id(), clean, uomId));
+            map.put(lower, new ItemRef(created.id(), clean, uomId));
             createdCount++;
         }
-        return new UpsertedItemsResult(map, createdCount);
+        return new UpsertedItemsResult(map, createdCount, skippedCount);
     }
 
-    private int upsertVouchers(
+    private UpsertedVouchersResult upsertVouchers(
         MoneyCraftPrincipal actor,
         UUID companyId,
         int scale,
@@ -1485,7 +2191,8 @@ public class DataExchangeService {
         Map<String, LedgerRef> ledgers,
         Map<String, ItemRef> items,
         Map<String, UUID> uoms,
-        Map<String, UUID> godowns
+        Map<String, UUID> godowns,
+        boolean overwriteVoucherByGuid
     ) {
         businessJdbcTemplate.update(
             "UPDATE mc_voucher_type SET prevent_duplicate_numbers = false WHERE company_id = ?",
@@ -1501,9 +2208,15 @@ public class DataExchangeService {
 
         UUID mainGodownId = godowns.get("main location");
         int imported = 0;
+        int updated = 0;
+        int skipped = 0;
 
         for (ExchangeDtos.JsonExVoucherDto v : sorted) {
-            if (v.guid() != null && !v.guid().isBlank() && existsJournalBySourceGuid(companyId, v.guid().trim())) {
+            ExistingJournalMeta existingJournal = (v.guid() != null && !v.guid().isBlank())
+                ? findJournalBySourceGuid(companyId, v.guid().trim())
+                : null;
+            if (existingJournal != null && !overwriteVoucherByGuid) {
+                skipped++;
                 continue;
             }
             if (v.lines() == null || v.lines().isEmpty()) {
@@ -1621,30 +2334,1137 @@ public class DataExchangeService {
             String nature = "OPTIONAL".equalsIgnoreCase(v.postingNature()) ? "OPTIONAL" : "NORMAL";
             String vtName = resolveVoucherTypeName(companyId, v.voucherTypeName());
 
-            voucherService.createImportedVoucher(
+            VoucherDtos.UpsertVoucherRequest upsertReq = new VoucherDtos.UpsertVoucherRequest(
+                null, vtName, null,
+                v.voucherNumber() == null || v.voucherNumber().isBlank() ? null : v.voucherNumber().trim(),
+                vDate, effDate, null, view, nature, "POST",
+                v.supplierInvoiceNo(), null, partyLedgerId, fallbackAccLedgerId,
+                null, null, null, null, null, false, null, baseCurrency, "1",
+                v.narration(), v.guid(), existingJournal == null ? null : existingJournal.versionNo(),
+                reqLines, invLines
+            );
+
+            if (existingJournal != null) {
+                voucherService.updateVoucher(
+                    actor,
+                    companyId,
+                    existingJournal.id(),
+                    "\"v" + existingJournal.versionNo() + "\"",
+                    upsertReq
+                );
+                updated++;
+            } else {
+                voucherService.createImportedVoucher(
+                    actor,
+                    companyId,
+                    upsertReq,
+                    origin,
+                    "CREATE"
+                );
+                imported++;
+            }
+        }
+        return new UpsertedVouchersResult(imported, updated, skipped);
+    }
+
+    // =========================================================================
+    // 6. Import Exception Resolution & Client/Server Data Synchronization
+    // =========================================================================
+
+    public List<ExchangeDtos.ImportExceptionItemDto> listImportExceptions(
+        MoneyCraftPrincipal principal,
+        UUID companyId
+    ) {
+        rbacGuard.requireCompanyAccess(principal, companyId);
+        List<String> diagRows = businessJdbcTemplate.query(
+            """
+            SELECT diagnostics_json::text
+              FROM mc_import_job
+             WHERE company_id = ? AND error_records_count > 0
+             ORDER BY started_at DESC, id DESC
+            """,
+            (rs, rowNum) -> rs.getString(1),
+            companyId
+        );
+        List<ExchangeDtos.ImportExceptionItemDto> items = new ArrayList<>();
+        for (String json : diagRows) {
+            items.addAll(parseExceptionsFromDiagnostics(json));
+        }
+        return items;
+    }
+
+    public ExchangeDtos.ImportExceptionItemDto resolveImportException(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        String exceptionId,
+        ExchangeDtos.ResolveImportExceptionRequest request
+    ) {
+        authorityGuard.assertWritable();
+        CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
+        if (exceptionId == null || exceptionId.isBlank() || request == null) {
+            throw new MoneyCraftException(
+                HttpStatus.BAD_REQUEST,
+                "MC-EXG-EXCEPTION-RESOLVE-INVALID",
+                "Invalid Exception Resolution Request",
+                "Provide exceptionId and valid balanced voucher resolution details."
+            );
+        }
+        int scale = sequenceHelper.readCompanyCurrencyMeta(companyId).currencyScale();
+        BigDecimal amt = ExactMoneyValidator.parseAndValidateExactScale(
+            request.amount(), scale, "resolve.amount"
+        );
+        if (amt.signum() <= 0
+            || request.debitLedgerName() == null || request.debitLedgerName().isBlank()
+            || request.creditLedgerName() == null || request.creditLedgerName().isBlank()) {
+            throw new MoneyCraftException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "MC-EXG-EXCEPTION-RESOLVE-UNBALANCED",
+                "Invalid Exception Resolution Lines",
+                "Provide non-blank debitLedgerName, creditLedgerName, and positive amount."
+            );
+        }
+
+        return businessTxTemplate.execute(tx -> {
+            ensurePrincipalProjected(actor);
+            String baseCurrency = sequenceHelper.readCompanyCurrencyMeta(companyId).baseCurrencyCode();
+            LocalDate vDate = request.voucherDate() == null ? LocalDate.of(2025, 4, 1) : request.voucherDate();
+            ensureFiscalYearsCoverRange(companyId, actor.principalId(), vDate, vDate);
+
+            Map<String, LedgerRef> ledgers = loadLedgersMap(companyId);
+            LedgerRef drRef = ensureLedger(actor, companyId, baseCurrency, request.debitLedgerName().trim(), ledgers);
+            LedgerRef crRef = ensureLedger(actor, companyId, baseCurrency, request.creditLedgerName().trim(), ledgers);
+            String amtStr = ExactMoneyValidator.formatExactScale(amt, scale);
+            String vtName = resolveVoucherTypeName(companyId, request.voucherTypeName());
+            String narr = (request.narration() == null || request.narration().isBlank())
+                ? "Created due to Data Exception Resolution"
+                : request.narration().trim() + " [Created due to Data Exception Resolution]";
+
+            VoucherDtos.VoucherDetailDto resolvedVch = voucherService.createImportedVoucher(
                 actor,
                 companyId,
                 new VoucherDtos.UpsertVoucherRequest(
-                    null, vtName, null,
-                    v.voucherNumber() == null || v.voucherNumber().isBlank() ? null : v.voucherNumber().trim(),
-                    vDate, effDate, null, view, nature, "POST",
-                    v.supplierInvoiceNo(), null, partyLedgerId, fallbackAccLedgerId,
-                    null, null, null, null, null, false, null, baseCurrency, "1",
-                    v.narration(), v.guid(), null, reqLines, invLines
+                    null, vtName, null, null, vDate, vDate, null, "AS_VOUCHER", "NORMAL", "POST",
+                    null, null, null, null, null, null, null, null, null, false, null, baseCurrency, "1",
+                    narr, "exc-resolved-" + exceptionId.trim(), null,
+                    List.of(
+                        new VoucherDtos.VoucherLineRequest(
+                            1, "LEDGER", drRef.id(), "DR", amtStr, null, null, null, null, null,
+                            false, null, null, List.of(), List.of(), List.of()
+                        ),
+                        new VoucherDtos.VoucherLineRequest(
+                            2, "LEDGER", crRef.id(), "CR", amtStr, null, null, null, null, null,
+                            false, null, null, List.of(), List.of(), List.of()
+                        )
+                    ),
+                    List.of()
                 ),
-                origin,
+                "IMPORT_XML",
                 "CREATE"
             );
-            imported++;
+
+            ExchangeDtos.ImportExceptionItemDto updatedItem = markExceptionResolved(
+                companyId, exceptionId.trim(), resolvedVch.id()
+            );
+            auditChainService.appendCompanyEvent(
+                companyId,
+                actor.principalId(),
+                actor.kind(),
+                "EXCHANGE_EXCEPTION_RESOLVE",
+                "VOUCHER",
+                resolvedVch.id().toString(),
+                "SUCCESS",
+                null,
+                Map.of("exceptionId", exceptionId.trim(), "amount", amtStr)
+            );
+            return updatedItem;
+        });
+    }
+
+    public List<ExchangeDtos.SyncRuleDto> listSyncRules(
+        MoneyCraftPrincipal principal,
+        UUID companyId
+    ) {
+        rbacGuard.requireCompanyAccess(principal, companyId);
+        return businessJdbcTemplate.query(
+            """
+            SELECT id, company_id, name, default_values_json, active, created_at
+              FROM mc_exchange_mapping_template
+             WHERE company_id = ? AND sheet_name = '__MC_SYNC_RULE__' AND active = true
+             ORDER BY lower(name) ASC, id ASC
+            """,
+            (rs, rowNum) -> mapSyncRuleRow(rs),
+            companyId
+        );
+    }
+
+    public ExchangeDtos.SyncRuleDto createSyncRule(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        ExchangeDtos.SyncRuleRequest request
+    ) {
+        authorityGuard.assertWritable();
+        CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
+        if (request == null || request.ruleName() == null || request.ruleName().isBlank()) {
+            throw new MoneyCraftException(
+                HttpStatus.BAD_REQUEST,
+                "MC-SYNC-RULE-NAME-REQUIRED",
+                "Synchronization Rule Name Required",
+                "Insufficient information for Synchronisation- No Client Rule Name present"
+            );
         }
-        return imported;
+        String sourceGuid = companyId.toString();
+        String targetGuid = request.targetCompanyGuid() != null && !request.targetCompanyGuid().isBlank()
+            ? request.targetCompanyGuid().trim()
+            : (request.targetCompanyId() == null ? "" : request.targetCompanyId().toString());
+        if (targetGuid.isEmpty()) {
+            throw new MoneyCraftException(
+                HttpStatus.BAD_REQUEST,
+                "MC-SYNC-TARGET-REQUIRED",
+                "Target Company Required for Synchronization",
+                "Insufficient information for Synchronisation- No Destination Company Name present"
+            );
+        }
+        if (sourceGuid.equalsIgnoreCase(targetGuid)
+            || (request.targetCompanyId() != null && companyId.equals(request.targetCompanyId()))) {
+            throw new MoneyCraftException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "MC-SYNC-SAME-COMPANY-GUID",
+                "Cannot Synchronize Company With Itself",
+                "Client and Server companies have same GUID. Cannot proceed with synchronization."
+            );
+        }
+
+        String ruleName = request.ruleName().trim();
+        String ruleType = request.ruleType() == null || request.ruleType().isBlank()
+            ? "FULL_SYNC"
+            : request.ruleType().trim().toUpperCase(Locale.ROOT);
+        String direction = request.direction() == null || request.direction().isBlank()
+            ? "BOTH_WAYS"
+            : request.direction().trim().toUpperCase(Locale.ROOT);
+        String dupRule = normalizeMasterDuplicateRule(request.masterDuplicateRule());
+        boolean overwriteVch = Boolean.TRUE.equals(request.overwriteVoucherByGuid());
+
+        Map<String, String> meta = new LinkedHashMap<>();
+        meta.put("ruleType", ruleType);
+        meta.put("direction", direction);
+        if (request.targetCompanyId() != null) {
+            meta.put("targetCompanyId", request.targetCompanyId().toString());
+        }
+        meta.put("targetCompanyGuid", targetGuid);
+        meta.put(
+            "targetCompanyName",
+            request.targetCompanyName() == null ? "Remote Company" : request.targetCompanyName().trim()
+        );
+        meta.put(
+            "serverUrl",
+            request.serverUrl() == null || request.serverUrl().isBlank()
+                ? "http://localhost:18080"
+                : request.serverUrl().trim()
+        );
+        meta.put("masterDuplicateRule", dupRule);
+        meta.put("overwriteVoucherByGuid", Boolean.toString(overwriteVch));
+        meta.put("lastSyncAlterId", "0");
+
+        return businessTxTemplate.execute(tx -> {
+            ensurePrincipalProjected(actor);
+            UUID id = UUID.randomUUID();
+            businessJdbcTemplate.update(
+                """
+                INSERT INTO mc_exchange_mapping_template (
+                    id, company_id, name, target_type, sheet_name, header_row_index,
+                    column_mappings_json, default_values_json, duplicate_handling,
+                    active, version_no, created_by
+                ) VALUES (?, ?, ?, 'ACCOUNTING_VOUCHERS', '__MC_SYNC_RULE__', 1, '{}'::jsonb, ?::jsonb, 'SKIP', true, 1, ?)
+                """,
+                id,
+                companyId,
+                ruleName,
+                toJson(meta),
+                actor.principalId()
+            );
+            auditChainService.appendCompanyEvent(
+                companyId,
+                actor.principalId(),
+                actor.kind(),
+                "SYNC_RULE_CREATE",
+                "SYNC_RULE",
+                id.toString(),
+                "SUCCESS",
+                null,
+                Map.of("ruleName", ruleName, "ruleType", ruleType, "targetCompanyGuid", targetGuid)
+            );
+            return businessJdbcTemplate.queryForObject(
+                """
+                SELECT id, company_id, name, default_values_json, active, created_at
+                  FROM mc_exchange_mapping_template
+                 WHERE company_id = ? AND id = ?
+                """,
+                (rs, rowNum) -> mapSyncRuleRow(rs),
+                companyId,
+                id
+            );
+        });
+    }
+
+    public ExchangeDtos.SyncSessionResultDto executeSyncRule(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        UUID ruleId
+    ) {
+        authorityGuard.assertWritable();
+        CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
+        List<ExchangeDtos.SyncRuleDto> rules = businessJdbcTemplate.query(
+            """
+            SELECT id, company_id, name, default_values_json, active, created_at
+              FROM mc_exchange_mapping_template
+             WHERE company_id = ? AND id = ? AND sheet_name = '__MC_SYNC_RULE__'
+            """,
+            (rs, rowNum) -> mapSyncRuleRow(rs),
+            companyId,
+            ruleId
+        );
+        if (rules.isEmpty()) {
+            throw new MoneyCraftException(
+                HttpStatus.NOT_FOUND,
+                "MC-SYNC-RULE-NOT-FOUND",
+                "Synchronization Rule Not Found",
+                "Sync rule " + ruleId + " does not exist in company " + companyId + "."
+            );
+        }
+        ExchangeDtos.SyncRuleDto rule = rules.getFirst();
+        if (rule.targetCompanyId() != null && companyId.equals(rule.targetCompanyId())) {
+            throw new MoneyCraftException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "MC-SYNC-SAME-COMPANY-GUID",
+                "Cannot Synchronize Company With Itself",
+                "Client and Server companies have same GUID. Cannot proceed with synchronization."
+            );
+        }
+
+        UUID targetCmpId = rule.targetCompanyId();
+        int mastersSynced = 0;
+        int vouchersSynced = 0;
+        long prevWatermark = rule.lastSyncAlterId();
+
+        if (targetCmpId != null) {
+            rbacGuard.requireCompanyAccess(actor, targetCmpId);
+            String scope = "MASTER_SYNC".equals(rule.ruleType())
+                ? "MASTERS"
+                : ("TRANSACTION_SYNC".equals(rule.ruleType()) ? "VOUCHERS" : "ALL");
+            ExchangeDtos.ExportDataRequest expReq = new ExchangeDtos.ExportDataRequest(
+                scope, null, null, true, null
+            );
+
+            if (!"RECEIVE_ONLY".equals(rule.direction())) {
+                ExchangeDtos.JsonExDataDto outboundBundle = collectCompanyExchangeBundle(actor, companyId, expReq);
+                ExchangeDtos.ImportDataResultDto sendRes = TenantContextHolder.callWithCompany(
+                    targetCmpId,
+                    () -> applyExchangeBundle(
+                        actor, targetCmpId, outboundBundle, "JSONEX", "IMPORT_JSONEX", "LEGACY_JSONEX",
+                        false, rule.masterDuplicateRule(), rule.overwriteVoucherByGuid(), "IGNORE_EXCEPTIONS_AND_IMPORT"
+                    )
+                );
+                if (sendRes != null) {
+                    mastersSynced += sendRes.groupsImported() + sendRes.ledgersImported() + sendRes.stockItemsImported();
+                    vouchersSynced += sendRes.vouchersImported() + sendRes.vouchersUpdated();
+                }
+            }
+            if (!"SEND_ONLY".equals(rule.direction())) {
+                ExchangeDtos.JsonExDataDto inboundBundle = TenantContextHolder.callWithCompany(
+                    targetCmpId,
+                    () -> collectCompanyExchangeBundle(actor, targetCmpId, expReq)
+                );
+                if (inboundBundle != null) {
+                    ExchangeDtos.ImportDataResultDto recvRes = applyExchangeBundle(
+                        actor, companyId, inboundBundle, "JSONEX", "IMPORT_JSONEX", "LEGACY_JSONEX",
+                        false, rule.masterDuplicateRule(), rule.overwriteVoucherByGuid(), "IGNORE_EXCEPTIONS_AND_IMPORT"
+                    );
+                    mastersSynced += recvRes.groupsImported() + recvRes.ledgersImported() + recvRes.stockItemsImported();
+                    vouchersSynced += recvRes.vouchersImported() + recvRes.vouchersUpdated();
+                }
+            }
+        }
+
+        Long currentMaxAlterId = businessJdbcTemplate.queryForObject(
+            """
+            SELECT GREATEST(
+                COALESCE((SELECT MAX(alter_id) FROM mc_account_group WHERE company_id = ?), 0),
+                COALESCE((SELECT MAX(alter_id) FROM mc_ledger WHERE company_id = ?), 0),
+                COALESCE((SELECT MAX(alter_id) FROM mc_stock_item WHERE company_id = ?), 0),
+                COALESCE((SELECT MAX(alter_id) FROM mc_journal WHERE company_id = ?), 0)
+            )
+            """,
+            Long.class,
+            companyId,
+            companyId,
+            companyId,
+            companyId
+        );
+        long newWatermark = Math.max(prevWatermark, currentMaxAlterId == null ? 0L : currentMaxAlterId);
+
+        businessTxTemplate.executeWithoutResult(tx -> {
+            Map<String, String> updatedMeta = new LinkedHashMap<>();
+            updatedMeta.put("ruleType", rule.ruleType());
+            updatedMeta.put("direction", rule.direction());
+            if (rule.targetCompanyId() != null) {
+                updatedMeta.put("targetCompanyId", rule.targetCompanyId().toString());
+            }
+            updatedMeta.put("targetCompanyGuid", rule.targetCompanyGuid());
+            updatedMeta.put("targetCompanyName", rule.targetCompanyName());
+            updatedMeta.put("serverUrl", rule.serverUrl());
+            updatedMeta.put("masterDuplicateRule", rule.masterDuplicateRule());
+            updatedMeta.put("overwriteVoucherByGuid", Boolean.toString(rule.overwriteVoucherByGuid()));
+            updatedMeta.put("lastSyncAlterId", Long.toString(newWatermark));
+
+            businessJdbcTemplate.update(
+                """
+                UPDATE mc_exchange_mapping_template
+                   SET default_values_json = ?::jsonb,
+                       version_no = version_no + 1,
+                       updated_at = clock_timestamp()
+                 WHERE company_id = ? AND id = ?
+                """,
+                toJson(updatedMeta),
+                companyId,
+                ruleId
+            );
+        });
+
+        return new ExchangeDtos.SyncSessionResultDto(
+            UUID.randomUUID(),
+            ruleId,
+            rule.ruleName(),
+            companyId,
+            targetCmpId,
+            "COMPLETED",
+            prevWatermark,
+            newWatermark,
+            mastersSynced,
+            vouchersSynced,
+            0,
+            "Synchronising Company \"" + queryCompanyName(companyId) + "\" for Rule \"" + rule.ruleName() + "\" completed.",
+            Instant.now()
+        );
+    }
+
+    // =========================================================================
+    // 11. Loop 2..5 TallyPrime Gold Deep-Dive Capabilities
+    // =========================================================================
+
+    public ExchangeDtos.MultiAccountReportExportResponse exportMultiAccountReport(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        ExchangeDtos.MultiAccountReportExportRequest request
+    ) {
+        rbacGuard.requireCompanyAccess(actor, companyId);
+        rbacGuard.requireExportPermitted(actor, companyId);
+
+        CompanyMasterSequenceHelper.CompanyCurrencyMeta meta = sequenceHelper.readCompanyCurrencyMeta(companyId);
+        int scale = meta.currencyScale();
+        String companyName = queryCompanyName(companyId);
+
+        String reportType = (request == null || request.reportType() == null || request.reportType().isBlank())
+            ? "CONFIRMATION_OF_ACCOUNTS"
+            : request.reportType().trim().toUpperCase(Locale.ROOT);
+        if (!"CONFIRMATION_OF_ACCOUNTS".equals(reportType) && !"REMINDER_LETTER".equals(reportType)) {
+            throw new MoneyCraftException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "MC-EXG-MULTI-ACCOUNT-TYPE-INVALID",
+                "Invalid Multi-Account Report Type",
+                "reportType must be CONFIRMATION_OF_ACCOUNTS or REMINDER_LETTER."
+            );
+        }
+
+        String format = (request == null || request.format() == null || request.format().isBlank())
+            ? "JSON"
+            : request.format().trim().toUpperCase(Locale.ROOT);
+        LocalDate fromDate = (request == null || request.fromDate() == null)
+            ? LocalDate.of(2000, 1, 1)
+            : request.fromDate();
+        LocalDate toDate = (request == null || request.toDate() == null)
+            ? LocalDate.of(2099, 12, 31)
+            : request.toDate();
+        boolean includeZero = request != null && Boolean.TRUE.equals(request.includeZeroBalanceParties());
+        Map<UUID, List<OpenPartyBillSlice>> openBillsByLedger = loadOpenPartyBillSlices(companyId, toDate);
+
+        List<ExchangeDtos.MultiAccountPartyStatementDto> statements = businessJdbcTemplate.query(
+            """
+            WITH RECURSIVE party_groups AS (
+                SELECT id, name
+                  FROM mc_account_group
+                 WHERE company_id = ?
+                   AND lower(name) IN ('sundry debtors', 'sundry creditors')
+                UNION ALL
+                SELECT g.id, g.name
+                  FROM mc_account_group g
+                  JOIN party_groups pg ON g.parent_group_id = pg.id
+                 WHERE g.company_id = ?
+            )
+            SELECT l.id, l.name, pg.name AS group_name, l.gstin,
+                   l.opening_balance, trim(l.opening_side) AS opening_side,
+                   COALESCE((
+                       SELECT SUM(CASE WHEN trim(e.side) = 'DR' THEN e.base_currency_amount ELSE -e.base_currency_amount END)
+                         FROM mc_entry e
+                        WHERE e.company_id = l.company_id
+                          AND e.ledger_id = l.id
+                          AND e.entry_date < ?
+                   ), 0::numeric) AS pre_period_net_dr,
+                   COALESCE((
+                       SELECT SUM(e.base_currency_amount)
+                         FROM mc_entry e
+                        WHERE e.company_id = l.company_id
+                          AND e.ledger_id = l.id
+                          AND trim(e.side) = 'DR'
+                          AND e.entry_date >= ?
+                          AND e.entry_date <= ?
+                   ), 0::numeric) AS period_dr,
+                   COALESCE((
+                       SELECT SUM(e.base_currency_amount)
+                         FROM mc_entry e
+                        WHERE e.company_id = l.company_id
+                          AND e.ledger_id = l.id
+                          AND trim(e.side) = 'CR'
+                          AND e.entry_date >= ?
+                          AND e.entry_date <= ?
+                   ), 0::numeric) AS period_cr
+              FROM mc_ledger l
+              JOIN party_groups pg ON pg.id = l.group_id
+             WHERE l.company_id = ?
+               AND l.active = true
+             ORDER BY l.name ASC
+            """,
+            (rs, rowNum) -> {
+                UUID ledgerId = rs.getObject("id", UUID.class);
+                BigDecimal baseOb = rs.getBigDecimal("opening_balance");
+                String baseSide = rs.getString("opening_side");
+                BigDecimal signedOb = "CR".equalsIgnoreCase(baseSide) ? baseOb.negate() : baseOb;
+                BigDecimal effObSigned = signedOb.add(rs.getBigDecimal("pre_period_net_dr"));
+                String effObSide = effObSigned.signum() < 0 ? "CR" : "DR";
+                BigDecimal effObAbs = effObSigned.abs();
+
+                BigDecimal periodDr = rs.getBigDecimal("period_dr");
+                BigDecimal periodCr = rs.getBigDecimal("period_cr");
+                BigDecimal closingSigned = effObSigned.add(periodDr).subtract(periodCr);
+                String closingSide = closingSigned.signum() < 0 ? "CR" : "DR";
+                BigDecimal closingAbs = closingSigned.abs();
+
+                BigDecimal b0 = BigDecimal.ZERO;
+                BigDecimal b31 = BigDecimal.ZERO;
+                BigDecimal b61 = BigDecimal.ZERO;
+                BigDecimal b90 = BigDecimal.ZERO;
+                for (OpenPartyBillSlice slice : openBillsByLedger.getOrDefault(ledgerId, List.of())) {
+                    BigDecimal pending = "DR".equals(closingSide) ? slice.netDr() : slice.netDr().negate();
+                    if (pending.signum() <= 0) {
+                        continue;
+                    }
+                    long overdueDays = Math.max(0L, ChronoUnit.DAYS.between(slice.effectiveDueDate(), toDate));
+                    if (overdueDays <= 30L) {
+                        b0 = b0.add(pending);
+                    } else if (overdueDays <= 60L) {
+                        b31 = b31.add(pending);
+                    } else if (overdueDays <= 90L) {
+                        b61 = b61.add(pending);
+                    } else {
+                        b90 = b90.add(pending);
+                    }
+                }
+                BigDecimal allocatedTotal = b0.add(b31).add(b61).add(b90);
+                if (closingAbs.compareTo(allocatedTotal) > 0) {
+                    b0 = b0.add(closingAbs.subtract(allocatedTotal));
+                }
+
+                return new ExchangeDtos.MultiAccountPartyStatementDto(
+                    ledgerId,
+                    rs.getString("name"),
+                    rs.getString("group_name"),
+                    rs.getString("gstin"),
+                    ExactMoneyValidator.formatExactScale(effObAbs, scale),
+                    effObSide,
+                    ExactMoneyValidator.formatExactScale(periodDr, scale),
+                    ExactMoneyValidator.formatExactScale(periodCr, scale),
+                    ExactMoneyValidator.formatExactScale(closingAbs, scale),
+                    closingSide,
+                    ExactMoneyValidator.formatExactScale(b0, scale),
+                    ExactMoneyValidator.formatExactScale(b31, scale),
+                    ExactMoneyValidator.formatExactScale(b61, scale),
+                    ExactMoneyValidator.formatExactScale(b90, scale)
+                );
+            },
+            companyId,
+            companyId,
+            fromDate,
+            fromDate,
+            toDate,
+            fromDate,
+            toDate,
+            companyId
+        );
+
+        String zeroFmt = ExactMoneyValidator.formatExactScale(BigDecimal.ZERO, scale);
+        List<ExchangeDtos.MultiAccountPartyStatementDto> filtered = statements.stream()
+            .filter(s -> includeZero
+                || !zeroFmt.equals(s.closingBalance())
+                || !zeroFmt.equals(s.periodDebit())
+                || !zeroFmt.equals(s.periodCredit()))
+            .toList();
+
+        String rendered;
+        if ("HTML".equals(format)) {
+            StringBuilder html = new StringBuilder();
+            html.append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>")
+                .append(escapeXml(reportType)).append(" - ").append(escapeXml(companyName))
+                .append("</title></head><body><h1>").append(escapeXml(companyName))
+                .append(" — ").append(escapeXml(reportType)).append("</h1><table>")
+                .append("<thead><tr><th>Party</th><th>Group</th><th>Opening</th><th>Debit</th>")
+                .append("<th>Credit</th><th>Closing</th><th>0-30 Days</th><th>31-60 Days</th>")
+                .append("<th>61-90 Days</th><th>&gt;90 Days</th></tr></thead><tbody>");
+            for (ExchangeDtos.MultiAccountPartyStatementDto s : filtered) {
+                html.append("<tr><td>").append(escapeXml(s.partyName())).append("</td><td>")
+                    .append(escapeXml(s.groupName())).append("</td><td>")
+                    .append(s.openingBalance()).append(' ').append(s.openingSide()).append("</td><td>")
+                    .append(s.periodDebit()).append("</td><td>").append(s.periodCredit()).append("</td><td>")
+                    .append(s.closingBalance()).append(' ').append(s.closingSide()).append("</td><td>")
+                    .append(s.slab0To30()).append("</td><td>")
+                    .append(s.slab31To60()).append("</td><td>")
+                    .append(s.slab61To90()).append("</td><td>")
+                    .append(s.slabOver90()).append("</td></tr>");
+            }
+            html.append("</tbody></table></body></html>");
+            rendered = html.toString();
+        } else if ("ASCII".equals(format) || "CSV".equals(format)) {
+            StringBuilder csv = new StringBuilder();
+            csv.append("PARTY_NAME,GROUP_NAME,OPENING_BALANCE,OPENING_SIDE,PERIOD_DEBIT,PERIOD_CREDIT,CLOSING_BALANCE,CLOSING_SIDE,SLAB_0_30,SLAB_31_60,SLAB_61_90,SLAB_OVER_90\n");
+            for (ExchangeDtos.MultiAccountPartyStatementDto s : filtered) {
+                csv.append(csvSafe(s.partyName())).append(',')
+                    .append(csvSafe(s.groupName())).append(',')
+                    .append(csvSafe(s.openingBalance())).append(',')
+                    .append(csvSafe(s.openingSide())).append(',')
+                    .append(csvSafe(s.periodDebit())).append(',')
+                    .append(csvSafe(s.periodCredit())).append(',')
+                    .append(csvSafe(s.closingBalance())).append(',')
+                    .append(csvSafe(s.closingSide())).append(',')
+                    .append(csvSafe(s.slab0To30())).append(',')
+                    .append(csvSafe(s.slab31To60())).append(',')
+                    .append(csvSafe(s.slab61To90())).append(',')
+                    .append(csvSafe(s.slabOver90())).append('\n');
+            }
+            rendered = csv.toString();
+        } else {
+            rendered = toJson(filtered);
+        }
+
+        return new ExchangeDtos.MultiAccountReportExportResponse(
+            companyId,
+            companyName,
+            reportType,
+            fromDate,
+            toDate,
+            format,
+            filtered.size(),
+            filtered,
+            rendered
+        );
+    }
+
+    public ExchangeDtos.EditLogSummaryResponseDto getEditLogSummary(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        String entityType,
+        boolean onlyAltered,
+        String usernameFilter
+    ) {
+        rbacGuard.requireCompanyAccess(actor, companyId);
+
+        String normType = (entityType == null || entityType.isBlank())
+            ? "ALL"
+            : entityType.trim().toUpperCase(Locale.ROOT);
+        String normUser = (usernameFilter == null || usernameFilter.isBlank())
+            ? null
+            : usernameFilter.trim();
+
+        List<ExchangeDtos.EditLogSummaryItemDto> allItems = new ArrayList<>();
+
+        if ("ALL".equals(normType) || "VOUCHER".equals(normType)) {
+            List<ExchangeDtos.EditLogSummaryItemDto> vouchers = businessJdbcTemplate.query(
+                """
+                SELECT j.id, vt.name AS vt_name, j.voucher_number, j.status, j.version_no, j.alter_id, j.updated_at,
+                       COALESCE((
+                           SELECT COUNT(*)
+                             FROM mc_edit_log_version el
+                            WHERE el.company_id = j.company_id
+                              AND el.entity_type = 'VOUCHER'
+                              AND el.entity_id = j.id
+                       ), 1) AS el_count,
+                       COALESCE((
+                           SELECT el.actor_username
+                             FROM mc_edit_log_version el
+                            WHERE el.company_id = j.company_id
+                              AND el.entity_type = 'VOUCHER'
+                              AND el.entity_id = j.id
+                            ORDER BY el.version_no DESC
+                            LIMIT 1
+                       ), 'owner') AS last_actor
+                  FROM mc_journal j
+                  JOIN mc_voucher_type vt
+                    ON vt.company_id = j.company_id AND vt.id = j.voucher_type_id
+                 WHERE j.company_id = ?
+                 ORDER BY j.alter_id DESC
+                """,
+                (rs, rowNum) -> {
+                    String st = rs.getString("status");
+                    int vNo = Math.max(rs.getInt("version_no"), rs.getInt("el_count"));
+                    String act = "CANCELLED".equals(st) ? "CANCELLED" : (vNo > 1 ? "ALTERED" : "CREATED");
+                    String dueTo = "CANCELLED".equals(st)
+                        ? "VOUCHER_CANCELLATION"
+                        : (vNo > 1 ? "USER_ALTERATION" : "INITIAL_CREATION");
+                    String vNum = rs.getString("voucher_number");
+                    return new ExchangeDtos.EditLogSummaryItemDto(
+                        "VOUCHER",
+                        rs.getObject("id", UUID.class),
+                        rs.getString("vt_name") + " #" + (vNum == null ? "" : vNum),
+                        vNum,
+                        act,
+                        dueTo,
+                        vNo,
+                        rs.getLong("alter_id"),
+                        rs.getString("last_actor"),
+                        rs.getTimestamp("updated_at").toInstant()
+                    );
+                },
+                companyId
+            );
+            allItems.addAll(vouchers);
+        }
+
+        if ("ALL".equals(normType) || "LEDGER".equals(normType)) {
+            List<ExchangeDtos.EditLogSummaryItemDto> ledgers = businessJdbcTemplate.query(
+                """
+                SELECT l.id, l.name, l.version_no, l.alter_id, l.updated_at,
+                       COALESCE((
+                           SELECT COUNT(*)
+                             FROM mc_edit_log_version el
+                            WHERE el.company_id = l.company_id
+                              AND el.entity_type = 'LEDGER'
+                              AND el.entity_id = l.id
+                       ), 1) AS el_count,
+                       COALESCE((
+                           SELECT el.actor_username
+                             FROM mc_edit_log_version el
+                            WHERE el.company_id = l.company_id
+                              AND el.entity_type = 'LEDGER'
+                              AND el.entity_id = l.id
+                            ORDER BY el.version_no DESC
+                            LIMIT 1
+                       ), 'owner') AS last_actor
+                  FROM mc_ledger l
+                 WHERE l.company_id = ?
+                   AND l.is_system_ledger = false
+                 ORDER BY l.alter_id DESC
+                """,
+                (rs, rowNum) -> {
+                    int vNo = Math.max(rs.getInt("version_no"), rs.getInt("el_count"));
+                    String act = vNo > 1 ? "ALTERED" : "CREATED";
+                    String dueTo = vNo > 1 ? "MASTER_ALTERATION" : "INITIAL_CREATION";
+                    return new ExchangeDtos.EditLogSummaryItemDto(
+                        "LEDGER",
+                        rs.getObject("id", UUID.class),
+                        rs.getString("name"),
+                        null,
+                        act,
+                        dueTo,
+                        vNo,
+                        rs.getLong("alter_id"),
+                        rs.getString("last_actor"),
+                        rs.getTimestamp("updated_at").toInstant()
+                    );
+                },
+                companyId
+            );
+            allItems.addAll(ledgers);
+        }
+
+        if ("ALL".equals(normType) || "STOCK_ITEM".equals(normType)) {
+            List<ExchangeDtos.EditLogSummaryItemDto> items = businessJdbcTemplate.query(
+                """
+                SELECT si.id, si.name, si.version_no, si.alter_id, si.updated_at,
+                       COALESCE((
+                           SELECT COUNT(*)
+                             FROM mc_edit_log_version el
+                            WHERE el.company_id = si.company_id
+                              AND el.entity_type = 'STOCK_ITEM'
+                              AND el.entity_id = si.id
+                       ), 1) AS el_count,
+                       COALESCE((
+                           SELECT el.actor_username
+                             FROM mc_edit_log_version el
+                            WHERE el.company_id = si.company_id
+                              AND el.entity_type = 'STOCK_ITEM'
+                              AND el.entity_id = si.id
+                            ORDER BY el.version_no DESC
+                            LIMIT 1
+                       ), 'owner') AS last_actor
+                  FROM mc_stock_item si
+                 WHERE si.company_id = ?
+                 ORDER BY si.alter_id DESC
+                """,
+                (rs, rowNum) -> {
+                    int vNo = Math.max(rs.getInt("version_no"), rs.getInt("el_count"));
+                    String act = vNo > 1 ? "ALTERED" : "CREATED";
+                    String dueTo = vNo > 1 ? "MASTER_ALTERATION" : "INITIAL_CREATION";
+                    return new ExchangeDtos.EditLogSummaryItemDto(
+                        "STOCK_ITEM",
+                        rs.getObject("id", UUID.class),
+                        rs.getString("name"),
+                        null,
+                        act,
+                        dueTo,
+                        vNo,
+                        rs.getLong("alter_id"),
+                        rs.getString("last_actor"),
+                        rs.getTimestamp("updated_at").toInstant()
+                    );
+                },
+                companyId
+            );
+            allItems.addAll(items);
+        }
+
+        int alteredCount = (int) allItems.stream().filter(i -> i.versionCount() > 1).count();
+        List<ExchangeDtos.EditLogSummaryItemDto> filtered = allItems.stream()
+            .filter(i -> !onlyAltered || i.versionCount() > 1)
+            .filter(i -> normUser == null || normUser.equalsIgnoreCase(i.lastModifiedBy()))
+            .toList();
+
+        return new ExchangeDtos.EditLogSummaryResponseDto(
+            companyId,
+            normType,
+            onlyAltered,
+            filtered.size(),
+            alteredCount,
+            filtered
+        );
+    }
+
+    public ExchangeDtos.DashboardTilesExportResponse exportDashboardTiles(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        ExchangeDtos.DashboardTilesExportRequest request
+    ) {
+        rbacGuard.requireCompanyAccess(actor, companyId);
+        rbacGuard.requireExportPermitted(actor, companyId);
+
+        CompanyMasterSequenceHelper.CompanyCurrencyMeta meta = sequenceHelper.readCompanyCurrencyMeta(companyId);
+        int scale = meta.currencyScale();
+        String companyName = queryCompanyName(companyId);
+
+        LocalDate fromDate = (request == null || request.fromDate() == null)
+            ? LocalDate.of(2000, 1, 1)
+            : request.fromDate();
+        LocalDate toDate = (request == null || request.toDate() == null)
+            ? LocalDate.of(2099, 12, 31)
+            : request.toDate();
+        String format = (request == null || request.format() == null || request.format().isBlank())
+            ? "JSON"
+            : request.format().trim().toUpperCase(Locale.ROOT);
+
+        BigDecimal totalDr = queryScalarMoney(
+            """
+            SELECT COALESCE(SUM(opening_balance) FILTER (WHERE trim(opening_side) = 'DR'), 0::numeric)
+                 + COALESCE((SELECT SUM(base_currency_amount) FROM mc_entry WHERE company_id = ? AND trim(side) = 'DR' AND entry_date <= ?), 0::numeric)
+              FROM mc_ledger
+             WHERE company_id = ? AND active = true
+            """,
+            companyId,
+            toDate,
+            companyId
+        );
+        BigDecimal totalCr = queryScalarMoney(
+            """
+            SELECT COALESCE(SUM(opening_balance) FILTER (WHERE trim(opening_side) = 'CR'), 0::numeric)
+                 + COALESCE((SELECT SUM(base_currency_amount) FROM mc_entry WHERE company_id = ? AND trim(side) = 'CR' AND entry_date <= ?), 0::numeric)
+              FROM mc_ledger
+             WHERE company_id = ? AND active = true
+            """,
+            companyId,
+            toDate,
+            companyId
+        );
+
+        BigDecimal cashBankNetDr = queryScalarMoney(
+            """
+            SELECT COALESCE(SUM(
+                CASE WHEN trim(l.opening_side) = 'DR' THEN l.opening_balance ELSE -l.opening_balance END
+                + COALESCE((
+                    SELECT SUM(CASE WHEN trim(e.side) = 'DR' THEN e.base_currency_amount ELSE -e.base_currency_amount END)
+                      FROM mc_entry e
+                     WHERE e.company_id = l.company_id AND e.ledger_id = l.id AND e.entry_date <= ?
+                ), 0::numeric)
+            ), 0::numeric)
+              FROM mc_ledger l
+              JOIN mc_account_group g ON g.company_id = l.company_id AND g.id = l.group_id
+             WHERE l.company_id = ?
+               AND lower(g.name) IN ('cash-in-hand', 'bank accounts', 'bank od a/c')
+            """,
+            toDate,
+            companyId
+        );
+
+        BigDecimal receivablesNetDr = queryScalarMoney(
+            """
+            SELECT COALESCE(SUM(
+                CASE WHEN trim(l.opening_side) = 'DR' THEN l.opening_balance ELSE -l.opening_balance END
+                + COALESCE((
+                    SELECT SUM(CASE WHEN trim(e.side) = 'DR' THEN e.base_currency_amount ELSE -e.base_currency_amount END)
+                      FROM mc_entry e
+                     WHERE e.company_id = l.company_id AND e.ledger_id = l.id AND e.entry_date <= ?
+                ), 0::numeric)
+            ), 0::numeric)
+              FROM mc_ledger l
+              JOIN mc_account_group g ON g.company_id = l.company_id AND g.id = l.group_id
+             WHERE l.company_id = ?
+               AND lower(g.name) = 'sundry debtors'
+            """,
+            toDate,
+            companyId
+        );
+
+        BigDecimal stockOpeningVal = queryScalarMoney(
+            "SELECT COALESCE(SUM(opening_value), 0::numeric) FROM mc_stock_item WHERE company_id = ? AND active = true",
+            companyId
+        );
+        Integer uncertainGstCount = businessJdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+              FROM mc_stock_item
+             WHERE company_id = ?
+               AND active = true
+               AND gst_applicability = 'APPLICABLE'
+               AND (hsn_sac_code IS NULL OR length(trim(hsn_sac_code)) = 0)
+            """,
+            Integer.class,
+            companyId
+        );
+
+        List<ExchangeDtos.DashboardTileDto> tiles = List.of(
+            new ExchangeDtos.DashboardTileDto(
+                "TRIAL_BALANCE_SUMMARY",
+                "Trial Balance Summary",
+                "Total Debit",
+                ExactMoneyValidator.formatExactScale(totalDr, scale),
+                Map.of(
+                    "totalDebit", ExactMoneyValidator.formatExactScale(totalDr, scale),
+                    "totalCredit", ExactMoneyValidator.formatExactScale(totalCr, scale),
+                    "netVariance", ExactMoneyValidator.formatExactScale(totalDr.subtract(totalCr).abs(), scale)
+                )
+            ),
+            new ExchangeDtos.DashboardTileDto(
+                "CASH_AND_BANK_SUMMARY",
+                "Cash & Bank Summary",
+                "Net Cash/Bank Balance",
+                ExactMoneyValidator.formatExactScale(cashBankNetDr.abs(), scale),
+                Map.of(
+                    "balance", ExactMoneyValidator.formatExactScale(cashBankNetDr.abs(), scale),
+                    "side", cashBankNetDr.signum() < 0 ? "CR" : "DR"
+                )
+            ),
+            new ExchangeDtos.DashboardTileDto(
+                "RECEIVABLES_AND_PAYABLES",
+                "Receivables & Payables",
+                "Sundry Debtors Closing",
+                ExactMoneyValidator.formatExactScale(receivablesNetDr.abs(), scale),
+                Map.of(
+                    "sundryDebtors", ExactMoneyValidator.formatExactScale(receivablesNetDr.abs(), scale),
+                    "side", receivablesNetDr.signum() < 0 ? "CR" : "DR"
+                )
+            ),
+            new ExchangeDtos.DashboardTileDto(
+                "INVENTORY_VALUATION_SUMMARY",
+                "Inventory Valuation Summary",
+                "Opening Stock Value",
+                ExactMoneyValidator.formatExactScale(stockOpeningVal, scale),
+                Map.of("openingStockValue", ExactMoneyValidator.formatExactScale(stockOpeningVal, scale))
+            ),
+            new ExchangeDtos.DashboardTileDto(
+                "GST_LIABILITY_AND_UNCERTAIN_TRANSACTIONS",
+                "GST Liability & Uncertain Transactions",
+                "Uncertain Masters/Transactions",
+                Integer.toString(uncertainGstCount == null ? 0 : uncertainGstCount),
+                Map.of("uncertainCount", Integer.toString(uncertainGstCount == null ? 0 : uncertainGstCount))
+            )
+        );
+
+        String rendered;
+        if ("HTML".equals(format)) {
+            StringBuilder html = new StringBuilder();
+            html.append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>Dashboard Tiles - ")
+                .append(escapeXml(companyName)).append("</title></head><body><h1>")
+                .append(escapeXml(companyName)).append(" — Dashboard Tiles</h1><ul>");
+            for (ExchangeDtos.DashboardTileDto t : tiles) {
+                html.append("<li><strong>").append(escapeXml(t.tileTitle())).append("</strong>: ")
+                    .append(escapeXml(t.primaryMetricLabel())).append(" = ")
+                    .append(escapeXml(t.primaryMetricValue())).append("</li>");
+            }
+            html.append("</ul></body></html>");
+            rendered = html.toString();
+        } else if ("ASCII".equals(format) || "CSV".equals(format)) {
+            StringBuilder csv = new StringBuilder("TILE_CODE,TILE_TITLE,METRIC_LABEL,METRIC_VALUE\n");
+            for (ExchangeDtos.DashboardTileDto t : tiles) {
+                csv.append(csvSafe(t.tileCode())).append(',')
+                    .append(csvSafe(t.tileTitle())).append(',')
+                    .append(csvSafe(t.primaryMetricLabel())).append(',')
+                    .append(csvSafe(t.primaryMetricValue())).append('\n');
+            }
+            rendered = csv.toString();
+        } else {
+            rendered = toJson(tiles);
+        }
+
+        return new ExchangeDtos.DashboardTilesExportResponse(
+            companyId,
+            companyName,
+            fromDate,
+            toDate,
+            format,
+            tiles.size(),
+            tiles,
+            rendered
+        );
+    }
+
+    public ExchangeDtos.DataVerificationReportDto verifyCompanyData(
+        MoneyCraftPrincipal actor,
+        UUID companyId
+    ) {
+        rbacGuard.requireCompanyAccess(actor, companyId);
+        CompanyMasterSequenceHelper.CompanyCurrencyMeta meta = sequenceHelper.readCompanyCurrencyMeta(companyId);
+        int scale = meta.currencyScale();
+        String companyName = queryCompanyName(companyId);
+
+        Integer unbalancedVouchers = businessJdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+              FROM mc_journal
+             WHERE company_id = ?
+               AND status = 'POSTED'
+               AND total_debit <> total_credit
+            """,
+            Integer.class,
+            companyId
+        );
+        int unbalCnt = unbalancedVouchers == null ? 0 : unbalancedVouchers;
+
+        Integer unitMismatches = businessJdbcTemplate.queryForObject(
+            """
+            SELECT COUNT(*)
+              FROM mc_inventory_allocation ia
+              JOIN mc_stock_item si
+                ON si.company_id = ia.company_id AND si.id = ia.stock_item_id
+             WHERE ia.company_id = ?
+               AND ia.uom_id IS NOT NULL
+               AND ia.uom_id <> si.base_uom_id
+               AND (si.alternate_uom_id IS NULL OR ia.uom_id <> si.alternate_uom_id)
+            """,
+            Integer.class,
+            companyId
+        );
+        int unitCnt = unitMismatches == null ? 0 : unitMismatches;
+
+        Integer missingHsnOrGstin = businessJdbcTemplate.queryForObject(
+            """
+            SELECT (
+                SELECT COUNT(*)
+                  FROM mc_stock_item
+                 WHERE company_id = ?
+                   AND active = true
+                   AND gst_applicability = 'APPLICABLE'
+                   AND (hsn_sac_code IS NULL OR length(trim(hsn_sac_code)) = 0)
+            ) + (
+                SELECT COUNT(*)
+                  FROM mc_ledger
+                 WHERE company_id = ?
+                   AND active = true
+                   AND party_registration_type = 'REGULAR'
+                   AND (gstin IS NULL OR length(trim(gstin)) <> 15)
+            )
+            """,
+            Integer.class,
+            companyId,
+            companyId
+        );
+        int hsnGstinCnt = missingHsnOrGstin == null ? 0 : missingHsnOrGstin;
+
+        BigDecimal postedEntryDiff = queryScalarMoney(
+            """
+            SELECT ABS(
+                COALESCE(SUM(CASE WHEN trim(side) = 'DR' THEN base_currency_amount ELSE -base_currency_amount END), 0::numeric)
+            )
+              FROM mc_entry
+             WHERE company_id = ?
+            """,
+            companyId
+        );
+
+        int pendingExceptions = (int) listImportExceptions(actor, companyId).stream()
+            .filter(e -> !e.resolved())
+            .count();
+        boolean ready = unbalCnt == 0 && unitCnt == 0 && pendingExceptions == 0 && postedEntryDiff.signum() == 0;
+
+        List<ExchangeDtos.DataVerificationCheckDto> checks = List.of(
+            new ExchangeDtos.DataVerificationCheckDto(
+                "DOUBLE_ENTRY_GL_PARITY",
+                "General Ledger Double-Entry Balance (DR == CR)",
+                unbalCnt == 0 && postedEntryDiff.signum() == 0 ? "PASS" : "ISSUE_FOUND",
+                unbalCnt,
+                "Posted GL Dr/Cr variance: " + ExactMoneyValidator.formatExactScale(postedEntryDiff, scale)
+            ),
+            new ExchangeDtos.DataVerificationCheckDto(
+                "STOCK_UOM_CONSISTENCY",
+                "Voucher & Stock Item Unit Consistency",
+                unitCnt == 0 ? "PASS" : "ISSUE_FOUND",
+                unitCnt,
+                unitCnt == 0 ? "All inventory allocations match stock item units." : (unitCnt + " unit mismatch(es) found.")
+            ),
+            new ExchangeDtos.DataVerificationCheckDto(
+                "STATUTORY_HSN_GSTIN_COMPLETENESS",
+                "Taxable Stock Item HSN & Regular Party GSTIN Completeness",
+                hsnGstinCnt == 0 ? "PASS" : "WARN",
+                hsnGstinCnt,
+                hsnGstinCnt == 0 ? "All taxable masters carry valid HSN/GSTIN." : (hsnGstinCnt + " master(s) missing HSN/GSTIN.")
+            ),
+            new ExchangeDtos.DataVerificationCheckDto(
+                "IMPORT_EXCEPTIONS_REGISTER",
+                "Unresolved Import Exceptions Queue",
+                pendingExceptions == 0 ? "PASS" : "ISSUE_FOUND",
+                pendingExceptions,
+                pendingExceptions == 0
+                    ? "Zero unresolved import exceptions."
+                    : (pendingExceptions + " unresolved import exception(s) require resolution before Split/Sync.")
+            )
+        );
+
+        return new ExchangeDtos.DataVerificationReportDto(
+            companyId,
+            companyName,
+            ExactMoneyValidator.formatExactScale(postedEntryDiff, scale),
+            unbalCnt,
+            unitCnt,
+            hsnGstinCnt,
+            pendingExceptions,
+            ready,
+            checks
+        );
+    }
+
+    private BigDecimal queryScalarMoney(String sql, Object... args) {
+        BigDecimal val = businessJdbcTemplate.queryForObject(sql, BigDecimal.class, args);
+        return val == null ? BigDecimal.ZERO : val;
     }
 
     // =========================================================================
     // XML & Excel Parsing Helpers
     // =========================================================================
 
-    public static String stripTallyControlCharacters(String rawXml) {
+    public static String stripXmlControlCharacters(String rawXml) {
         String withoutEntities = NUMERIC_ENTITY_CTRL_PATTERN.matcher(rawXml).replaceAll("");
         return RAW_CTRL_CHARS_PATTERN.matcher(withoutEntities).replaceAll("");
     }
@@ -1664,8 +3484,8 @@ public class DataExchangeService {
             throw new MoneyCraftException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "MC-EXG-XML-INVALID",
-                "Invalid Tally XML Payload",
-                "Failed to parse Tally <ENVELOPE> XML: " + ex.getMessage()
+                "Invalid XML Envelope Payload",
+                "Failed to parse <ENVELOPE> XML payload: " + ex.getMessage()
             );
         }
     }
@@ -1783,8 +3603,8 @@ public class DataExchangeService {
             }
             String guid = firstNonBlank(childText(el, "GUID"), el.getAttribute("REMOTEID"), UUID.randomUUID().toString());
             String vtName = firstNonBlank(childText(el, "VOUCHERTYPENAME"), el.getAttribute("VCHTYPE"), "Journal");
-            LocalDate vDate = parseTallyDate(childText(el, "DATE"));
-            LocalDate effDate = parseTallyDate(firstNonBlank(childText(el, "EFFECTIVEDATE"), childText(el, "DATE")));
+            LocalDate vDate = parseCompactOrIsoDate(childText(el, "DATE"));
+            LocalDate effDate = parseCompactOrIsoDate(firstNonBlank(childText(el, "EFFECTIVEDATE"), childText(el, "DATE")));
             boolean optional = isYes(childText(el, "ISOPTIONAL"));
 
             List<ExchangeDtos.JsonExVoucherLineDto> lines = new ArrayList<>();
@@ -2059,9 +3879,15 @@ public class DataExchangeService {
             : wb.getSheetAt(0);
         int headerIdx = Math.max(0, tpl.headerRowIndex() - 1);
         Row headerRow = sheet.getRow(headerIdx);
+        int minColIdx = tpl.fromColumn() != null && !tpl.fromColumn().isBlank()
+            ? Math.max(0, excelColumnToIndex(tpl.fromColumn().trim().toUpperCase(Locale.ROOT)) - 1)
+            : 0;
+        int maxColIdx = tpl.toColumn() != null && !tpl.toColumn().isBlank()
+            ? Math.max(0, excelColumnToIndex(tpl.toColumn().trim().toUpperCase(Locale.ROOT)) - 1)
+            : Integer.MAX_VALUE;
         Map<String, Integer> colByHeader = new HashMap<>();
         if (headerRow != null) {
-            for (int c = 0; c < headerRow.getLastCellNum(); c++) {
+            for (int c = minColIdx; c < headerRow.getLastCellNum() && c <= maxColIdx; c++) {
                 String h = cellText(headerRow, c, fmt);
                 if (!h.isBlank()) {
                     colByHeader.put(h.trim().toLowerCase(Locale.ROOT), c);
@@ -2077,24 +3903,51 @@ public class DataExchangeService {
 
         List<ExchangeDtos.JsonExLedgerDto> ledgers = new ArrayList<>();
         List<ExchangeDtos.JsonExVoucherDto> vouchers = new ArrayList<>();
+        Map<String, String> defaults = tpl.defaultValues() == null ? Map.of() : tpl.defaultValues();
+        String defaultGroup = firstNonBlank(
+            defaults.get("groupName"), defaults.get("group"), defaults.get("parentGroup"), "Sundry Debtors"
+        );
 
         if ("LEDGERS".equals(tpl.targetType())) {
             for (int r = headerIdx + 1; r <= sheet.getLastRowNum(); r++) {
                 Row row = sheet.getRow(r);
+                if (isRowExcluded(row, colByHeader, fmt, tpl)) {
+                    continue;
+                }
                 String name = mappedCell(row, colByHeader, fieldToHeader, fmt, "name", "ledgername", "account name");
                 if (name.isBlank()) {
                     continue;
                 }
-                String grp = mappedCell(row, colByHeader, fieldToHeader, fmt, "groupname", "group", "parent");
+                String grp = mappedCell(
+                    row, colByHeader, fieldToHeader, fmt, "groupname", "group", "parent", "parentgroup"
+                );
                 String ob = mappedCell(row, colByHeader, fieldToHeader, fmt, "openingbalance", "opening");
                 String side = mappedCell(row, colByHeader, fieldToHeader, fmt, "openingside", "side");
+                String drColVal = mappedCell(
+                    row, colByHeader, fieldToHeader, fmt, "openingdebit", "debit", "opening dr"
+                );
+                String crColVal = mappedCell(
+                    row, colByHeader, fieldToHeader, fmt, "openingcredit", "credit", "opening cr"
+                );
+                if (ob.isBlank() && (!drColVal.isBlank() || !crColVal.isBlank())) {
+                    BigDecimal drAmt = new BigDecimal(parseLeadingDecimal(drColVal, "0.00")).abs();
+                    BigDecimal crAmt = new BigDecimal(parseLeadingDecimal(crColVal, "0.00")).abs();
+                    BigDecimal net = crAmt.subtract(drAmt);
+                    ob = net.abs().setScale(2, RoundingMode.HALF_UP).toPlainString();
+                    side = net.signum() <= 0 ? "DR" : "CR";
+                }
+                String billWiseRaw = mappedCell(
+                    row, colByHeader, fieldToHeader, fmt, "billwise", "maintainbalancesbillbybill"
+                );
+                boolean billWise = isYes(billWiseRaw)
+                    || billWiseRaw.toLowerCase(Locale.ROOT).contains("billwise");
                 ledgers.add(new ExchangeDtos.JsonExLedgerDto(
                     UUID.randomUUID().toString(),
                     name,
-                    grp.isBlank() ? "Sundry Debtors" : grp,
+                    grp.isBlank() ? defaultGroup : grp,
                     ob.isBlank() ? "0.00" : ob,
                     side.isBlank() ? "DR" : side,
-                    false,
+                    billWise,
                     null,
                     null,
                     "NONE",
@@ -2104,6 +3957,9 @@ public class DataExchangeService {
         } else {
             for (int r = headerIdx + 1; r <= sheet.getLastRowNum(); r++) {
                 Row row = sheet.getRow(r);
+                if (isRowExcluded(row, colByHeader, fmt, tpl)) {
+                    continue;
+                }
                 String drLedger = mappedCell(
                     row, colByHeader, fieldToHeader, fmt, "debitledger", "debit ledger", "drledger"
                 );
@@ -2143,6 +3999,36 @@ public class DataExchangeService {
         return new ExchangeDtos.JsonExDataDto(
             List.of(), List.of(), List.of(), List.of(), List.of(), ledgers, vouchers
         );
+    }
+
+    private static boolean isRowExcluded(
+        Row row,
+        Map<String, Integer> colByHeader,
+        DataFormatter fmt,
+        ExchangeDtos.ExchangeMappingTemplateDto tpl
+    ) {
+        if (row == null || tpl.excludeRowColumn() == null || tpl.excludeRowColumn().isBlank()) {
+            return false;
+        }
+        Integer colIdx = colByHeader.get(tpl.excludeRowColumn().trim().toLowerCase(Locale.ROOT));
+        if (colIdx == null) {
+            return false;
+        }
+        String cellVal = cellText(row, colIdx, fmt);
+        String op = tpl.excludeRowOperator() == null
+            ? "CONTAINS"
+            : tpl.excludeRowOperator().trim().toUpperCase(Locale.ROOT);
+        String target = tpl.excludeRowValue() == null ? "" : tpl.excludeRowValue().trim();
+        if ("IS_EMPTY".equals(op)) {
+            return cellVal.isBlank();
+        }
+        if ("EQUALS".equals(op)) {
+            return cellVal.equalsIgnoreCase(target);
+        }
+        if ("STARTS_WITH".equals(op)) {
+            return cellVal.toLowerCase(Locale.ROOT).startsWith(target.toLowerCase(Locale.ROOT));
+        }
+        return !target.isEmpty() && cellVal.toLowerCase(Locale.ROOT).contains(target.toLowerCase(Locale.ROOT));
     }
 
     // =========================================================================
@@ -2202,6 +4088,23 @@ public class DataExchangeService {
             templateId
         );
         if (rows.isEmpty()) {
+            List<ExchangeDtos.ExchangeMappingTemplateDto> shared = TenantContextHolder.callWithSystemBypass(
+                "exchange-load-shared-template",
+                () -> businessJdbcTemplate.query(
+                    """
+                    SELECT id, name, target_type, sheet_name, header_row_index,
+                           column_mappings_json, default_values_json, duplicate_handling,
+                           active, version_no, created_at
+                      FROM mc_exchange_mapping_template
+                     WHERE id = ? AND default_values_json->>'__mcMeta_templateScope' = 'ALL_COMPANIES'
+                    """,
+                    (rs, rowNum) -> mapTemplateRow(rs),
+                    templateId
+                )
+            );
+            if (shared != null && !shared.isEmpty()) {
+                return shared.getFirst();
+            }
             throw new MoneyCraftException(
                 HttpStatus.NOT_FOUND,
                 "MC-EXG-TEMPLATE-NOT-FOUND",
@@ -2217,7 +4120,19 @@ public class DataExchangeService {
         String targetType = rs.getString("target_type");
         String scope = ("LEDGERS".equals(targetType) || "STOCK_ITEMS".equals(targetType)) ? "MASTERS" : "VOUCHERS";
         Map<String, String> mappings = parseStringMap(rs.getString("column_mappings_json"));
-        Map<String, String> defaults = parseStringMap(rs.getString("default_values_json"));
+        Map<String, String> rawDefaults = parseStringMap(rs.getString("default_values_json"));
+        String tplScope = rawDefaults.getOrDefault(META_SCOPE_KEY, "THIS_COMPANY");
+        String fromCol = rawDefaults.get(META_FROM_COL_KEY);
+        String toCol = rawDefaults.get(META_TO_COL_KEY);
+        String exCol = rawDefaults.get(META_EXCLUDE_COL_KEY);
+        String exOp = rawDefaults.get(META_EXCLUDE_OP_KEY);
+        String exVal = rawDefaults.get(META_EXCLUDE_VAL_KEY);
+        Map<String, String> cleanDefaults = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : rawDefaults.entrySet()) {
+            if (!entry.getKey().startsWith("__mcMeta_")) {
+                cleanDefaults.put(entry.getKey(), entry.getValue());
+            }
+        }
         return new ExchangeDtos.ExchangeMappingTemplateDto(
             rs.getObject("id", UUID.class),
             name,
@@ -2227,22 +4142,201 @@ public class DataExchangeService {
             rs.getString("sheet_name"),
             rs.getInt("header_row_index"),
             mappings,
-            defaults,
+            cleanDefaults,
             rs.getString("duplicate_handling"),
+            tplScope,
+            fromCol,
+            toCol,
+            exCol,
+            exOp,
+            exVal,
             rs.getBoolean("active"),
             rs.getLong("version_no"),
             rs.getTimestamp("created_at").toInstant()
         );
     }
 
-    private boolean existsJournalBySourceGuid(UUID companyId, String guid) {
-        Integer cnt = businessJdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM mc_journal WHERE company_id = ? AND source_guid = ?",
-            Integer.class,
+    private ExchangeDtos.SyncRuleDto mapSyncRuleRow(ResultSet rs) throws SQLException {
+        Map<String, String> meta = parseStringMap(rs.getString("default_values_json"));
+        String targetCmpIdRaw = meta.get("targetCompanyId");
+        UUID targetCmpId = (targetCmpIdRaw == null || targetCmpIdRaw.isBlank())
+            ? null
+            : UUID.fromString(targetCmpIdRaw.trim());
+        long lastAlter = 0L;
+        try {
+            lastAlter = Long.parseLong(meta.getOrDefault("lastSyncAlterId", "0"));
+        } catch (NumberFormatException ignored) {
+            lastAlter = 0L;
+        }
+        return new ExchangeDtos.SyncRuleDto(
+            rs.getObject("id", UUID.class),
+            rs.getObject("company_id", UUID.class),
+            rs.getString("name"),
+            meta.getOrDefault("ruleType", "FULL_SYNC"),
+            meta.getOrDefault("direction", "BOTH_WAYS"),
+            targetCmpId,
+            meta.getOrDefault("targetCompanyGuid", ""),
+            meta.getOrDefault("targetCompanyName", "Remote Company"),
+            meta.getOrDefault("serverUrl", "http://localhost:18080"),
+            meta.getOrDefault("masterDuplicateRule", "MODIFY_WITH_NEW_DATA"),
+            Boolean.parseBoolean(meta.getOrDefault("overwriteVoucherByGuid", "false")),
+            lastAlter,
+            rs.getBoolean("active"),
+            rs.getTimestamp("created_at").toInstant()
+        );
+    }
+
+    private ExistingJournalMeta findJournalBySourceGuid(UUID companyId, String guid) {
+        List<ExistingJournalMeta> rows = businessJdbcTemplate.query(
+            """
+            SELECT id, version_no
+              FROM mc_journal
+             WHERE company_id = ? AND source_guid = ? AND status NOT IN ('CANCELLED', 'REVERSED')
+             ORDER BY created_at DESC, id DESC
+            """,
+            (rs, rowNum) -> new ExistingJournalMeta(
+                rs.getObject("id", UUID.class),
+                rs.getLong("version_no")
+            ),
             companyId,
             guid
         );
-        return cnt != null && cnt > 0;
+        return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    private ExistingLedgerBalance queryExistingLedgerBalance(UUID companyId, UUID ledgerId, int scale) {
+        List<ExistingLedgerBalance> rows = businessJdbcTemplate.query(
+            "SELECT opening_balance, trim(opening_side) AS side FROM mc_ledger WHERE company_id = ? AND id = ?",
+            (rs, rowNum) -> new ExistingLedgerBalance(
+                rs.getBigDecimal("opening_balance").setScale(scale, RoundingMode.HALF_UP),
+                rs.getString("side")
+            ),
+            companyId,
+            ledgerId
+        );
+        return rows.isEmpty()
+            ? new ExistingLedgerBalance(BigDecimal.ZERO.setScale(scale, RoundingMode.UNNECESSARY), "DR")
+            : rows.getFirst();
+    }
+
+    private static String normalizeMasterDuplicateRule(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "MODIFY_WITH_NEW_DATA";
+        }
+        String u = raw.trim().toUpperCase(Locale.ROOT);
+        if (u.contains("COMBINE")) {
+            return "COMBINE_OPENING_BALANCES";
+        }
+        if (u.contains("IGNORE") || "SKIP".equals(u)) {
+            return "IGNORE_DUPLICATES";
+        }
+        if (VALID_MASTER_DUP_RULES.contains(u)) {
+            return u;
+        }
+        return "MODIFY_WITH_NEW_DATA";
+    }
+
+    private static String normalizeExceptionBehavior(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "STOP_AT_FIRST_EXCEPTION";
+        }
+        String u = raw.trim().toUpperCase(Locale.ROOT);
+        if (u.contains("RECORD") || u.contains("CONTINUE")) {
+            return "RECORD_EXCEPTIONS_AND_IMPORT";
+        }
+        if (u.contains("IGNORE")) {
+            return "IGNORE_EXCEPTIONS_AND_IMPORT";
+        }
+        if (VALID_EXCEPTION_BEHAVIORS.contains(u)) {
+            return u;
+        }
+        return "STOP_AT_FIRST_EXCEPTION";
+    }
+
+    private List<ExchangeDtos.ImportExceptionItemDto> parseExceptionsFromDiagnostics(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonNode root = objectMapper.readTree(json);
+            JsonNode excNode = root.get("exceptions");
+            if (excNode == null || !excNode.isArray()) {
+                return List.of();
+            }
+            return objectMapper.treeToValue(
+                excNode,
+                objectMapper.getTypeFactory().constructCollectionType(
+                    List.class, ExchangeDtos.ImportExceptionItemDto.class
+                )
+            );
+        } catch (JacksonException ignored) {
+            return List.of();
+        }
+    }
+
+    private ExchangeDtos.ImportExceptionItemDto markExceptionResolved(
+        UUID companyId,
+        String exceptionId,
+        UUID resolvedVoucherId
+    ) {
+        List<JobDiagRow> jobs = businessJdbcTemplate.query(
+            """
+            SELECT id, diagnostics_json::text AS diag
+              FROM mc_import_job
+             WHERE company_id = ? AND error_records_count > 0
+             ORDER BY started_at DESC, id DESC
+            """,
+            (rs, rowNum) -> new JobDiagRow(rs.getObject("id", UUID.class), rs.getString("diag")),
+            companyId
+        );
+        for (JobDiagRow row : jobs) {
+            List<ExchangeDtos.ImportExceptionItemDto> items = parseExceptionsFromDiagnostics(row.diag());
+            boolean found = false;
+            ExchangeDtos.ImportExceptionItemDto resolvedItem = null;
+            List<ExchangeDtos.ImportExceptionItemDto> updatedList = new ArrayList<>();
+            for (ExchangeDtos.ImportExceptionItemDto item : items) {
+                if (exceptionId.equals(item.exceptionId())) {
+                    found = true;
+                    resolvedItem = new ExchangeDtos.ImportExceptionItemDto(
+                        item.exceptionId(),
+                        item.jobId(),
+                        item.entityType(),
+                        item.identifier(),
+                        item.errorCode(),
+                        item.message(),
+                        item.rawPayload(),
+                        true,
+                        resolvedVoucherId,
+                        item.createdAt()
+                    );
+                    updatedList.add(resolvedItem);
+                } else {
+                    updatedList.add(item);
+                }
+            }
+            if (found) {
+                Map<String, Object> diagMap = new LinkedHashMap<>();
+                diagMap.put("sourceCompanyName", "Resolved Exchange Import");
+                diagMap.put("exceptions", updatedList);
+                businessJdbcTemplate.update(
+                    """
+                    UPDATE mc_import_job
+                       SET diagnostics_json = ?::jsonb
+                     WHERE company_id = ? AND id = ?
+                    """,
+                    toJson(diagMap),
+                    companyId,
+                    row.id()
+                );
+                return resolvedItem;
+            }
+        }
+        throw new MoneyCraftException(
+            HttpStatus.NOT_FOUND,
+            "MC-EXG-EXCEPTION-NOT-FOUND",
+            "Import Exception Not Found",
+            "Import exception " + exceptionId + " was not found in company " + companyId + "."
+        );
     }
 
     private String queryCompanyName(UUID companyId) {
@@ -2410,7 +4504,7 @@ public class DataExchangeService {
         return "NEW_REF";
     }
 
-    private static String toTallyBillType(String allocType) {
+    private static String toWireBillType(String allocType) {
         if ("AGST_REF".equals(allocType)) {
             return "Agst Ref";
         }
@@ -2523,13 +4617,13 @@ public class DataExchangeService {
         return val != null && ("yes".equalsIgnoreCase(val.trim()) || "true".equalsIgnoreCase(val.trim()));
     }
 
-    private static LocalDate parseTallyDate(String raw) {
+    private static LocalDate parseCompactOrIsoDate(String raw) {
         if (raw == null || raw.isBlank()) {
             return LocalDate.of(2025, 4, 1);
         }
         String t = raw.trim();
         if (t.length() == 8 && t.chars().allMatch(Character::isDigit)) {
-            return LocalDate.parse(t, TALLY_DATE_FMT);
+            return LocalDate.parse(t, COMPACT_DATE_FMT);
         }
         return LocalDate.parse(t);
     }
@@ -2625,10 +4719,64 @@ public class DataExchangeService {
     private record ItemRef(UUID id, String name, UUID baseUomId) {
     }
 
-    private record UpsertedLedgersResult(Map<String, LedgerRef> byLowerName, int touchedCount) {
+    private record UpsertedLedgersResult(Map<String, LedgerRef> byLowerName, int touchedCount, int skippedCount) {
     }
 
-    private record UpsertedItemsResult(Map<String, ItemRef> byLowerName, int createdCount) {
+    private record UpsertedItemsResult(Map<String, ItemRef> byLowerName, int createdCount, int skippedCount) {
+    }
+
+    private record UpsertedVouchersResult(int importedCount, int updatedCount, int skippedCount) {
+    }
+
+    private record ExistingJournalMeta(UUID id, long versionNo) {
+    }
+
+    private record ExistingLedgerBalance(BigDecimal balance, String side) {
+    }
+
+    private record JobDiagRow(UUID id, String diag) {
+    }
+
+    private Map<UUID, List<OpenPartyBillSlice>> loadOpenPartyBillSlices(UUID companyId, LocalDate asOfDate) {
+        Map<UUID, List<OpenPartyBillSlice>> byLedger = new LinkedHashMap<>();
+        businessJdbcTemplate.query(
+            """
+            SELECT ba.ledger_id,
+                   COALESCE(
+                       MIN(COALESCE(ba.due_date, j.effective_date))
+                           FILTER (WHERE ba.allocation_type IN ('NEW_REF', 'ADVANCE')),
+                       MIN(j.effective_date)
+                   ) AS eff_due_date,
+                   SUM(CASE WHEN trim(ba.side) = 'DR' THEN ba.amount ELSE -ba.amount END) AS net_dr
+              FROM mc_bill_allocation ba
+              JOIN mc_journal j
+                ON j.company_id = ba.company_id
+               AND j.id = ba.journal_id
+             WHERE ba.company_id = ?
+               AND j.status = 'POSTED'
+               AND j.posting_nature = 'NORMAL'
+               AND j.effective_date <= ?
+               AND ba.bill_name IS NOT NULL
+               AND length(trim(ba.bill_name)) > 0
+             GROUP BY ba.ledger_id, lower(trim(ba.bill_name))
+            """,
+            (rs, rowNum) -> {
+                UUID ledgerId = rs.getObject("ledger_id", UUID.class);
+                LocalDate dueDate = rs.getObject("eff_due_date", LocalDate.class);
+                BigDecimal netDr = rs.getBigDecimal("net_dr");
+                if (netDr != null && netDr.signum() != 0) {
+                    byLedger.computeIfAbsent(ledgerId, k -> new ArrayList<>())
+                        .add(new OpenPartyBillSlice(dueDate != null ? dueDate : asOfDate, netDr));
+                }
+                return null;
+            },
+            companyId,
+            asOfDate
+        );
+        return byLedger;
+    }
+
+    private record OpenPartyBillSlice(LocalDate effectiveDueDate, BigDecimal netDr) {
     }
 
     private record FySpan(LocalDate start, LocalDate end) {

@@ -36,19 +36,31 @@
   --mc-color-row-selected: #DDF2EF;
   --mc-color-cell-active-bg: #FFFCE6;
 
-  /* Semantic Status & Quarantine Alert Palette */
+  /* Semantic Status & Quarantine Alert Palette (VIS-001 / UI-VIS-100) */
   --mc-color-danger-700: #912018;
   --mc-color-danger-600: #B42318;
   --mc-color-danger-100: #FEE4E2;
   --mc-color-danger-50: #FEF3F2;
 
-  --mc-color-warning-700: #B54708;
+  --mc-color-warning-700: #6F4E00;
   --mc-color-warning-100: #FEF0C7;
   --mc-color-warning-50: #FFFAEB;
 
-  --mc-color-success-700: #067647;
+  --mc-color-success-700: #006D68;
   --mc-color-success-100: #DCFAE6;
   --mc-color-success-50: #ECFDF3;
+
+  /* UI-VIS-100 Semantic Action & Status Role Tokens */
+  --mc-action-primary-fg: #FFFFFF;
+  --mc-action-primary-bg: #006D68;
+  --mc-action-secondary-fg: #142F42;
+  --mc-action-secondary-bg: #FFFFFF;
+  --mc-action-danger-fg: #FFFFFF;
+  --mc-action-danger-bg: #B42318;
+  --mc-action-disabled-fg: #142F42;
+  --mc-action-disabled-bg: #F6FAF9;
+  --mc-status-unknown-fg: #F6FAF9;
+  --mc-status-unknown-bg: #142F42;
 
   /* Typography Families & Scale */
   --mc-font-ui: 'Manrope', 'Noto Sans Devanagari', 'Noto Sans Tamil', system-ui, -apple-system, 'Segoe UI', sans-serif;

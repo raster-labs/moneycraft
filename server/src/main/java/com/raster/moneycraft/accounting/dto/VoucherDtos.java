@@ -418,6 +418,14 @@ public final class VoucherDtos {
         }
     }
 
+    public record DayBookLineBreakupDto(
+        int lineNo,
+        String ledgerName,
+        String side,
+        String amount
+    ) {
+    }
+
     public record VoucherSummaryDto(
         UUID id,
         LocalDate voucherDate,
@@ -434,8 +442,47 @@ public final class VoucherDtos {
         String totalCredit,
         String narration,
         long versionNo,
-        long alterId
+        long alterId,
+        List<DayBookLineBreakupDto> lineBreakups
     ) {
+        public VoucherSummaryDto(
+            UUID id,
+            LocalDate voucherDate,
+            LocalDate effectiveDate,
+            UUID voucherTypeId,
+            String voucherTypeName,
+            String voucherTypeCategory,
+            String voucherNumber,
+            String status,
+            String postingNature,
+            String persistedView,
+            String primaryParticulars,
+            String totalDebit,
+            String totalCredit,
+            String narration,
+            long versionNo,
+            long alterId
+        ) {
+            this(
+                id,
+                voucherDate,
+                effectiveDate,
+                voucherTypeId,
+                voucherTypeName,
+                voucherTypeCategory,
+                voucherNumber,
+                status,
+                postingNature,
+                persistedView,
+                primaryParticulars,
+                totalDebit,
+                totalCredit,
+                narration,
+                versionNo,
+                alterId,
+                List.of()
+            );
+        }
     }
 
     public record OpenBillDto(
@@ -462,6 +509,16 @@ public final class VoucherDtos {
     ) {
     }
 
+    public record UnusedVoucherNumberDto(
+        UUID id,
+        UUID voucherTypeId,
+        String voucherNumber,
+        Long numericSeq,
+        String status,
+        String releasedReason
+    ) {
+    }
+
     public record ApproveVoucherRequest(
         Boolean postImmediately,
         String remarks
@@ -476,6 +533,28 @@ public final class VoucherDtos {
 
     public record CancelVoucherRequest(
         String reason
+    ) {
+    }
+
+    public record AdjacentVoucherResponse(
+        boolean found,
+        String direction,
+        UUID currentVoucherId,
+        UUID adjacentVoucherId,
+        boolean hasPrevious,
+        boolean hasNext,
+        VoucherDetailDto voucher
+    ) {
+    }
+
+    public record LastNarrationResponse(
+        boolean found,
+        String narration,
+        UUID sourceVoucherId,
+        String sourceVoucherNumber,
+        LocalDate sourceVoucherDate,
+        UUID voucherTypeId,
+        String voucherTypeName
     ) {
     }
 }

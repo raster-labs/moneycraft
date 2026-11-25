@@ -260,3 +260,143 @@ export interface BillsAgeingReportDto {
   readonly bucketTotals: AgeingBucketTotalsDto;
   readonly totalPendingAmount: string;
 }
+
+// ---------------------------------------------------------------------------
+// 6. UM-110-01 Level 2 / Level 3 Account Books, Exceptions, Statistics & Stock Query
+// ---------------------------------------------------------------------------
+
+export type AccountBookType =
+  | 'CASH_BANK_SUMMARY'
+  | 'GROUP_SUMMARY'
+  | 'GROUP_VOUCHERS'
+  | 'LEDGER_VOUCHERS'
+  | 'SALES_REGISTER'
+  | 'PURCHASE_REGISTER'
+  | 'JOURNAL_REGISTER'
+  | 'CONTRA_REGISTER'
+  | 'PAYMENT_REGISTER'
+  | 'RECEIPT_REGISTER'
+  | 'DEBIT_NOTE_REGISTER'
+  | 'CREDIT_NOTE_REGISTER';
+
+export type ExceptionReportType =
+  | 'NEGATIVE_STOCK'
+  | 'NEGATIVE_LEDGERS'
+  | 'OVERDUE_RECEIVABLES'
+  | 'OVERDUE_PAYABLES'
+  | 'OPTIONAL_VOUCHERS'
+  | 'CANCELLED_VOUCHERS'
+  | 'MEMORANDUM_VOUCHERS'
+  | 'REVERSING_JOURNALS'
+  | 'APPROVAL_QUEUE';
+
+export type TallyLevel3WorkbenchMode =
+  | 'ACCOUNT_BOOKS'
+  | 'EXCEPTIONS'
+  | 'STATISTICS'
+  | 'STOCK_QUERY';
+
+export interface AccountBookMonthlySummaryDto {
+  readonly monthLabel: string;
+  readonly fromDate: string;
+  readonly toDate: string;
+  readonly voucherCount: number;
+  readonly debitAmount: string;
+  readonly creditAmount: string;
+  readonly closingBalance: string;
+}
+
+export interface AccountBookRowDto {
+  readonly id: string;
+  readonly voucherId?: string | null;
+  readonly rowDate: string;
+  readonly particulars: string;
+  readonly voucherTypeName: string;
+  readonly voucherNumber: string;
+  readonly debitAmount: string;
+  readonly creditAmount: string;
+  readonly closingBalance: string;
+}
+
+export interface AccountBookReportDto {
+  readonly bookType: AccountBookType;
+  readonly fromDate: string;
+  readonly toDate: string;
+  readonly monthlySummary: readonly AccountBookMonthlySummaryDto[];
+  readonly rows: readonly AccountBookRowDto[];
+  readonly totalDebit: string;
+  readonly totalCredit: string;
+  readonly closingBalance: string;
+}
+
+export interface ExceptionReportRowDto {
+  readonly id: string;
+  readonly entityId: string;
+  readonly voucherId?: string | null;
+  readonly code: string;
+  readonly name: string;
+  readonly secondaryLabel: string;
+  readonly rowDate: string;
+  readonly quantity: string;
+  readonly amount: string;
+  readonly status: string;
+}
+
+export interface ExceptionReportDto {
+  readonly exceptionType: ExceptionReportType;
+  readonly fromDate: string;
+  readonly toDate: string;
+  readonly rows: readonly ExceptionReportRowDto[];
+  readonly totalCount: number;
+  readonly totalAmount: string;
+}
+
+export interface StatisticsVoucherTypeRowDto {
+  readonly voucherTypeName: string;
+  readonly category: string;
+  readonly postedCount: number;
+  readonly optionalCount: number;
+  readonly cancelledCount: number;
+  readonly totalCount: number;
+}
+
+export interface StatisticsMasterRowDto {
+  readonly masterType: string;
+  readonly count: number;
+}
+
+export interface StatisticsReportDto {
+  readonly fromDate: string;
+  readonly toDate: string;
+  readonly voucherTypeCounts: readonly StatisticsVoucherTypeRowDto[];
+  readonly masterCounts: readonly StatisticsMasterRowDto[];
+  readonly totalVouchers: number;
+  readonly totalMasters: number;
+}
+
+export interface StockQueryGodownRowDto {
+  readonly godownName: string;
+  readonly batchName: string;
+  readonly closingQty: string;
+  readonly closingValue: string;
+}
+
+export interface StockQueryReportDto {
+  readonly stockItemId: string;
+  readonly stockItemName: string;
+  readonly uomSymbol: string;
+  readonly costingMethod: string;
+  readonly openingQty: string;
+  readonly openingValue: string;
+  readonly inwardQty: string;
+  readonly inwardValue: string;
+  readonly outwardQty: string;
+  readonly outwardValue: string;
+  readonly closingQty: string;
+  readonly closingValue: string;
+  readonly lastPurchaseParty: string;
+  readonly lastPurchaseRate: string;
+  readonly lastSalesParty: string;
+  readonly lastSalesRate: string;
+  readonly godownBreakup: readonly StockQueryGodownRowDto[];
+}

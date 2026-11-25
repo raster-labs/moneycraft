@@ -35,8 +35,8 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 /**
- * Pure java.base parser for TallyPrime canonical XML ENVELOPE exports (masters, vouchers, and report snapshots).
- * Sanitizes Tally &#4; control entities and enforces the universal -Debit / +Credit sign law (MIG-005).
+ * Pure java.base parser for canonical XML ENVELOPE exports (masters, vouchers, and report snapshots).
+ * Sanitizes &#4; control entities and enforces the universal -Debit / +Credit sign convention (MIG-005).
  */
 public final class CompanionXmlSnapshotParser {
 
@@ -235,7 +235,7 @@ public final class CompanionXmlSnapshotParser {
                     DiagnosticSeverity.INFO,
                     "PREDEFINED_28_GROUPS_SEEDED",
                     "XML",
-                    "Seeded canonical 28 TallyPrime groups for voucher-only XML snapshot"));
+                    "Seeded canonical 28 predefined accounting groups for voucher-only XML snapshot"));
         }
 
         if (voucherTypesByName.isEmpty()) {
@@ -301,9 +301,9 @@ public final class CompanionXmlSnapshotParser {
         String country = textOrDefault(cmpNode, "COUNTRYNAME", "");
         String pincode = textOrDefault(cmpNode, "PINCODE", "");
         String email = textOrDefault(cmpNode, "EMAIL", "");
-        LocalDate startingFrom = parseTallyXmlDate(cmpNode.childText("STARTINGFROM"));
-        LocalDate booksFrom = parseTallyXmlDate(cmpNode.childText("BOOKSFROM"));
-        LocalDate auditedUpTo = parseTallyXmlDate(cmpNode.childText("AUDITEDUPTO"));
+        LocalDate startingFrom = parseCompactXmlDate(cmpNode.childText("STARTINGFROM"));
+        LocalDate booksFrom = parseCompactXmlDate(cmpNode.childText("BOOKSFROM"));
+        LocalDate auditedUpTo = parseCompactXmlDate(cmpNode.childText("AUDITEDUPTO"));
         String currencySymbol = textOrDefault(cmpNode, "BASECURRENCYSYMBOL", "₹");
         String currencyFormal = textOrDefault(cmpNode, "BASECURRENCYNAME", "INR");
         return new RawCompanyProfile(
@@ -427,8 +427,8 @@ public final class CompanionXmlSnapshotParser {
         int alterId = parseIntOrDefault(node.childText("ALTERID"), masterId);
         String guid = textOrDefault(node, "GUID", node.attribute("REMOTEID") != null ? node.attribute("REMOTEID") : "vch-" + masterId);
         String voucherNumber = textOrDefault(node, "VOUCHERNUMBER", "");
-        LocalDate date = parseTallyXmlDate(node.childText("DATE"));
-        LocalDate effDate = parseTallyXmlDate(node.childText("EFFECTIVEDATE"));
+        LocalDate date = parseCompactXmlDate(node.childText("DATE"));
+        LocalDate effDate = parseCompactXmlDate(node.childText("EFFECTIVEDATE"));
         String partyLedger = textOrDefault(node, "PARTYLEDGERNAME", "");
         String reference = textOrDefault(node, "REFERENCE", "");
         String narration = textOrDefault(node, "NARRATION", "");
@@ -827,7 +827,7 @@ public final class CompanionXmlSnapshotParser {
         }
     }
 
-    private static LocalDate parseTallyXmlDate(String val) {
+    private static LocalDate parseCompactXmlDate(String val) {
         if (val == null || val.trim().length() != 8) {
             return null;
         }

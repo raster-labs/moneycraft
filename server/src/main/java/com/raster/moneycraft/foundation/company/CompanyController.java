@@ -86,6 +86,23 @@ public class CompanyController {
             .body(updated);
     }
 
+    @GetMapping("/{companyId}/f12-config")
+    public CompanyDtos.CompanyF12ConfigDto getCompanyF12Config(
+        @PathVariable("companyId") UUID companyId
+    ) {
+        MoneyCraftPrincipal principal = rbacGuard.requireAuthenticatedPrincipal();
+        return companyService.getF12Config(principal, companyId);
+    }
+
+    @PutMapping("/{companyId}/f12-config")
+    public CompanyDtos.CompanyF12ConfigDto updateCompanyF12Config(
+        @PathVariable("companyId") UUID companyId,
+        @RequestBody CompanyDtos.CompanyF12ConfigDto payload
+    ) {
+        MoneyCraftPrincipal actor = rbacGuard.requireAuthenticatedPrincipal();
+        return companyService.updateF12Config(actor, companyId, payload);
+    }
+
     @GetMapping("/{companyId}/fiscal-years")
     public List<CompanyDtos.FiscalYearDto> listCompanyFiscalYears(
         @PathVariable("companyId") UUID companyId

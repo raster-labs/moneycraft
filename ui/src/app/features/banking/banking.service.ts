@@ -17,9 +17,11 @@ import {
   ChequeLeafDto,
   CreateChequeBookRequest,
   CreateOcrStagedDocRequest,
+  EmployeeDto,
   ImportBankStatementRequest,
   ManualReconcileRequest,
   OcrStagedDocumentDto,
+  PayrollHeadDto,
 } from './banking.models';
 
 function unwrapList<T>(raw: CursorPage<T> | readonly T[] | null | undefined): readonly T[] {
@@ -288,5 +290,54 @@ export class BankingService {
       convertedVoucherId: String(raw['convertedVoucherId'] ?? raw['voucherId'] ?? ''),
       status: String(raw['status'] ?? 'APPROVED_CONVERTED'),
     };
+  }
+
+  async listPayrollHeads(companyId: string): Promise<readonly PayrollHeadDto[]> {
+    const body = await firstValueFrom(
+      this.http.get<CursorPage<PayrollHeadDto> | readonly PayrollHeadDto[]>(
+        this.companyUrl(companyId, '/banking/payroll/heads'),
+        { withCredentials: true },
+      ),
+    );
+    return unwrapList(body);
+  }
+
+  async createPayrollHead(
+    companyId: string,
+    payload: { readonly name: string; readonly headType: string },
+  ): Promise<PayrollHeadDto> {
+    return firstValueFrom(
+      this.http.post<PayrollHeadDto>(this.companyUrl(companyId, '/banking/payroll/heads'), payload, {
+        withCredentials: true,
+      }),
+    );
+  }
+
+  async listEmployees(companyId: string): Promise<readonly EmployeeDto[]> {
+    const body = await firstValueFrom(
+      this.http.get<CursorPage<EmployeeDto> | readonly EmployeeDto[]>(
+        this.companyUrl(companyId, '/banking/payroll/employees'),
+        { withCredentials: true },
+      ),
+    );
+    return unwrapList(body);
+  }
+
+  async createEmployee(
+    companyId: string,
+    payload: {
+      readonly employeeCode: string;
+      readonly displayName: string;
+      readonly designation?: string;
+      readonly dateOfJoining?: string;
+    },
+  ): Promise<EmployeeDto> {
+    return firstValueFrom(
+      this.http.post<EmployeeDto>(
+        this.companyUrl(companyId, '/banking/payroll/employees'),
+        payload,
+        { withCredentials: true },
+      ),
+    );
   }
 }

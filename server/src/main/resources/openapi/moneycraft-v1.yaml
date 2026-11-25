@@ -1,17 +1,19 @@
 openapi: 3.1.0
 info:
-  title: MoneyCraft 1.0.0 ERP API
-  version: 1.0.0
+  title: MoneyCraft 1.1.0 ERP API
+  version: 1.1.0
   description: >-
     Clean-room, air-gapped-first multi-company accounting, inventory, and statutory ERP API.
     Enforces Dual-PG18 AuthorityGuard fencing, RFC 8785 JCS + HMAC-SHA256 90-day idempotency,
-    ETag/If-Match optimistic concurrency, HS256 keyset pagination, and RFC 9457 ProblemDetail.
+    ETag/If-Match optimistic concurrency, HS256 keyset pagination, native public-client OAuth2 + PKCE S256,
+    person UI preferences (schemaVersion 2), Super Admin protected integration vault, and RFC 9457 ProblemDetail.
 servers:
   - url: /api/v1
     description: Versioned MoneyCraft v1 API base path
 
 security:
   - SessionCookie: []
+  - NativeBearer: []
   - ServiceApiKey: []
 
 paths:
@@ -177,6 +179,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuthenticatedPrincipalDto'
 
+  /auth/oidc/issuers:
+    get:
+      operationId: listPublicOidcIssuers
+      tags: [OIDC]
+      security: []
+      summary: List safe enabled OIDC federation issuers for the Login screen
+      responses:
+        '200':
+          description: Safe public OIDC issuer descriptors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublicOidcIssuerDto'
+
   /auth/oidc/{issuerId}/authorize:
     get:
       operationId: beginOidcPkceRedirect
@@ -216,6 +234,529 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthenticatedPrincipalDto'
+
+  /auth/step-up/password:
+    post:
+      operationId: createPasswordStepUpIntent
+      tags: [Auth]
+      summary: Verify Super Admin password and mint single-use 5-minute step-up intent bound to target/action/revision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordStepUpRequest'
+      responses:
+        '200':
+          description: Single-use 5-minute step-up proof
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordStepUpResponse'
+        '401':
+          $ref: '#/components/responses/ProblemUnauthorized'
+        '403':
+          $ref: '#/components/responses/ProblemForbidden'
+
+  /auth/native/.well-known/openid-configuration:
+    get:
+      operationId: getNativeOidcDiscovery
+      tags: [NativeAuth]
+      security: []
+      summary: Host native public-client OAuth2 / OIDC PKCE S256 discovery document
+      responses:
+        '200':
+          description: Native OAuth2/OIDC discovery metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeOidcDiscoveryDto'
+
+  /auth/native/jwks.json:
+    get:
+      operationId: getNativeJwks
+      tags: [NativeAuth]
+      security: []
+      summary: Public EC P-256 JWK Set for verifying native ES256 id_token signatures
+      responses:
+        '200':
+          description: JWK Set JSON
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /auth/native/authorize:
+    get:
+      operationId: authorizeNativePkceClient
+      tags: [NativeAuth]
+      security: []
+      summary: Browser-based public-client OAuth2 + PKCE S256 authorization endpoint
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: nonce
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: code_challenge
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [S256]
+      responses:
+        '302':
+          description: Redirect to registered callback with 60s code or to /login?nativeAuthorize=...
+
+  /auth/native/authorize/approve:
+    post:
+      operationId: approveNativePkceFromSession
+      tags: [NativeAuth]
+      summary: Issue 60-second single-use PKCE authorization code from an authenticated browser session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Approved callback redirect URI and one-time code
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redirectUri:
+                    type: string
+                  code:
+                    type: string
+                  state:
+                    type: string
+
+  /auth/native/token:
+    post:
+      operationId: exchangeOrRotateNativeToken
+      tags: [NativeAuth]
+      security: []
+      summary: Exchange PKCE S256 authorization_code or rotate refresh_token with RFC 9700 replay revocation
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Issued short-lived access_token, rotated refresh_token, and ES256 id_token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NativeTokenResponseDto'
+        '400':
+          $ref: '#/components/responses/ProblemUnauthorized'
+        '401':
+          $ref: '#/components/responses/ProblemUnauthorized'
+
+  /auth/native/revoke:
+    post:
+      operationId: revokeNativeToken
+      tags: [NativeAuth]
+      security: []
+      summary: Revoke native access or refresh token family (RFC 7009)
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Token family revoked
+
+  /me/ui-preferences:
+    get:
+      operationId: getMyUiPreferences
+      tags: [Preferences]
+      summary: Read authenticated PERSON UI presentation and keyboard preferences (schemaVersion 2)
+      responses:
+        '200':
+          description: Committed or default schemaVersion 2 UI preferences and strong ETag
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeUiPreferencesResponse'
+        '403':
+          $ref: '#/components/responses/ProblemForbidden'
+    patch:
+      operationId: patchMyUiPreferences
+      tags: [Preferences]
+      summary: Conditionally patch authenticated PERSON UI preferences under If-Match and Idempotency-Key
+      parameters:
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchUiPreferencesRequest'
+      responses:
+        '200':
+          description: Committed schemaVersion 2 UI preferences and updated strong ETag
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeUiPreferencesResponse'
+        '412':
+          $ref: '#/components/responses/ProblemPreconditionFailed'
+
+  /admin/super-admin-designations/{principalId}:
+    put:
+      operationId: designateInstallationSuperAdmin
+      tags: [Administration]
+      summary: Assign explicit installation Super Admin designation to an enabled PERSON principal
+      parameters:
+        - name: principalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Active Super Admin designation metadata
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      operationId: revokeInstallationSuperAdmin
+      tags: [Administration]
+      summary: Revoke installation Super Admin designation and invalidate pending step-up intents
+      parameters:
+        - name: principalId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Revoked Super Admin designation metadata
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /admin/government-interface-inventory:
+    get:
+      operationId: getGovernmentInterfaceInventory
+      tags: [GovernmentIntegrations]
+      summary: List code-reconciled GOV-D01..GOV-D39 statutory rows, Connected Banking rows, and admitted provider schemas (Super Admin PERSON only)
+      responses:
+        '200':
+          description: Capability inventory and admitted provider schemas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernmentInterfaceInventoryResponse'
+        '403':
+          $ref: '#/components/responses/ProblemForbidden'
+
+  /admin/government-integration-profiles:
+    get:
+      operationId: listGovernmentIntegrationProfiles
+      tags: [GovernmentIntegrations]
+      summary: List bounded government and connected banking integration profiles without secrets or ciphertexts
+      responses:
+        '200':
+          description: Profile metadata list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GovernmentIntegrationProfileDto'
+        '403':
+          $ref: '#/components/responses/ProblemForbidden'
+    post:
+      operationId: createGovernmentIntegrationProfile
+      tags: [GovernmentIntegrations]
+      summary: Create disabled integration profile draft under fresh Super Admin step-up proof
+      parameters:
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created disabled integration draft and ETag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernmentIntegrationProfileDto'
+
+  /admin/government-integration-profiles/{profileId}:
+    get:
+      operationId: getGovernmentIntegrationProfile
+      tags: [GovernmentIntegrations]
+      summary: Read closed profile metadata, revision, validation state, and ETag
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Profile metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernmentIntegrationProfileDto'
+    put:
+      operationId: updateGovernmentIntegrationProfile
+      tags: [GovernmentIntegrations]
+      summary: Replace permitted draft metadata under If-Match and step-up; invalidates prior validation
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated profile metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernmentIntegrationProfileDto'
+
+  /admin/government-integration-profiles/{profileId}/credential-versions:
+    post:
+      operationId: stageGovernmentCredentialVersion
+      tags: [GovernmentIntegrations]
+      summary: Stage write-only Tink envelope-encrypted credential slots; returns version metadata only
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Staged credential version metadata (zero secrets or ciphertexts)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagedCredentialVersionResponse'
+
+  /admin/government-integration-profiles/{profileId}/validations:
+    post:
+      operationId: startGovernmentProfileValidation
+      tags: [GovernmentIntegrations]
+      summary: Execute harmless read-only connection validation probe outside database locks
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '202':
+          description: Validation job recorded with Location header and sanitised summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationOutcomeDto'
+
+  /admin/government-integration-profiles/{profileId}/validations/{validationId}:
+    get:
+      operationId: getGovernmentProfileValidation
+      tags: [GovernmentIntegrations]
+      summary: Fetch sanitised validation outcome for profile and revision
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: validationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sanitised validation outcome
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationOutcomeDto'
+
+  /admin/government-integration-profiles/{profileId}/activate:
+    post:
+      operationId: activateGovernmentIntegrationProfile
+      tags: [GovernmentIntegrations]
+      summary: Atomically activate profile from current successful validation and fresh step-up intent
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Activated profile metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernmentIntegrationProfileDto'
+
+  /admin/government-integration-profiles/{profileId}/disable:
+    post:
+      operationId: disableGovernmentIntegrationProfile
+      tags: [GovernmentIntegrations]
+      summary: Disable profile with audited reason code and step-up; blocks new dispatch without cancelling accepted remote filings
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIfMatch'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Disabled profile metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernmentIntegrationProfileDto'
+
+  /admin/government-integration-profiles/{profileId}/audit:
+    get:
+      operationId: getGovernmentIntegrationProfileAudit
+      tags: [GovernmentIntegrations]
+      summary: Fetch bounded secret-free administration audit trail for profile
+      parameters:
+        - name: profileId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Secret-free profile audit entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProfileAuditEntryDto'
 
   /admin/principals:
     get:
@@ -482,6 +1023,45 @@ paths:
           $ref: '#/components/responses/ProblemForbidden'
         '412':
           $ref: '#/components/responses/ProblemPreconditionFailed'
+
+  /companies/{companyId}/f12-config:
+    get:
+      operationId: getCompanyF12Config
+      tags: [Companies]
+      summary: Fetch company context-sensitive F12 configuration (Voucher, Master, Report, Print)
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Company F12 configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyF12ConfigDto'
+        '403':
+          $ref: '#/components/responses/ProblemForbidden'
+    put:
+      operationId: updateCompanyF12Config
+      tags: [Companies]
+      summary: Persist company F12 configuration JSONB and append MC-AUDIT-2 event
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/OptionalIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyF12ConfigDto'
+      responses:
+        '200':
+          description: Updated company F12 configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyF12ConfigDto'
+        '403':
+          $ref: '#/components/responses/ProblemForbidden'
 
   /companies/{companyId}/fiscal-years:
     get:
@@ -1260,7 +1840,7 @@ paths:
     get:
       operationId: listVouchers
       tags: [AccountingVouchers]
-      summary: Day Book & filtered voucher register with TallyPrime 7.2 sort order and HS256 cursor pagination
+      summary: Day Book & filtered voucher register with deterministic date/sequence sort order and HS256 cursor pagination
       parameters:
         - $ref: '#/components/parameters/CompanyIdPath'
         - name: fromDate
@@ -1387,6 +1967,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NextVoucherNumberResponse'
+
+  /companies/{companyId}/vouchers/unused-numbers:
+    get:
+      operationId: listUnusedVoucherNumbers
+      tags: [AccountingVouchers]
+      summary: List available and GSTR-1 cancelled unused voucher numbers for Ctrl+Alt+U selection
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherTypeId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: voucherTypeName
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available and cancelled unused voucher numbers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UnusedVoucherNumberDto'
 
   /companies/{companyId}/vouchers/{voucherId}:
     get:
@@ -1530,7 +2138,7 @@ paths:
     post:
       operationId: cancelVoucher
       tags: [AccountingVouchers]
-      summary: Tally-style Alt+X Cancel preserving voucher number for GSTR-1 Table 13 while zeroing GL & releasing bills
+      summary: Alt+X Cancel preserving voucher number for GSTR-1 Table 13 while zeroing GL & releasing bills
       parameters:
         - $ref: '#/components/parameters/CompanyIdPath'
         - name: voucherId
@@ -3153,7 +3761,7 @@ paths:
     get:
       operationId: getRatioAnalysisReport
       tags: [Reporting]
-      summary: Tally-equivalent Principal Groups & Financial Ratio Analysis
+      summary: Principal Groups & Financial Ratio Analysis
       parameters:
         - $ref: '#/components/parameters/CompanyIdPath'
         - name: fromDate
@@ -3203,7 +3811,7 @@ paths:
     get:
       operationId: smartFindGlobalSearch
       tags: [SmartFind]
-      summary: TallyPrime 7.2 Alt+F / Ctrl+F sub-50ms trigram & exact-token SmartFind across active or authorized companies
+      summary: Alt+F / Ctrl+F sub-50ms trigram & exact-token SmartFind across active or authorized companies
       parameters:
         - $ref: '#/components/parameters/CompanyIdPath'
         - name: q
@@ -3524,11 +4132,11 @@ paths:
                 items:
                   $ref: '#/components/schemas/ImportJobSummaryDto'
 
-  /companies/{companyId}/imports/tally-1800/stage:
+  /companies/{companyId}/imports/legacy-1800/stage:
     post:
-      operationId: stageTally1800Snapshot
+      operationId: stageLegacy1800Snapshot
       tags: [Migration]
-      summary: Read-only clean-room .1800 snapshot staging into mc_stg_* with Sector-0 & CmpSave parity check
+      summary: Read-only legacy .1800 company snapshot staging into mc_import_staging_record with Sector-0 & CmpSave parity check
       parameters:
         - $ref: '#/components/parameters/CompanyIdPath'
         - $ref: '#/components/parameters/RequiredIdempotencyKey'
@@ -3537,10 +4145,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StageTally1800Request'
+              $ref: '#/components/schemas/StageLegacy1800Request'
       responses:
         '201':
-          description: Staged .1800 job and reconciliation proof
+          description: Staged legacy .1800 job and reconciliation proof
           content:
             application/json:
               schema:
@@ -3625,9 +4233,9 @@ paths:
 
   /companies/{companyId}/exports/xml:
     post:
-      operationId: exportTallyEnvelopeXml
+      operationId: exportLegacyEnvelopeXml
       tags: [DataExchange]
-      summary: Export Tally <ENVELOPE> XML with universal -Dr / +Cr sign convention and pure-ASCII comments
+      summary: Export canonical <ENVELOPE> XML with universal -Dr / +Cr sign convention and pure-ASCII comments
       parameters:
         - $ref: '#/components/parameters/CompanyIdPath'
         - $ref: '#/components/parameters/RequiredIdempotencyKey'
@@ -3647,9 +4255,9 @@ paths:
 
   /companies/{companyId}/imports/xml:
     post:
-      operationId: importTallyEnvelopeXml
+      operationId: importLegacyEnvelopeXml
       tags: [DataExchange]
-      summary: XXE-hardened Tally <ENVELOPE> XML import stripping &#4; control refs with idempotent GUID upsert
+      summary: XXE-hardened <ENVELOPE> XML import stripping &#4; control refs with idempotent GUID upsert
       parameters:
         - $ref: '#/components/parameters/CompanyIdPath'
         - $ref: '#/components/parameters/RequiredIdempotencyKey'
@@ -3672,9 +4280,9 @@ paths:
 
   /companies/{companyId}/exports/jsonex:
     post:
-      operationId: exportTallyRel72JsonEx
+      operationId: exportLegacyJsonEx
       tags: [DataExchange]
-      summary: Export TallyPrime Release 7.2 JSONEx (version 1) payload
+      summary: Export structured JSONEx (version 1) payload for reference system interoperability
       parameters:
         - $ref: '#/components/parameters/CompanyIdPath'
         - $ref: '#/components/parameters/RequiredIdempotencyKey'
@@ -3694,7 +4302,7 @@ paths:
 
   /companies/{companyId}/imports/jsonex:
     post:
-      operationId: importTallyRel72JsonEx
+      operationId: importLegacyJsonEx
       tags: [DataExchange]
       parameters:
         - $ref: '#/components/parameters/CompanyIdPath'
@@ -3818,12 +4426,689 @@ paths:
                 type: string
                 format: binary
 
+  /companies/{companyId}/reports/statistics:
+    get:
+      operationId: getStatisticsReport
+      tags: [Reports]
+      summary: Fetch Statements of Accounts -> Statistics two-pane voucher type and master counts
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: fromDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Statistics breakdown
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/reports/exceptions:
+    get:
+      operationId: getExceptionReport
+      tags: [Reports]
+      summary: Fetch Exception Reports (Negative Stock, Negative Ledgers, Overdues, Optional/Cancelled/Memorandum/Reversing Vouchers)
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: fromDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: asOfDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Exception report rows and exact totals
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/reports/account-books:
+    get:
+      operationId: getAccountBookReport
+      tags: [Reports]
+      summary: Fetch Level 3 Account Books and Voucher Registers with monthly summaries and running balances
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: bookType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: groupId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: ledgerId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: fromDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Account book report
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/reports/stock-query:
+    get:
+      operationId: getStockQueryReport
+      tags: [Reports]
+      summary: Fetch single-item 360-degree Stock Query view with godown/batch breakup and last purchase/sale
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: stockItemId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: fromDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Stock query report
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/vouchers/adjacent:
+    get:
+      operationId: getAdjacentVoucher
+      tags: [Vouchers]
+      summary: Browse previous or next voucher in scope (PageUp / PageDown navigation)
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: currentVoucherId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: voucherTypeId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: voucherCategory
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: voucherDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PREV, NEXT]
+      responses:
+        '200':
+          description: Adjacent voucher lookup result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/vouchers/last-narration:
+    get:
+      operationId: getLastVoucherNarration
+      tags: [Vouchers]
+      summary: Fetch most recent narration for voucher type or party ledger (Ctrl+R Repeat Narration)
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: voucherTypeId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: voucherCategory
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: ledgerId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Last narration lookup result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/spreadsheet-imports/templates:
+    get:
+      operationId: listSpreadsheetImportTemplates
+      tags: [SpreadsheetImport]
+      summary: List guided spreadsheet import mapping templates
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Mapping templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      operationId: saveSpreadsheetImportTemplate
+      tags: [SpreadsheetImport]
+      summary: Create guided spreadsheet import mapping template
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Saved template
+
+  /companies/{companyId}/spreadsheet-imports/batches:
+    get:
+      operationId: listSpreadsheetImportBatches
+      tags: [SpreadsheetImport]
+      summary: List guided spreadsheet import batches
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Spreadsheet import batches
+    post:
+      operationId: stageSpreadsheetImportBatch
+      tags: [SpreadsheetImport]
+      summary: Stage .xlsx, .ods, or .csv spreadsheet import batch for validation
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+          multipart/form-data:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Staged spreadsheet batch
+
+  /companies/{companyId}/spreadsheet-imports/batches/{batchId}:
+    get:
+      operationId: getSpreadsheetImportBatch
+      tags: [SpreadsheetImport]
+      summary: Read staged spreadsheet import batch details and unit validation status
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Batch detail
+
+  /companies/{companyId}/spreadsheet-imports/batches/{batchId}/remap:
+    post:
+      operationId: remapSpreadsheetImportBatch
+      tags: [SpreadsheetImport]
+      summary: Re-validate staged spreadsheet batch with updated column mapping
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Remapped batch
+
+  /companies/{companyId}/spreadsheet-imports/batches/{batchId}/execute:
+    post:
+      operationId: executeSpreadsheetImportBatch
+      tags: [SpreadsheetImport]
+      summary: Commit validated spreadsheet units atomically per unit
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Executed batch summary
+
+  /companies/{companyId}/spreadsheet-imports/batches/{batchId}/resume:
+    post:
+      operationId: resumeSpreadsheetImportBatch
+      tags: [SpreadsheetImport]
+      summary: Resume interrupted spreadsheet batch execution idempotently
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Resumed batch summary
+
+  /companies/{companyId}/spreadsheet-imports/batches/{batchId}/cancel:
+    post:
+      operationId: cancelSpreadsheetImportBatch
+      tags: [SpreadsheetImport]
+      summary: Cancel staged spreadsheet import batch
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      responses:
+        '200':
+          description: Cancelled batch
+
+  /companies/{companyId}/spreadsheet-imports/batches/{batchId}/errors.csv:
+    get:
+      operationId: downloadSpreadsheetBatchErrorsCsv
+      tags: [SpreadsheetImport]
+      summary: Download validation and execution errors for spreadsheet batch as CSV
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Error report CSV
+
+  /companies/{companyId}/extensions/packages:
+    get:
+      operationId: listExtensionPackages
+      tags: [Extensions]
+      summary: List signed extension packages in company scope
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Extension packages
+    post:
+      operationId: registerExtensionPackage
+      tags: [Extensions]
+      summary: Register Ed25519-signed extension package
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Registered extension package
+
+  /companies/{companyId}/extensions/packages/{packageId}:
+    get:
+      operationId: getExtensionPackage
+      tags: [Extensions]
+      summary: Fetch extension package metadata and dispositions
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Extension package detail
+
+  /companies/{companyId}/extensions/packages/{packageId}/validate:
+    post:
+      operationId: validateExtensionPackage
+      tags: [Extensions]
+      summary: Validate extension package manifest, FEEL expressions, and sandbox constraints
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      responses:
+        '200':
+          description: Validation result
+
+  /companies/{companyId}/extensions/packages/{packageId}/activate:
+    post:
+      operationId: activateExtensionPackage
+      tags: [Extensions]
+      summary: Activate validated extension package for company
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      responses:
+        '200':
+          description: Activated extension package
+
+  /companies/{companyId}/extensions/packages/{packageId}/suspend:
+    post:
+      operationId: suspendExtensionPackage
+      tags: [Extensions]
+      summary: Suspend active extension package
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: packageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      responses:
+        '200':
+          description: Suspended extension package
+
+  /companies/{companyId}/extensions/bindings:
+    get:
+      operationId: listExtensionBindings
+      tags: [Extensions]
+      summary: List active extension bindings for company
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Active extension bindings
+
+  /companies/{companyId}/extensions/custom-fields:
+    get:
+      operationId: listCustomFieldDefinitions
+      tags: [Extensions]
+      summary: List UDF custom field definitions
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: Custom field definitions
+    post:
+      operationId: createCustomFieldDefinition
+      tags: [Extensions]
+      summary: Define typed custom field with visibility class
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created custom field definition
+
+  /companies/{companyId}/extensions/custom-fields/values/{entityType}/{entityId}:
+    get:
+      operationId: getCustomFieldValues
+      tags: [Extensions]
+      summary: Read custom field values for entity respecting SELECTED_PRIVATE redaction
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: entityId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Custom field values
+    put:
+      operationId: putCustomFieldValues
+      tags: [Extensions]
+      summary: Upsert custom field values for entity
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: entityType
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: entityId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Stored custom field values
+
+  /companies/{companyId}/extensions/evaluate-preview:
+    post:
+      operationId: evaluateExtensionFeelPreview
+      tags: [Extensions]
+      summary: Evaluate bounded FEEL expression preview with BigDecimal precision
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Evaluated FEEL preview
+
+  /companies/{companyId}/extensions/tdl-imports:
+    get:
+      operationId: listTdlImportProjects
+      tags: [Extensions]
+      summary: List .tdl translation and disposition analysis projects
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+      responses:
+        '200':
+          description: TDL import projects
+    post:
+      operationId: analyzeTdlImportSource
+      tags: [Extensions]
+      summary: Parse .tdl source into 5-disposition construct matrix
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+          multipart/form-data:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: TDL analysis project
+
+  /companies/{companyId}/extensions/tdl-imports/{projectId}:
+    get:
+      operationId: getTdlImportProject
+      tags: [Extensions]
+      summary: Read TDL translation project and construct dispositions
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: TDL project detail
+
+  /companies/{companyId}/extensions/odbc-query:
+    post:
+      operationId: executeBoundedProjectionQuery
+      tags: [Extensions]
+      summary: Execute read-only bounded projection query against approved reporting views
+      parameters:
+        - $ref: '#/components/parameters/CompanyIdPath'
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Projection query rows
+
 components:
   securitySchemes:
     SessionCookie:
       type: apiKey
       in: cookie
       name: MCSESSION
+    NativeBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: mc_nat_at_<opaque>
     ServiceApiKey:
       type: http
       scheme: bearer
@@ -3989,6 +5274,10 @@ components:
             - DATA_ENTRY_OPERATOR
             - INVENTORY_CLERK
             - READ_ONLY_VIEWER
+        permissions:
+          type: array
+          items:
+            type: string
         voucherTypeAllowlist:
           type: array
           items:
@@ -4000,7 +5289,7 @@ components:
 
     AuthenticatedPrincipalDto:
       type: object
-      required: [principalId, username, displayName, systemRoles, companyGrants, passkeyEnrolled]
+      required: [principalId, username, displayName, systemRoles, companyGrants, passkeyEnrolled, superAdmin]
       properties:
         principalId:
           type: string
@@ -4020,8 +5309,289 @@ components:
             $ref: '#/components/schemas/CompanyGrantSummaryDto'
         passkeyEnrolled:
           type: boolean
+        superAdmin:
+          type: boolean
         csrfToken:
+          type: [string, 'null']
+
+    PasswordStepUpRequest:
+      type: object
+      required: [password, action]
+      properties:
+        password:
           type: string
+        targetProfileId:
+          type: [string, 'null']
+          format: uuid
+        action:
+          type: string
+        expectedRevision:
+          type: [integer, 'null']
+          format: int64
+
+    PasswordStepUpResponse:
+      type: object
+      required: [stepUpIntentId, expiresAt, action]
+      properties:
+        stepUpIntentId:
+          type: string
+          format: uuid
+        expiresAt:
+          type: string
+          format: date-time
+        action:
+          type: string
+        targetProfileId:
+          type: [string, 'null']
+          format: uuid
+        expectedRevision:
+          type: [integer, 'null']
+          format: int64
+
+    NativeOidcDiscoveryDto:
+      type: object
+      required: [issuer, authorization_endpoint, token_endpoint, revocation_endpoint, jwks_uri]
+      properties:
+        issuer:
+          type: string
+        authorization_endpoint:
+          type: string
+        token_endpoint:
+          type: string
+        revocation_endpoint:
+          type: string
+        jwks_uri:
+          type: string
+        public_key_pem:
+          type: string
+
+    NativeTokenResponseDto:
+      type: object
+      required: [token_type, access_token, id_token, expires_in]
+      properties:
+        token_type:
+          type: string
+          enum: [Bearer]
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        id_token:
+          type: string
+        expires_in:
+          type: integer
+          format: int64
+        scope:
+          type: string
+
+    UiPreferencesV2Dto:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, appearance, textScalePercent, keyboard]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 2
+        appearance:
+          type: string
+          enum: [LIGHT, DARK, SYSTEM]
+        textScalePercent:
+          type: number
+          enum: [75, 87.5, 100, 112.5, 125, 150, 175, 200]
+        keyboard:
+          type: object
+          additionalProperties: false
+          required: [version, mode, locale, profileId, overrides]
+          properties:
+            version:
+              type: integer
+              const: 1
+            mode:
+              type: string
+              enum: [CHARACTER, OFF, MODIFIER]
+            locale:
+              type: string
+              const: en-GB
+            profileId:
+              type: [string, 'null']
+              maxLength: 128
+            overrides:
+              type: array
+              maxItems: 256
+              items:
+                type: object
+                additionalProperties: false
+                required: [contextId, commandId, chordId]
+                properties:
+                  contextId:
+                    type: string
+                  commandId:
+                    type: string
+                  chordId:
+                    type: string
+
+    MeUiPreferencesResponse:
+      type: object
+      additionalProperties: false
+      required: [preferences, revision, subjectScope]
+      properties:
+        preferences:
+          $ref: '#/components/schemas/UiPreferencesV2Dto'
+        revision:
+          type: string
+        subjectScope:
+          type: string
+
+    PatchUiPreferencesRequest:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, changes]
+      properties:
+        schemaVersion:
+          type: integer
+          const: 2
+        changes:
+          type: object
+          additionalProperties: false
+          properties:
+            appearance:
+              type: string
+              enum: [LIGHT, DARK, SYSTEM]
+            textScalePercent:
+              type: number
+              enum: [75, 87.5, 100, 112.5, 125, 150, 175, 200]
+            keyboard:
+              type: object
+
+    GovernmentInterfaceInventoryResponse:
+      type: object
+      required: [hostDocumentationVersion, capabilities, providers]
+      properties:
+        hostDocumentationVersion:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: object
+        providers:
+          type: array
+          items:
+            type: object
+
+    ValidationOutcomeDto:
+      type: object
+      required: [validationId, status, testedRevision, summaryMessage]
+      properties:
+        validationId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, VALIDATED, FAILED, NOT_VALIDATED]
+        testedRevision:
+          type: string
+        testedCredentialRevision:
+          type: [string, 'null']
+        summaryMessage:
+          type: string
+        checkedAt:
+          type: [string, 'null']
+          format: date-time
+
+    GovernmentIntegrationProfileDto:
+      type: object
+      required: [id, profileName, providerCode, adapterCode, endpointProfileId, environment, companyId, registrationRef, allowedOperationIds, status, revision]
+      properties:
+        id:
+          type: string
+          format: uuid
+        profileCode:
+          type: string
+        profileName:
+          type: string
+        providerCode:
+          type: string
+        adapterCode:
+          type: string
+        endpointProfileId:
+          type: string
+        domainCategory:
+          type: string
+          enum: [GOVERNMENT_STATUTORY, CONNECTED_BANKING]
+        environment:
+          type: string
+          enum: [SANDBOX, PRODUCTION]
+        companyId:
+          type: string
+          format: uuid
+        registrationRef:
+          type: string
+        allowedOperationIds:
+          type: array
+          items:
+            type: string
+        consentEvidenceRef:
+          type: string
+        status:
+          type: string
+        credentialRevision:
+          type: string
+        credentialSlots:
+          type: array
+          items:
+            type: object
+        lastValidation:
+          oneOf:
+            - $ref: '#/components/schemas/ValidationOutcomeDto'
+            - type: 'null'
+        revision:
+          type: string
+        etag:
+          type: [string, 'null']
+
+    StagedCredentialVersionResponse:
+      type: object
+      required: [credentialVersionId, profileId, credentialRevision, profileRevision, credentialSlots]
+      properties:
+        credentialVersionId:
+          type: string
+          format: uuid
+        profileId:
+          type: string
+          format: uuid
+        credentialRevision:
+          type: string
+        profileRevision:
+          type: string
+        credentialSlots:
+          type: array
+          items:
+            type: object
+        etag:
+          type: string
+
+    ProfileAuditEntryDto:
+      type: object
+      required: [eventId, timestamp, actor, action, revision, result]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        actor:
+          type: string
+        action:
+          type: string
+        revision:
+          type: string
+        result:
+          type: string
+        reason:
+          type: [string, 'null']
+        correlationId:
+          type: [string, 'null']
 
     PasskeyCreationOptionsResponse:
       type: object
@@ -4193,6 +5763,18 @@ components:
         pkceRequired:
           type: boolean
 
+    PublicOidcIssuerDto:
+      type: object
+      required: [id, registrationId, displayName]
+      properties:
+        id:
+          type: string
+          format: uuid
+        registrationId:
+          type: string
+        displayName:
+          type: string
+
     CreatePrincipalRequest:
       type: object
       required: [username, displayName, password]
@@ -4245,6 +5827,10 @@ components:
             - DATA_ENTRY_OPERATOR
             - INVENTORY_CLERK
             - READ_ONLY_VIEWER
+        permissions:
+          type: array
+          items:
+            type: string
         voucherTypeAllowlist:
           type: array
           items:
@@ -4315,9 +5901,27 @@ components:
           type: boolean
         costCentresEnabled:
           type: boolean
+        interestCalculationEnabled:
+          type: boolean
         maintainInventory:
           type: boolean
         inventoryIntegrated:
+          type: boolean
+        multiplePriceLevelsEnabled:
+          type: boolean
+        batchesEnabled:
+          type: boolean
+        expiryDateForBatchesEnabled:
+          type: boolean
+        jobOrderProcessingEnabled:
+          type: boolean
+        costTrackingEnabled:
+          type: boolean
+        jobCostingEnabled:
+          type: boolean
+        useDiscountColumnInInvoices:
+          type: boolean
+        useSeparateActualAndBilledQty:
           type: boolean
         gstEnabled:
           type: boolean
@@ -4334,10 +5938,130 @@ components:
         gstEffectiveFrom:
           type: string
           format: date
+        eInvoiceApplicable:
+          type: boolean
+        eWayBillApplicable:
+          type: boolean
+        eWayBillThresholdLimit:
+          type: string
         tdsEnabled:
+          type: boolean
+        tcsEnabled:
+          type: boolean
+        vatEnabled:
+          type: boolean
+        exciseEnabled:
+          type: boolean
+        serviceTaxEnabled:
+          type: boolean
+        payrollEnabled:
+          type: boolean
+        payrollStatutoryEnabled:
+          type: boolean
+        multipleAddressesEnabled:
+          type: boolean
+        markModifiedVouchers:
           type: boolean
         mcaEditLogEnforced:
           type: boolean
+
+    CompanyF12ConfigDto:
+      type: object
+      required:
+        - useCrDrInsteadOfToBy
+        - provideReferenceNoAndDate
+        - provideDispatchOrderExportDetails
+        - warnOnNegativeCash
+        - warnOnNegativeStock
+        - preallocateBills
+        - showBillWiseList
+        - showBillFinalBalances
+        - useSingleEntryForPaymentReceiptContra
+        - showLedgerCurrentBalance
+        - showBalancesAsOnVoucherDate
+        - provideLineNarration
+        - provideCommonNarration
+        - consolidateStockItemsWithSameRate
+        - allowGstRateOverride
+        - provideAliases
+        - billWiseForNonTradingAccounts
+        - provideCreditLimits
+        - provideLedgerAddresses
+        - provideLedgerBankDetails
+        - providePartNumbers
+        - provideAlternateUnits
+        - provideStandardRates
+        - showOpeningBalances
+        - showTransactions
+        - showNettTransactionsOnly
+        - showClosingBalances
+        - showPercentages
+        - reportFormat
+        - scaleFactor
+        - sortingMethod
+      properties:
+        useCrDrInsteadOfToBy:
+          type: boolean
+        provideReferenceNoAndDate:
+          type: boolean
+        provideDispatchOrderExportDetails:
+          type: boolean
+        warnOnNegativeCash:
+          type: boolean
+        warnOnNegativeStock:
+          type: boolean
+        preallocateBills:
+          type: boolean
+        showBillWiseList:
+          type: boolean
+        showBillFinalBalances:
+          type: boolean
+        useSingleEntryForPaymentReceiptContra:
+          type: boolean
+        showLedgerCurrentBalance:
+          type: boolean
+        showBalancesAsOnVoucherDate:
+          type: boolean
+        provideLineNarration:
+          type: boolean
+        provideCommonNarration:
+          type: boolean
+        consolidateStockItemsWithSameRate:
+          type: boolean
+        allowGstRateOverride:
+          type: boolean
+        provideAliases:
+          type: boolean
+        billWiseForNonTradingAccounts:
+          type: boolean
+        provideCreditLimits:
+          type: boolean
+        provideLedgerAddresses:
+          type: boolean
+        provideLedgerBankDetails:
+          type: boolean
+        providePartNumbers:
+          type: boolean
+        provideAlternateUnits:
+          type: boolean
+        provideStandardRates:
+          type: boolean
+        showOpeningBalances:
+          type: boolean
+        showTransactions:
+          type: boolean
+        showNettTransactionsOnly:
+          type: boolean
+        showClosingBalances:
+          type: boolean
+        showPercentages:
+          type: boolean
+        reportFormat:
+          type: string
+        scaleFactor:
+          type: string
+        sortingMethod:
+          type: string
 
     CreateOrUpdateCompanyRequest:
       type: object
@@ -5787,6 +7511,27 @@ components:
           type: boolean
         automatic:
           type: boolean
+
+    UnusedVoucherNumberDto:
+      type: object
+      required: [id, voucherTypeId, voucherNumber, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        voucherTypeId:
+          type: string
+          format: uuid
+        voucherNumber:
+          type: string
+        numericSeq:
+          type: [integer, 'null']
+          format: int64
+        status:
+          type: string
+          enum: [AVAILABLE, CANCELLED_FOR_GSTR1, REUSED]
+        releasedReason:
+          type: [string, 'null']
 
     ApproveVoucherRequest:
       type: object
@@ -7258,7 +9003,7 @@ components:
         availableLeaves:
           type: integer
 
-    StageTally1800Request:
+    StageLegacy1800Request:
       type: object
       required: [snapshotDirectoryPath]
       properties:

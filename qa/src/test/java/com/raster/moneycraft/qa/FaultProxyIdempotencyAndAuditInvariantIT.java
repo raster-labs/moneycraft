@@ -90,6 +90,7 @@ class FaultProxyIdempotencyAndAuditInvariantIT {
 
     private static CookieManager cookieManager;
     private static HttpClient httpClient;
+    private static HttpClient bearerHttpClient;
     private static MidResponseTcpFaultProxy httpFaultProxy;
 
     private static String serviceApiKeyBearer;
@@ -172,6 +173,9 @@ class FaultProxyIdempotencyAndAuditInvariantIT {
         cookieManager = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
         httpClient = HttpClient.newBuilder()
             .cookieHandler(cookieManager)
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+        bearerHttpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
     }
@@ -883,7 +887,7 @@ class FaultProxyIdempotencyAndAuditInvariantIT {
             .header("Idempotency-Key", idempotencyKey)
             .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
             .build();
-        return httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        return bearerHttpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     }
 
     private HttpResponse<String> putBearerVoucher(
@@ -906,7 +910,7 @@ class FaultProxyIdempotencyAndAuditInvariantIT {
             .header("Idempotency-Key", idempotencyKey)
             .PUT(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8))
             .build();
-        return httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        return bearerHttpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     }
 
     private String currentXsrfToken() {

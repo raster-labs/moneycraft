@@ -5,7 +5,7 @@ import java.util.HexFormat;
 import java.util.Objects;
 
 /**
- * Parsed 512-byte Sector-0 header for a TallyPrime .1800 store or weighted B-tree index file.
+ * Parsed 512-byte Sector-0 header for a legacy .1800 company snapshot store or weighted B-tree index file.
  */
 public record Sector0Header(
         String fileName,

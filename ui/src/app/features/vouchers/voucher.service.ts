@@ -65,6 +65,7 @@ function normalizeVoucherSummary(raw: RawVoucherSummaryWire): VoucherSummaryDto 
     approvedBy: raw.approvedBy ?? null,
     approvalPolicy: raw.approvalPolicy,
     versionNo: raw.versionNo ?? 1,
+    lineBreakups: raw.lineBreakups ?? [],
   };
 }
 
@@ -355,5 +356,118 @@ export class VoucherService {
     }
     const page = body as CursorPage<OpenBillDto>;
     return Array.isArray(page.items) ? page.items : [];
+  }
+
+  async getAdjacentVoucher(
+    companyId: string,
+    query: {
+      readonly currentVoucherId?: string | null;
+      readonly voucherTypeId?: string | null;
+      readonly voucherCategory?: VoucherBaseCategory | null;
+      readonly voucherDate?: string | null;
+      readonly direction: 'PREV' | 'NEXT';
+    },
+  ): Promise<VoucherDetailDto | null> {
+    let params = new HttpParams().set('direction', query.direction);
+    if (query.currentVoucherId) params = params.set('currentVoucherId', query.currentVoucherId);
+    if (query.voucherTypeId) params = params.set('voucherTypeId', query.voucherTypeId);
+    if (query.voucherCategory) params = params.set('voucherCategory', query.voucherCategory);
+    if (query.voucherDate) params = params.set('voucherDate', query.voucherDate);
+
+    try {
+      const res = await firstValueFrom(
+        this.http.get<
+          | {
+              readonly found?: boolean;
+              readonly voucher?: RawVoucherDetailWire | null;
+            }
+          | RawVoucherDetailWire
+          | null
+        >(this.companyBase(companyId, '/vouchers/adjacent'), { params, withCredentials: true }),
+      );
+      if (!res) {
+        return null;
+      }
+      if ('voucher' in res) {
+        if (res.found === false || !res.voucher || !res.voucher.id) {
+          return null;
+        }
+        return normalizeVoucherDetail(res.voucher, companyId);
+      }
+      const direct = res as RawVoucherDetailWire;
+      if (!direct.id) {
+        return null;
+      }
+      return normalizeVoucherDetail(direct, companyId);
+    } catch {
+      return null;
+    }
+  }
+
+  async getLastNarration(
+    companyId: string,
+    query: {
+      readonly voucherTypeId?: string | null;
+      readonly voucherCategory?: VoucherBaseCategory | null;
+      readonly ledgerId?: string | null;
+    },
+  ): Promise<string> {
+    let params = new HttpParams();
+    if (query.voucherTypeId) params = params.set('voucherTypeId', query.voucherTypeId);
+    if (query.voucherCategory) params = params.set('voucherCategory', query.voucherCategory);
+    if (query.ledgerId) params = params.set('ledgerId', query.ledgerId);
+
+    try {
+      const res = await firstValueFrom(
+        this.http.get<{ readonly narration?: string | null } | string>(
+          this.companyBase(companyId, '/vouchers/last-narration'),
+          { params, withCredentials: true },
+        ),
+      );
+      if (typeof res === 'string') {
+        return res;
+      }
+      return res?.narration ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  async listUnusedVoucherNumbers(
+    companyId: string,
+    voucherTypeId?: string | null,
+  ): Promise<readonly string[]> {
+    let params = new HttpParams();
+    if (voucherTypeId) {
+      params = params.set('voucherTypeId', voucherTypeId);
+    }
+
+    try {
+      const res = await firstValueFrom(
+        this.http.get<
+          | readonly string[]
+          | { readonly unusedNumbers?: readonly string[]; readonly items?: readonly string[] }
+        >(this.companyBase(companyId, '/vouchers/unused-numbers'), {
+          params,
+          withCredentials: true,
+        }),
+      );
+      if (Array.isArray(res)) {
+        return (res as readonly string[]).map(String);
+      }
+      if (res && typeof res === 'object') {
+        const obj = res as {
+          readonly unusedNumbers?: readonly string[];
+          readonly items?: readonly string[];
+        };
+        const list = obj.unusedNumbers ?? obj.items;
+        if (Array.isArray(list)) {
+          return list.map(String);
+        }
+      }
+      return [];
+    } catch {
+      return [];
+    }
   }
 }

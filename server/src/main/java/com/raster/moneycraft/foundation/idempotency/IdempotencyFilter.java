@@ -67,7 +67,9 @@ public class IdempotencyFilter extends OncePerRequestFilter {
 
         String path = stripContextPath(request);
         boolean companyMutation = "/api/v1/companies".equals(path) || path.startsWith("/api/v1/companies/");
-        boolean adminMutation = path.startsWith("/api/v1/admin/") && !path.startsWith("/api/v1/admin/quarantine/");
+        boolean adminMutation = path.startsWith("/api/v1/admin/")
+            && !path.startsWith("/api/v1/admin/quarantine/")
+            && !path.startsWith("/api/v1/admin/government-integration-profiles");
         if (!companyMutation && !adminMutation) {
             filterChain.doFilter(request, response);
             return;

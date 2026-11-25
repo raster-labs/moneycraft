@@ -12,11 +12,16 @@ import {
   viewChildren,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal, RUPEE_SYMBOL } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { AmountCellComponent } from '../../shared/components/amount-cell/amount-cell.component';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { GridCellNavDirective } from '../../shared/directives/grid-cell-nav.directive';
 import { BalanceSide } from '../masters/masters.models';
 import { VoucherService } from './voucher.service';
@@ -50,6 +55,7 @@ function computeDueDateIso(voucherDate: string, creditDays: number | null): stri
     IndianCurrencyPipe,
     AmountCellComponent,
     CodeBadgeComponent,
+    SemanticIconComponent,
     GridCellNavDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -275,11 +281,26 @@ function computeDueDateIso(voucherDate: string, creditDays: number | null): stri
               <span class="mc-bw-hint">Enter on balanced amount or <mc-code-badge code="Ctrl+A" /> to Accept</span>
               <button
                 type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="cancelled.emit()"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Cancel</span>
+                @if (actionHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
+              <button
+                type="button"
                 class="mc-btn mc-btn-primary"
                 data-testid="bw-accept-btn"
                 (click)="commitAllocations()"
               >
-                Accept (<span class="mc-key-ctrl">A</span>)
+                <mc-icon name="save-document" [size]="16" />
+                <span>Save (<span class="mc-key-ctrl">A</span>)</span>
+                @if (actionHint('ledger.save', 'S/s'); as sHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ sHint }}]</span>
+                }
               </button>
             </div>
           </div>
@@ -506,6 +527,15 @@ export class BillWisePopoverComponent {
 
   private rowCounter = 1;
   private wasOpen = false;
+  private modalHandle: ActiveModalContextHandle | null = null;
+
+  actionHint(commandId: string, pairSpec: 'S/s' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'ledger.create',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
 
   readonly allocatedSummary = computed(() => {
     const scale = this.currencyScale();
@@ -553,6 +583,7 @@ export class BillWisePopoverComponent {
     this.destroyRef.onDestroy(() => {
       disposeAccept();
       disposeEsc();
+      this.releaseModal();
     });
 
     effect(() => {
@@ -561,11 +592,49 @@ export class BillWisePopoverComponent {
         this.wasOpen = true;
         this.validationError.set(null);
         this.activeRowIndex.set(0);
+        this.releaseModal();
+        this.modalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'ledger.save',
+              label: 'Save',
+              letterPair: asciiPair('S/s'),
+              permissionRef: 'voucher.create',
+              effect: 'Commit bill-wise allocations to voucher line.',
+              normalActivation: () => this.commitAllocations(),
+              iconSemanticId: 'mc.icon.save-document',
+              stateTokenRole: 'action.primary',
+            },
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Cancel',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close bill-wise allocation popover without changes.',
+              normalActivation: () => this.cancelled.emit(),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
         void this.initializeModalState();
       } else if (!open && this.wasOpen) {
         this.wasOpen = false;
+        this.releaseModal();
       }
     });
+  }
+
+  private releaseModal(): void {
+    if (this.modalHandle) {
+      this.modalHandle.close();
+      this.modalHandle = null;
+    }
   }
 
   private async initializeModalState(): Promise<void> {
@@ -842,9 +911,27 @@ export class BillWisePopoverComponent {
       return;
     }
 
+    const seenBillRefs = new Set<string>();
     for (const r of nonZeroRows) {
       if (r.allocationType !== 'ON_ACCOUNT' && !r.billName.trim()) {
         this.validationError.set('Every New Ref / Agst Ref / Advance row requires a Bill Reference Name.');
+        return;
+      }
+      if (r.allocationType !== 'ON_ACCOUNT') {
+        const refKey = `${r.allocationType}::${r.billName.trim().toLowerCase()}::${r.side}`;
+        if (seenBillRefs.has(refKey)) {
+          this.validationError.set('Duplicate Bill Reference in Bill-wise details.');
+          return;
+        }
+        seenBillRefs.add(refKey);
+      }
+      if (
+        (r.allocationType === 'NEW_REF' || r.allocationType === 'ADVANCE') &&
+        r.dueDate &&
+        this.voucherDate() &&
+        r.dueDate < this.voucherDate()
+      ) {
+        this.validationError.set('Due Date is earlier than Bill Date in Bill-wise details.');
         return;
       }
       if (r.allocationType === 'AGST_REF' && !r.allowOverSettlement) {

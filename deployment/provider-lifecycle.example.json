@@ -1,0 +1,58 @@
+{
+  "schema": "MC-PROVIDER-CONFIG-1",
+  "installationId": "00000000-0000-4000-8000-000000000000",
+  "incarnation": "00000000-0000-4000-8000-000000000000",
+  "incidentId": null,
+  "issuerId": "00000000-0000-4000-8000-000000000000",
+  "registrationId": "unavailable-template",
+  "state": "DISABLED",
+  "expectedIssuerVersion": null,
+  "config": {
+    "canon": "MC-ISSUER-CONFIG-2",
+    "issuer": "UNAVAILABLE",
+    "clientId": "UNAVAILABLE",
+    "clientSecretRef": "UNAVAILABLE",
+    "authorizationUri": "UNAVAILABLE",
+    "tokenUri": "UNAVAILABLE",
+    "jwksUri": "UNAVAILABLE",
+    "userInfoUri": null,
+    "redirectUri": "UNAVAILABLE",
+    "rpId": "UNAVAILABLE",
+    "origins": [
+      "UNAVAILABLE"
+    ],
+    "lifecycle": {
+      "profile": "MC-FED-01",
+      "realm": "UNAVAILABLE",
+      "adminBaseUri": "UNAVAILABLE",
+      "lifecycleClientId": "UNAVAILABLE",
+      "lifecycleSecretRef": "UNAVAILABLE",
+      "federationComponentId": "00000000-0000-4000-8000-000000000000",
+      "qualificationRef": "UNAVAILABLE",
+      "qualificationDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+      "upstreamMaxSeconds": "20",
+      "pollSeconds": "60",
+      "maxAgeSeconds": "120",
+      "clockAllowanceSeconds": "5",
+      "cycleDeadlineSeconds": "30",
+      "groupMappings": [
+        {
+          "groupId": "00000000-0000-4000-8000-000000000000",
+          "grants": [
+            {
+              "companyId": "00000000-0000-4000-8000-000000000000",
+              "operation": "company.read",
+              "fieldGroup": "NONE"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "configDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "issuedAt": "2026-11-15T00:00:00Z",
+  "expiresAt": "2026-11-15T00:00:00Z",
+  "custodianRef": "UNAVAILABLE",
+  "evidenceRef": "UNAVAILABLE",
+  "signature": "UNAVAILABLE"
+}

@@ -18,9 +18,9 @@ public record TlvField(
         List<TlvField> children
 ) {
     /**
-     * Tally serial date epoch: 1899-12-31 (Day 1 = 1900-01-01; unlike Excel, Tally has no 1900 leap-year bug).
+     * Packed .1800 serial date epoch: 1899-12-31 (Day 1 = 1900-01-01; no fictitious 1900-02-29 leap-year offset).
      */
-    private static final LocalDate TALLY_EPOCH = LocalDate.of(1899, 12, 31);
+    private static final LocalDate SNAPSHOT_SERIAL_DATE_EPOCH = LocalDate.of(1899, 12, 31);
 
     public boolean isBooleanTrue() {
         return wireType == 0x0100;
@@ -46,6 +46,6 @@ public record TlvField(
         if (intValue <= 0L || intValue > 200_000L) {
             return null;
         }
-        return TALLY_EPOCH.plusDays(intValue);
+        return SNAPSHOT_SERIAL_DATE_EPOCH.plusDays(intValue);
     }
 }

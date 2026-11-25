@@ -7,7 +7,10 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Tally `<ENVELOPE>` XML, Rel 7.2 `JSONEx`, and OpenXML `.xlsx` Data Exchange wire contracts.
+ * Canonical `<ENVELOPE>` XML, `JSONEx`, OpenXML `.xlsx`, `ASCII` (`.csv`), and `HTML` Data Exchange
+ * wire contracts, including TallyPrime Gold duplicate handling (`COMBINE_OPENING_BALANCES`,
+ * `IGNORE_DUPLICATES`, `MODIFY_WITH_NEW_DATA`), exception resolution, sample Excel generation,
+ * and Client/Server Data Synchronization (`Alt+Z`).
  * All monetary amounts, tax rates, and stock quantities are serialized as exact fixed-point strings.
  */
 public final class ExchangeDtos {
@@ -24,8 +27,43 @@ public final class ExchangeDtos {
         Integer headerRowIndex,
         Map<String, String> columnMappings,
         Map<String, String> defaultValues,
-        String duplicateHandling
+        String duplicateHandling,
+        String templateScope,
+        String fromColumn,
+        String toColumn,
+        String excludeRowColumn,
+        String excludeRowOperator,
+        String excludeRowValue
     ) {
+        public CreateExchangeTemplateRequest(
+            String name,
+            String templateName,
+            String targetType,
+            String entityScope,
+            String sheetName,
+            Integer headerRowIndex,
+            Map<String, String> columnMappings,
+            Map<String, String> defaultValues,
+            String duplicateHandling
+        ) {
+            this(
+                name,
+                templateName,
+                targetType,
+                entityScope,
+                sheetName,
+                headerRowIndex,
+                columnMappings,
+                defaultValues,
+                duplicateHandling,
+                "THIS_COMPANY",
+                null,
+                null,
+                null,
+                null,
+                null
+            );
+        }
     }
 
     public record ExchangeMappingTemplateDto(
@@ -39,10 +77,53 @@ public final class ExchangeDtos {
         Map<String, String> columnMappings,
         Map<String, String> defaultValues,
         String duplicateHandling,
+        String templateScope,
+        String fromColumn,
+        String toColumn,
+        String excludeRowColumn,
+        String excludeRowOperator,
+        String excludeRowValue,
         boolean active,
         long versionNo,
         Instant createdAt
     ) {
+        public ExchangeMappingTemplateDto(
+            UUID id,
+            String name,
+            String templateName,
+            String targetType,
+            String entityScope,
+            String sheetName,
+            int headerRowIndex,
+            Map<String, String> columnMappings,
+            Map<String, String> defaultValues,
+            String duplicateHandling,
+            boolean active,
+            long versionNo,
+            Instant createdAt
+        ) {
+            this(
+                id,
+                name,
+                templateName,
+                targetType,
+                entityScope,
+                sheetName,
+                headerRowIndex,
+                columnMappings,
+                defaultValues,
+                duplicateHandling,
+                "THIS_COMPANY",
+                null,
+                null,
+                null,
+                null,
+                null,
+                active,
+                versionNo,
+                createdAt
+            );
+        }
     }
 
     public record ExportDataRequest(
@@ -50,8 +131,31 @@ public final class ExchangeDtos {
         LocalDate fromDate,
         LocalDate toDate,
         Boolean includeDependentMasters,
-        UUID templateId
+        UUID templateId,
+        Boolean includeNarration,
+        Boolean includeBillWise,
+        Boolean includeInventory,
+        String digitalSignatureSignerName
     ) {
+        public ExportDataRequest(
+            String entityScope,
+            LocalDate fromDate,
+            LocalDate toDate,
+            Boolean includeDependentMasters,
+            UUID templateId
+        ) {
+            this(
+                entityScope,
+                fromDate,
+                toDate,
+                includeDependentMasters,
+                templateId,
+                true,
+                true,
+                true,
+                null
+            );
+        }
     }
 
     public record ExportDataResultDto(
@@ -65,6 +169,10 @@ public final class ExchangeDtos {
     ) {
     }
 
+    /**
+     * NC-090-02 wire-protocol interoperability field (`tallyrequest`) preserved verbatim for
+     * external `JSONEx` envelope compatibility.
+     */
     public record JsonExHeaderDto(
         int version,
         String tallyrequest,
@@ -210,7 +318,64 @@ public final class ExchangeDtos {
         String targetType,
         Boolean dryRun,
         JsonExHeaderDto header,
-        JsonExDataDto data
+        JsonExDataDto data,
+        String masterDuplicateRule,
+        Boolean overwriteVoucherByGuid,
+        String exceptionBehavior
+    ) {
+        public ImportDataRequest(
+            String fileName,
+            String content,
+            String rawXml,
+            String rawJson,
+            String base64Content,
+            String excelBase64,
+            UUID templateId,
+            String targetType,
+            Boolean dryRun,
+            JsonExHeaderDto header,
+            JsonExDataDto data
+        ) {
+            this(
+                fileName,
+                content,
+                rawXml,
+                rawJson,
+                base64Content,
+                excelBase64,
+                templateId,
+                targetType,
+                dryRun,
+                header,
+                data,
+                "MODIFY_WITH_NEW_DATA",
+                false,
+                "STOP_AT_FIRST_EXCEPTION"
+            );
+        }
+    }
+
+    public record ImportExceptionItemDto(
+        String exceptionId,
+        UUID jobId,
+        String entityType,
+        String identifier,
+        String errorCode,
+        String message,
+        Map<String, Object> rawPayload,
+        boolean resolved,
+        UUID resolvedEntityId,
+        Instant createdAt
+    ) {
+    }
+
+    public record ResolveImportExceptionRequest(
+        String voucherTypeName,
+        LocalDate voucherDate,
+        String debitLedgerName,
+        String creditLedgerName,
+        String amount,
+        String narration
     ) {
     }
 
@@ -225,7 +390,206 @@ public final class ExchangeDtos {
         String totalDebit,
         String totalCredit,
         boolean isBalanced,
-        String message
+        String message,
+        int mastersSkipped,
+        int vouchersUpdated,
+        int vouchersSkipped,
+        int exceptionsRecorded,
+        List<ImportExceptionItemDto> exceptions
+    ) {
+        public ImportDataResultDto(
+            UUID jobId,
+            String format,
+            String status,
+            int groupsImported,
+            int ledgersImported,
+            int stockItemsImported,
+            int vouchersImported,
+            String totalDebit,
+            String totalCredit,
+            boolean isBalanced,
+            String message
+        ) {
+            this(
+                jobId,
+                format,
+                status,
+                groupsImported,
+                ledgersImported,
+                stockItemsImported,
+                vouchersImported,
+                totalDebit,
+                totalCredit,
+                isBalanced,
+                message,
+                0,
+                0,
+                0,
+                0,
+                List.of()
+            );
+        }
+    }
+
+    public record SyncRuleRequest(
+        String ruleName,
+        String ruleType,
+        String direction,
+        UUID targetCompanyId,
+        String targetCompanyGuid,
+        String targetCompanyName,
+        String serverUrl,
+        String masterDuplicateRule,
+        Boolean overwriteVoucherByGuid
+    ) {
+    }
+
+    public record SyncRuleDto(
+        UUID id,
+        UUID companyId,
+        String ruleName,
+        String ruleType,
+        String direction,
+        UUID targetCompanyId,
+        String targetCompanyGuid,
+        String targetCompanyName,
+        String serverUrl,
+        String masterDuplicateRule,
+        boolean overwriteVoucherByGuid,
+        long lastSyncAlterId,
+        boolean active,
+        Instant createdAt
+    ) {
+    }
+
+    public record SyncSessionResultDto(
+        UUID sessionId,
+        UUID ruleId,
+        String ruleName,
+        UUID sourceCompanyId,
+        UUID targetCompanyId,
+        String status,
+        long previousAlterIdWatermark,
+        long newAlterIdWatermark,
+        int mastersSynced,
+        int vouchersSynced,
+        int exceptionsRecorded,
+        String message,
+        Instant completedAt
+    ) {
+    }
+
+    public record MultiAccountReportExportRequest(
+        String reportType,
+        LocalDate fromDate,
+        LocalDate toDate,
+        String format,
+        Boolean includeZeroBalanceParties
+    ) {
+    }
+
+    public record MultiAccountPartyStatementDto(
+        UUID ledgerId,
+        String partyName,
+        String groupName,
+        String gstin,
+        String openingBalance,
+        String openingSide,
+        String periodDebit,
+        String periodCredit,
+        String closingBalance,
+        String closingSide,
+        String slab0To30,
+        String slab31To60,
+        String slab61To90,
+        String slabOver90
+    ) {
+    }
+
+    public record MultiAccountReportExportResponse(
+        UUID companyId,
+        String companyName,
+        String reportType,
+        LocalDate fromDate,
+        LocalDate toDate,
+        String format,
+        int partyCount,
+        List<MultiAccountPartyStatementDto> statements,
+        String renderedContent
+    ) {
+    }
+
+    public record EditLogSummaryItemDto(
+        String entityType,
+        UUID entityId,
+        String displayName,
+        String voucherNumber,
+        String activityType,
+        String alteredDueTo,
+        int versionCount,
+        long latestAlterId,
+        String lastModifiedBy,
+        Instant lastModifiedAt
+    ) {
+    }
+
+    public record EditLogSummaryResponseDto(
+        UUID companyId,
+        String entityTypeFilter,
+        boolean onlyAltered,
+        int totalItems,
+        int alteredItems,
+        List<EditLogSummaryItemDto> items
+    ) {
+    }
+
+    public record DashboardTilesExportRequest(
+        LocalDate fromDate,
+        LocalDate toDate,
+        String format
+    ) {
+    }
+
+    public record DashboardTileDto(
+        String tileCode,
+        String tileTitle,
+        String primaryMetricLabel,
+        String primaryMetricValue,
+        Map<String, String> breakdown
+    ) {
+    }
+
+    public record DashboardTilesExportResponse(
+        UUID companyId,
+        String companyName,
+        LocalDate fromDate,
+        LocalDate toDate,
+        String format,
+        int totalTiles,
+        List<DashboardTileDto> tiles,
+        String renderedContent
+    ) {
+    }
+
+    public record DataVerificationCheckDto(
+        String checkCode,
+        String checkTitle,
+        String status,
+        int issueCount,
+        String detail
+    ) {
+    }
+
+    public record DataVerificationReportDto(
+        UUID companyId,
+        String companyName,
+        String trialBalanceDifference,
+        int unbalancedVoucherCount,
+        int unitMismatchCount,
+        int missingHsnOrGstinCount,
+        int pendingImportExceptionCount,
+        boolean readyForSplitOrSync,
+        List<DataVerificationCheckDto> checks
     ) {
     }
 }

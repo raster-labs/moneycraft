@@ -304,4 +304,237 @@ public final class ReportingDtos {
         List<SmartFindHitDto> results
     ) {
     }
+
+    // =========================================================================
+    // Level 2 / Level 3 Tally Reports: Statistics, Exceptions, Account Books & Stock Query
+    // =========================================================================
+
+    public record StatisticsVoucherTypeRowDto(
+        UUID voucherTypeId,
+        String name,
+        String abbreviation,
+        String baseCategory,
+        String shortcutKey,
+        long postedCount,
+        long optionalCount,
+        long cancelledCount,
+        long draftCount,
+        long activeCount,
+        long totalCount
+    ) {
+    }
+
+    public record StatisticsMasterCountRowDto(
+        String code,
+        String name,
+        long count,
+        String route
+    ) {
+    }
+
+    public record StatisticsReportDto(
+        LocalDate fromDate,
+        LocalDate toDate,
+        List<StatisticsVoucherTypeRowDto> voucherTypeCounts,
+        List<StatisticsMasterCountRowDto> masterCounts,
+        long totalPostedVouchers,
+        long totalOptionalVouchers,
+        long totalCancelledVouchers,
+        long totalDraftVouchers,
+        long totalActiveVouchers,
+        long totalVouchers,
+        long totalMasterTypes
+    ) {
+    }
+
+    public record ExceptionReportRowDto(
+        UUID entityId,
+        String entityType,
+        LocalDate date,
+        LocalDate dueDate,
+        String referenceNumber,
+        String voucherTypeName,
+        String groupOrCategory,
+        String particulars,
+        String uomSymbol,
+        String quantity,
+        String rate,
+        String debitAmount,
+        String creditAmount,
+        String balanceOrAmount,
+        String normalSide,
+        String actualSide,
+        Long overdueDays,
+        String status,
+        String narration
+    ) {
+    }
+
+    public record ExceptionReportDto(
+        String type,
+        String title,
+        LocalDate fromDate,
+        LocalDate toDate,
+        LocalDate asOfDate,
+        int rowCount,
+        String totalQuantity,
+        String totalDebit,
+        String totalCredit,
+        String totalAmount,
+        List<ExceptionReportRowDto> rows
+    ) {
+    }
+
+    public record AccountBookSummaryRowDto(
+        UUID entityId,
+        String rowType,
+        String name,
+        String parentGroupName,
+        String openingDebit,
+        String openingCredit,
+        String periodDebit,
+        String periodCredit,
+        String closingDebit,
+        String closingCredit
+    ) {
+    }
+
+    public record AccountBookMonthRowDto(
+        String monthKey,
+        String monthLabel,
+        LocalDate fromDate,
+        LocalDate toDate,
+        long voucherCount,
+        String debitTotal,
+        String creditTotal,
+        String netAmount,
+        String closingBalance,
+        String closingSide
+    ) {
+    }
+
+    public record AccountBookVoucherRowDto(
+        UUID voucherId,
+        LocalDate voucherDate,
+        String voucherTypeName,
+        String voucherTypeCategory,
+        String voucherNumber,
+        String particulars,
+        String partyLedgerName,
+        String partyGstin,
+        String supplierInvoiceNo,
+        String debitAmount,
+        String creditAmount,
+        String runningBalance,
+        String runningSide,
+        String status,
+        String narration
+    ) {
+    }
+
+    public record AccountBookReportDto(
+        String bookType,
+        String title,
+        UUID groupId,
+        String groupName,
+        UUID ledgerId,
+        String ledgerName,
+        LocalDate fromDate,
+        LocalDate toDate,
+        long voucherCount,
+        String openingDebit,
+        String openingCredit,
+        String totalDebit,
+        String totalCredit,
+        String closingDebit,
+        String closingCredit,
+        List<AccountBookSummaryRowDto> summaryRows,
+        List<AccountBookMonthRowDto> monthlySummary,
+        List<AccountBookVoucherRowDto> voucherRows
+    ) {
+    }
+
+    public record StockQueryLastPartyTxDto(
+        UUID voucherId,
+        LocalDate voucherDate,
+        String voucherTypeName,
+        String voucherNumber,
+        UUID partyLedgerId,
+        String partyName,
+        String quantity,
+        String uomSymbol,
+        String rate,
+        String discountPct,
+        String amount
+    ) {
+    }
+
+    public record StockQueryGodownBatchRowDto(
+        UUID godownId,
+        String godownName,
+        UUID batchId,
+        String batchName,
+        LocalDate mfgDate,
+        LocalDate expiryDate,
+        boolean expired,
+        String closingQty,
+        String closingRate,
+        String closingValue
+    ) {
+    }
+
+    public record StockQueryMovementRowDto(
+        UUID voucherId,
+        LocalDate voucherDate,
+        String voucherTypeName,
+        String voucherNumber,
+        String particulars,
+        String movementDirection,
+        String quantity,
+        String rate,
+        String value
+    ) {
+    }
+
+    public record StockQueryReportDto(
+        UUID stockItemId,
+        String stockItemName,
+        String aliasCode,
+        String partNo,
+        UUID stockGroupId,
+        String stockGroupName,
+        UUID stockCategoryId,
+        String stockCategoryName,
+        String uomSymbol,
+        String costingMethod,
+        String hsnSacCode,
+        String gstRatePct,
+        String standardCost,
+        String standardSellingPrice,
+        LocalDate fromDate,
+        LocalDate toDate,
+        String openingQty,
+        String openingRate,
+        String openingValue,
+        String inwardQty,
+        String inwardValue,
+        String outwardQty,
+        String outwardValue,
+        String closingQty,
+        String closingRate,
+        String closingValue,
+        LocalDate lastPurchaseDate,
+        String lastPurchaseParty,
+        String lastPurchaseQty,
+        String lastPurchaseRate,
+        LocalDate lastSalesDate,
+        String lastSalesParty,
+        String lastSalesQty,
+        String lastSalesRate,
+        StockQueryLastPartyTxDto lastPurchase,
+        StockQueryLastPartyTxDto lastSale,
+        List<StockQueryGodownBatchRowDto> godownBatchBreakup,
+        List<StockQueryMovementRowDto> movements
+    ) {
+    }
 }

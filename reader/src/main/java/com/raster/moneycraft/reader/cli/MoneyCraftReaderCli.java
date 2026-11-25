@@ -1,8 +1,8 @@
 package com.raster.moneycraft.reader.cli;
 
 import com.raster.moneycraft.reader.api.CorruptSnapshotException;
+import com.raster.moneycraft.reader.api.Legacy1800SnapshotReader;
 import com.raster.moneycraft.reader.api.ReaderOptions;
-import com.raster.moneycraft.reader.api.TallySnapshotReader;
 import com.raster.moneycraft.reader.model.ExtractedCompanySnapshot;
 import com.raster.moneycraft.reader.model.RawCompanyProfile;
 import com.raster.moneycraft.reader.model.ReaderDiagnostic;
@@ -84,7 +84,7 @@ public final class MoneyCraftReaderCli {
                     companionXmlDir,
                     verifyStrict,
                     verifyStrict);
-            TallySnapshotReader reader = new TallySnapshotReader();
+            Legacy1800SnapshotReader reader = new Legacy1800SnapshotReader();
             ExtractedCompanySnapshot snapshot = reader.read(options);
             String json = renderDeterministicJson(snapshot);
             if (outputJsonFile != null) {

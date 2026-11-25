@@ -273,6 +273,7 @@ export class TypeaheadSelectComponent {
   readonly optionSelected = output<TypeaheadOption>();
   readonly emptyConfirmed = output<void>();
   readonly createRequested = output<string>();
+  readonly alterRequested = output<TypeaheadOption>();
 
   private readonly comboInputRef = viewChild<ElementRef<HTMLInputElement>>('comboInput');
   private readonly errorAckBtnRef = viewChild<ElementRef<HTMLButtonElement>>('errorAckBtn');
@@ -350,14 +351,71 @@ export class TypeaheadSelectComponent {
   onBlur(): void {
     setTimeout(() => {
       if (!this.spellingErrorOpen()) {
+        this.flushPendingSelection(false);
         this.dropdownOpen.set(false);
       }
     }, 120);
   }
 
+  /**
+   * UM-110-02: Resolves pending typed text on Tab, mouse blur, or pre-submit Ctrl+A flush
+   * so human users typing "Cash" + Tab/Click never leave `selectedId === null` behind deceptive text.
+   */
+  flushPendingSelection(fromTab = false): void {
+    if (this.disabled() || this.spellingErrorOpen()) {
+      return;
+    }
+    const opts = this.options();
+    const selId = this.selectedId();
+    const trimmed = this.queryText().trim();
+    if (trimmed.length === 0) {
+      this.dropdownOpen.set(false);
+      return;
+    }
+
+    const currentSelected = selId ? opts.find((o) => o.id === selId) : undefined;
+    if (
+      currentSelected &&
+      currentSelected.label.trim().toLowerCase() === trimmed.toLowerCase()
+    ) {
+      this.dropdownOpen.set(false);
+      return;
+    }
+
+    const lower = trimmed.toLowerCase();
+    const exactMatch = opts.find(
+      (o) =>
+        o.label.trim().toLowerCase() === lower ||
+        o.codeBadge?.trim().toLowerCase() === lower,
+    );
+    if (exactMatch) {
+      this.commitSelection(exactMatch);
+      return;
+    }
+
+    const matches = this.filteredOptions();
+    if ((fromTab && this.dropdownOpen() && matches.length > 0) || matches.length === 1) {
+      const chosen = matches[this.highlightedIndex()] ?? matches[0];
+      this.commitSelection(chosen);
+      return;
+    }
+
+    if (currentSelected) {
+      this.queryText.set(currentSelected.label);
+    } else {
+      this.queryText.set('');
+    }
+    this.dropdownOpen.set(false);
+  }
+
   onKeyDown(event: KeyboardEvent): void {
     if (this.spellingErrorOpen()) {
       this.onSpellingErrorKeyDown(event);
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      this.flushPendingSelection(true);
       return;
     }
 
@@ -402,6 +460,21 @@ export class TypeaheadSelectComponent {
       event.stopPropagation();
       this.dropdownOpen.set(false);
       return;
+    }
+
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.altKey) {
+      const selId = this.selectedId();
+      const targetOpt =
+        (selId ? this.options().find((o) => o.id === selId) : undefined) ??
+        matches[this.highlightedIndex()] ??
+        matches[0];
+      if (targetOpt) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.dropdownOpen.set(false);
+        this.alterRequested.emit(targetOpt);
+        return;
+      }
     }
 
     if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey) {

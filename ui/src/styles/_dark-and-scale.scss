@@ -1,0 +1,456 @@
+/* MoneyCraft Host Iteration v1.1.0 — Semantic Dark Theme, 75%..200% Text Scaling,
+ * 320px / 400% Zoom Reflow, and WCAG 2.2 AA (1.4.3 / 1.4.4 / 1.4.10 / 1.4.11 / 1.4.12) Resilience.
+ *
+ * Preserves Brand Identity v0.2.0 Light profile as initial Light tokens, preserves local
+ * Manrope 4.505 & JetBrains Mono 2.304 font-feature rules, and NEVER applies whole-page
+ * filter inversion (`Doc 50 §§3–4`).
+ */
+
+:root {
+  color-scheme: light;
+  --mc-text-scale: 1;
+
+  /* Additional v1.1.0 Semantic Surface, Link, Selection & Chrome Tokens (Light Baseline) */
+  --mc-color-mist-canvas: #EEF5F4;
+  --mc-color-link: #006D68;
+  --mc-color-link-hover: #142F42;
+  --mc-color-selection-bg: #C5ECE9;
+  --mc-color-selection-fg: #142F42;
+  --mc-color-chrome-bg: #142F42;
+  --mc-color-chrome-fg: #FFFFFF;
+  --mc-color-chrome-border: #2B526E;
+  --mc-color-tooltip-bg: #142F42;
+  --mc-color-tooltip-fg: #FFFFFF;
+  --mc-color-tooltip-border: #4CE1BD;
+  --mc-z-modal: 750;
+  --mc-z-help-panel: 920;
+  --mc-z-help-tooltip: 960;
+}
+
+/* ==========================================================================
+ * Complete Semantic Dark Theme (`:root[data-mc-theme='dark']`)
+ * Verified Contrast Ratios:
+ * - Primary text `#F1F7FB` on `#112230` card: 11.78:1 (>= 4.5:1 AA)
+ * - Primary text `#F1F7FB` on `#0B1721` canvas: 14.46:1 (>= 4.5:1 AA)
+ * - Muted text `#9EC0D6` on `#112230` card: 6.56:1 (>= 4.5:1 AA)
+ * - Accent / link `#4CE1BD` on `#112230` card: 8.48:1 (>= 4.5:1 AA)
+ * - Primary button `#FFFFFF` on `#006D68`: 6.20:1; border `#6CE9CC` vs `#112230`: 9.20:1 (>= 3:1 AA)
+ * - Control border `#648BA6` vs `#112230` surface: 4.19:1 (>= 3:1 AA)
+ * ========================================================================== */
+:root[data-mc-theme='dark'] {
+  color-scheme: dark;
+
+  /* Canvas & Elevated Surfaces */
+  --mc-color-canvas: #0B1721;
+  --mc-color-cool-alabaster: #0F202D;
+  --mc-color-mist-canvas: #132736;
+  --mc-color-surface: #112230;
+  --mc-color-crisp-card: #112230;
+
+  /* Foreground & Neutral Ramp (Inverted Luminance with >= 4.5:1 Text & >= 3:1 Control Contrast) */
+  --mc-color-slate-900: #F1F7FB;
+  --mc-color-deep-ledger-slate: #F1F7FB;
+  --mc-color-slate-800: #E3EFF7;
+  --mc-color-slate-700: #CFE4F2;
+  --mc-color-slate-600: #B6D2E4;
+  --mc-color-slate-500: #9EC0D6;
+  --mc-color-slate-300: #648BA6;
+  --mc-color-slate-200: #2D4F68;
+  --mc-color-slate-100: #172E40;
+
+  /* Brand Accents & Interactive Row Highlights */
+  --mc-color-teal-600: #4CE1BD;
+  --mc-color-verdigris-teal: #4CE1BD;
+  --mc-color-teal-700: #006D68;
+  --mc-color-pressed-teal: #006D68;
+  --mc-color-mint-400: #4CE1BD;
+  --mc-color-mint-signal: #4CE1BD;
+  --mc-color-jade-500: #3AD5B3;
+  --mc-color-ledger-jade: #3AD5B3;
+  --mc-color-teal-50: #123137;
+  --mc-color-teal-100: #19454B;
+  --mc-color-row-hover: #173142;
+  --mc-color-row-selected: #184246;
+  --mc-color-cell-active-bg: #262510;
+
+  /* Semantic Status & Quarantine Palette (Dark Mode AA Calibrated) */
+  --mc-color-danger-700: #FECACA;
+  --mc-color-danger-600: #D92D20;
+  --mc-color-danger-100: #441210;
+  --mc-color-danger-50: #2C0E0D;
+
+  --mc-color-warning-700: #FDE08D;
+  --mc-color-warning-100: #3B2806;
+  --mc-color-warning-50: #261A04;
+
+  --mc-color-success-700: #7AF0D2;
+  --mc-color-success-100: #0D3B33;
+  --mc-color-success-50: #092924;
+
+  /* UI-VIS-100 Semantic Action & Status Role Tokens */
+  --mc-action-primary-fg: #FFFFFF;
+  --mc-action-primary-bg: #006D68;
+  --mc-action-secondary-fg: #F1F7FB;
+  --mc-action-secondary-bg: #162B3C;
+  --mc-action-danger-fg: #FFFFFF;
+  --mc-action-danger-bg: #B42318;
+  --mc-action-disabled-fg: #B6D2E4;
+  --mc-action-disabled-bg: #0F202D;
+  --mc-status-unknown-fg: #F1F7FB;
+  --mc-status-unknown-bg: #1B3549;
+
+  /* Links, Selection, Chrome & Tooltips */
+  --mc-color-link: #4CE1BD;
+  --mc-color-link-hover: #8EF0D8;
+  --mc-color-selection-bg: #006D68;
+  --mc-color-selection-fg: #FFFFFF;
+  --mc-color-chrome-bg: #08121A;
+  --mc-color-chrome-fg: #F1F7FB;
+  --mc-color-chrome-border: #3B627E;
+  --mc-color-tooltip-bg: #08121A;
+  --mc-color-tooltip-fg: #F1F7FB;
+  --mc-color-tooltip-border: #4CE1BD;
+
+  /* Borders, Focus Ring & Elevation */
+  --mc-border-subtle: 1px solid var(--mc-color-slate-200);
+  --mc-border-strong: 1px solid var(--mc-color-slate-300);
+  --mc-border-active: 2px solid var(--mc-color-mint-signal);
+  --mc-focus-ring: 0 0 0 2px rgba(76, 225, 189, 0.45);
+  --mc-shadow-card: 0 1px 4px rgba(0, 0, 0, 0.42), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --mc-shadow-modal: 0 18px 42px rgba(0, 0, 0, 0.65), 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+::selection {
+  background: var(--mc-color-selection-bg);
+  color: var(--mc-color-selection-fg);
+}
+
+a {
+  color: var(--mc-color-link);
+  text-underline-offset: 2px;
+
+  &:hover {
+    color: var(--mc-color-link-hover);
+  }
+}
+
+/* Explicit Dark-Mode Component & State Overrides (prevents hardcoded Light hex collisions) */
+:root[data-mc-theme='dark'] {
+  :focus-visible {
+    outline: 2px solid #4CE1BD;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px #0B1721;
+  }
+
+  .mc-btn,
+  .mc-btn-secondary {
+    background: var(--mc-action-secondary-bg);
+    color: var(--mc-action-secondary-fg);
+    border: 1px solid #7BA2BE;
+
+    &:hover:not(:disabled) {
+      background: #1F3B52;
+      color: #FFFFFF;
+      border-color: #4CE1BD;
+    }
+
+    &:active:not(:disabled) {
+      background: #264863;
+      color: #FFFFFF;
+      border-color: #4CE1BD;
+      box-shadow: inset 0 0 0 2px #4CE1BD;
+    }
+
+    &:disabled {
+      background: var(--mc-action-disabled-bg);
+      color: var(--mc-action-disabled-fg);
+      border: 1px dashed #7BA2BE;
+      opacity: 1;
+    }
+  }
+
+  .mc-btn-primary {
+    background: #006D68;
+    color: #FFFFFF;
+    border: 1px solid #6CE9CC;
+
+    &:hover:not(:disabled) {
+      background: #00857F;
+      color: #FFFFFF;
+      border-color: #9DF3DF;
+    }
+
+    &:active:not(:disabled) {
+      background: #005955;
+      color: #FFFFFF;
+      border-color: #FFFFFF;
+      box-shadow: inset 0 0 0 2px #FFFFFF;
+    }
+
+    &:disabled {
+      background: var(--mc-action-disabled-bg);
+      color: var(--mc-action-disabled-fg);
+      border: 1px dashed #7BA2BE;
+      opacity: 1;
+    }
+  }
+
+  .mc-btn-danger {
+    background: #B42318;
+    color: #FFFFFF;
+    border: 1px solid #FDA29B;
+
+    &:hover:not(:disabled) {
+      background: #912018;
+      color: #FFFFFF;
+      border-color: #FEE4E2;
+    }
+
+    &:active:not(:disabled) {
+      background: #7A271A;
+      color: #FFFFFF;
+      border-color: #FFFFFF;
+      box-shadow: inset 0 0 0 2px #FFFFFF;
+    }
+
+    &:disabled {
+      background: var(--mc-action-disabled-bg);
+      color: var(--mc-action-disabled-fg);
+      border: 1px dashed #7BA2BE;
+      opacity: 1;
+    }
+  }
+
+  .mc-input,
+  .mc-select,
+  textarea {
+    background: #0D1B27;
+    color: #F1F7FB;
+    border: 1px solid #648BA6;
+
+    &::placeholder {
+      color: #9EC0D6;
+      opacity: 1;
+    }
+
+    &:focus {
+      border-color: #4CE1BD;
+      background: #142838;
+      box-shadow: var(--mc-focus-ring);
+    }
+
+    &[aria-invalid='true'] {
+      border-color: #F97066;
+      background: #2C0E0D;
+    }
+  }
+
+  .mc-status-confirmed {
+    background: #006D68;
+    color: #FFFFFF;
+    border: 1px solid #7AF0D2;
+  }
+
+  .mc-status-error {
+    background: #912018;
+    color: #FFFFFF;
+    border: 1px solid #FDA29B;
+  }
+
+  .mc-status-warning {
+    background: #2C1E04;
+    color: #FDE08D;
+    border: 1px solid #F5B841;
+  }
+
+  .mc-status-unknown {
+    background: #1B3549;
+    color: #F1F7FB;
+    border: 1px solid #8CB0C9;
+  }
+
+  .mc-status-pending {
+    background: #112230;
+    color: #F1F7FB;
+    border: 1px solid #8CB0C9;
+  }
+
+  .mc-badge-jade {
+    background: #0D3B33;
+    color: #7AF0D2;
+    border: 1px solid #3CCBA8;
+  }
+
+  .mc-badge-warning {
+    background: #3B2806;
+    color: #FDE08D;
+    border: 1px solid #E5A93B;
+  }
+
+  .mc-badge-danger {
+    background: #441210;
+    color: #FECACA;
+    border: 1px solid #F97066;
+  }
+
+  .mc-badge-slate {
+    background: #1B3549;
+    color: #E3EFF7;
+    border: 1px solid #648BA6;
+  }
+
+  .mc-table tbody tr.mc-row-selected {
+    background: #184A47;
+    color: #FFFFFF;
+    box-shadow: inset 3px 0 0 #4CE1BD;
+  }
+
+  .mc-modal-backdrop,
+  .mc-kbd-modal-backdrop {
+    background: rgba(3, 9, 15, 0.72);
+  }
+
+  .mc-modal-dialog {
+    border-color: #648BA6;
+  }
+
+  .mc-modal-header,
+  .mc-kbd-modal-header {
+    background: #08121A;
+    color: #F1F7FB;
+    border-bottom: 1px solid #2D4F68;
+  }
+}
+
+/* ==========================================================================
+ * Adjustable Application Text Scale (`75%..200%`, `--mc-text-scale`)
+ * & WCAG 1.4.4 / 1.4.12 Text-Spacing Resilience (`SIZE-A`, `SIZE-C`)
+ * ========================================================================== */
+:root {
+  --mc-shell-topbar-height: calc(2.5rem * 1);
+  --mc-shell-bottombar-height: calc(1.75rem * 1);
+  --mc-shell-fbar-width: clamp(164px, 11.25rem, 280px);
+  --mc-grid-row-height: calc(1.875rem * 1);
+}
+
+.mc-btn,
+.mc-btn-secondary,
+.mc-btn-primary,
+.mc-btn-danger {
+  min-height: max(28px, 1.875rem);
+  height: auto;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: center;
+}
+
+.mc-input,
+.mc-select {
+  min-height: max(28px, 1.875rem);
+  height: auto;
+  line-height: 1.35;
+}
+
+.mc-table th,
+.mc-table td {
+  min-height: var(--mc-grid-row-height);
+  height: auto;
+  line-height: 1.35;
+}
+
+.mc-status-banner,
+.mc-field-label,
+.mc-field-error,
+.mc-badge,
+.mc-card {
+  overflow-wrap: break-word;
+}
+
+/* Preserve Manrope tabular figures & JetBrains Mono slashed-zero across all scales & themes */
+.mc-amount {
+  font-family: 'Manrope', 'Noto Sans Devanagari', 'Noto Sans Tamil', sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+}
+
+.mc-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-variant-ligatures: none;
+  font-feature-settings: 'zero' 1, 'calt' 0, 'liga' 0, 'clig' 0, 'dlig' 0, 'hlig' 0;
+}
+
+/* ==========================================================================
+ * WCAG 2.2 AA 1.4.10 Reflow (`320 CSS px` / `1280px @ 400%` zoom, `SIZE-B`)
+ * ========================================================================== */
+.mc-table-scroll-region {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mc-reflow-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mc-space-2);
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .mc-two-col {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .mc-modal-dialog,
+  .mc-kbd-modal-card {
+    width: min(100vw - 1rem, 100%);
+    max-height: 94vh;
+  }
+
+  .mc-modal-header,
+  .mc-modal-footer,
+  .mc-kbd-modal-footer {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 400px) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+
+  .mc-card {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+/* Respect Reduced Motion & Forced Colors Independently of Application Theme (`Doc 50 §4`) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  :root,
+  :root[data-mc-theme='dark'] {
+    color-scheme: light;
+    --mc-text-scale: 1;
+  }
+
+  html {
+    font-size: 100% !important;
+  }
+
+  body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+  }
+}

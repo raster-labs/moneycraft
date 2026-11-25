@@ -36,6 +36,7 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.reporting..",
                 "com.raster.moneycraft.migration..",
                 "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.extension..",
                 "com.raster.moneycraft.print..",
                 "com.raster.moneycraft.ops.."
             );
@@ -54,6 +55,7 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.reporting..",
                 "com.raster.moneycraft.migration..",
                 "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.extension..",
                 "com.raster.moneycraft.print..",
                 "com.raster.moneycraft.ops.."
             );
@@ -71,6 +73,7 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.reporting..",
                 "com.raster.moneycraft.migration..",
                 "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.extension..",
                 "com.raster.moneycraft.print..",
                 "com.raster.moneycraft.ops.."
             );
@@ -87,6 +90,7 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.reporting..",
                 "com.raster.moneycraft.migration..",
                 "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.extension..",
                 "com.raster.moneycraft.print.."
             );
         rule.check(serverClasses);
@@ -105,8 +109,18 @@ class ArchUnitModuleBoundaryTest {
                 "com.raster.moneycraft.reporting..",
                 "com.raster.moneycraft.migration..",
                 "com.raster.moneycraft.exchange..",
+                "com.raster.moneycraft.extension..",
                 "com.raster.moneycraft.print.."
             );
+        rule.check(serverClasses);
+    }
+
+    @Test
+    void extensionMustNotDependOnNativeMigrationContext() {
+        ArchRule rule = ArchRuleDefinition.noClasses()
+            .that().resideInAPackage("com.raster.moneycraft.extension..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("com.raster.moneycraft.migration..");
         rule.check(serverClasses);
     }
 

@@ -15,8 +15,13 @@
     <name>MoneyCraft End-to-End Integration &amp; Dual-WAR Qualification Suite</name>
     <description>
         Failsafe integration tests against real Dual-Cluster PostgreSQL 18.6 containers,
-        FaultProxy TCP drop injectors, PDFBox 3 font/glyph checks, and Tomcat 11 / WildFly 42 WAR qualification.
+        FaultProxy TCP drop injectors, PDFBox 3 font/glyph checks, Playwright Chromium E2E workflows,
+        and Tomcat 11 / WildFly 42 WAR qualification.
     </description>
+
+    <properties>
+        <skipITs>false</skipITs>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -80,6 +85,16 @@
             <artifactId>pdfbox</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -117,4 +132,19 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>tomcat11</id>
+            <properties>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+        <profile>
+            <id>wildfly42</id>
+            <properties>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+    </profiles>
 </project>

@@ -578,7 +578,7 @@ public class StatRulePackAndGstMasterService {
 
         List<GstRegContext> companyFallback = businessJdbcTemplate.query(
             """
-            SELECT gstin, state_code, state_name
+            SELECT NULL AS gstin, state_code, state_name
               FROM mc_company
              WHERE id = ?
             """,

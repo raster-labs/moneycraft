@@ -12,11 +12,16 @@ import {
   viewChildren,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal, RUPEE_SYMBOL } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { AmountCellComponent } from '../../shared/components/amount-cell/amount-cell.component';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { GridCellNavDirective } from '../../shared/directives/grid-cell-nav.directive';
 import { BalanceSide } from '../masters/masters.models';
 import {
@@ -42,6 +47,7 @@ export interface EditableBankAllocationRow {
     IndianCurrencyPipe,
     AmountCellComponent,
     CodeBadgeComponent,
+    SemanticIconComponent,
     GridCellNavDirective,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -178,11 +184,26 @@ export interface EditableBankAllocationRow {
               <span class="mc-bank-hint">Enter on Amount or <mc-code-badge code="Ctrl+A" /> = Accept</span>
               <button
                 type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="cancelled.emit()"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Cancel</span>
+                @if (actionHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
+              <button
+                type="button"
                 class="mc-btn mc-btn-primary"
                 data-testid="bank-accept-btn"
                 (click)="commitAllocations()"
               >
-                Accept (<span class="mc-key-ctrl">A</span>)
+                <mc-icon name="save-document" [size]="16" />
+                <span>Save (<span class="mc-key-ctrl">A</span>)</span>
+                @if (actionHint('ledger.save', 'S/s'); as sHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ sHint }}]</span>
+                }
               </button>
             </div>
           </div>
@@ -314,6 +335,15 @@ export class BankAllocationPopoverComponent {
 
   private rowCounter = 1;
   private wasOpen = false;
+  private modalHandle: ActiveModalContextHandle | null = null;
+
+  actionHint(commandId: string, pairSpec: 'S/s' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'ledger.create',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
 
   readonly summary = computed(() => {
     const scale = this.currencyScale();
@@ -355,6 +385,7 @@ export class BankAllocationPopoverComponent {
     this.destroyRef.onDestroy(() => {
       disposeAccept();
       disposeEsc();
+      this.releaseModal();
     });
 
     effect(() => {
@@ -362,11 +393,49 @@ export class BankAllocationPopoverComponent {
       if (open && !this.wasOpen) {
         this.wasOpen = true;
         this.validationError.set(null);
+        this.releaseModal();
+        this.modalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'ledger.save',
+              label: 'Save',
+              letterPair: asciiPair('S/s'),
+              permissionRef: 'voucher.create',
+              effect: 'Commit bank allocations.',
+              normalActivation: () => this.commitAllocations(),
+              iconSemanticId: 'mc.icon.save-document',
+              stateTokenRole: 'action.primary',
+            },
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Cancel',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close bank allocation popover.',
+              normalActivation: () => this.cancelled.emit(),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
         this.hydrateRows();
       } else if (!open && this.wasOpen) {
         this.wasOpen = false;
+        this.releaseModal();
       }
     });
+  }
+
+  private releaseModal(): void {
+    if (this.modalHandle) {
+      this.modalHandle.close();
+      this.modalHandle = null;
+    }
   }
 
   private hydrateRows(): void {

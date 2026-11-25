@@ -1,0 +1,424 @@
+{
+  "schema_version": "moneycraft.ui-icons/1",
+  "design_version": "1.0.0",
+  "design_status": "DOCUMENTARY_DESIGN_ASSETS_NOT_PRODUCT_IMPLEMENTATION",
+  "created_date": "2026-11-15",
+  "product": "MoneyCraft 1.0.0",
+  "project_owner_as_recorded": "Raster Images Pvt. Ltd.",
+  "origin": "Original geometric SVG artwork authored afresh by the documentation agent under the v1.0.0 finalisation commission. No external icon library or imported third-party vector geometry was used.",
+  "historical_approval": "Not historically accepted brand artwork; inclusion is a documentary design decision under the current commission.",
+  "rendering": "24-unit square, 1.75-unit rounded strokes, currentColor, no scripts, links, embedded text, animation, external resources or raster images.",
+  "notice": "ORIGINAL_DESIGN_NOTICE.txt",
+  "preservation": "Existing brand artwork, fonts and notices remain unchanged.",
+  "qualification": "Product UI/browser/accessibility qualification NOT RUN.",
+  "assets": [
+    {
+      "semantic_id": "mc.icon.save-document",
+      "file": "mc-save-document.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-save-document.svg",
+      "repository_path": "ui/public/icons/mc-save-document.svg",
+      "manifest_row": "U26",
+      "action": "Create_after_proven_absence",
+      "bytes": 264,
+      "sha256": "65e2b33851ba86fca2dfc33ee7221d439d1509908f34b7ebce4a1528f9e6ecaf",
+      "design_label": "Save draft",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.post-ledger",
+      "file": "mc-post-ledger.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-post-ledger.svg",
+      "repository_path": "ui/public/icons/mc-post-ledger.svg",
+      "manifest_row": "U27",
+      "action": "Create_after_proven_absence",
+      "bytes": 258,
+      "sha256": "1498962daab74ee3474e0cf7fc9f010095e6d0bf6f4a5a6fba394e2d35a43559",
+      "design_label": "Post journal",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.approve-shield",
+      "file": "mc-approve-shield.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-approve-shield.svg",
+      "repository_path": "ui/public/icons/mc-approve-shield.svg",
+      "manifest_row": "U28",
+      "action": "Create_after_proven_absence",
+      "bytes": 259,
+      "sha256": "9036ba7a1be23a2521f2756b9ae86756d1bd19faf837655cdbf90308dcf8c9bb",
+      "design_label": "Approve journal",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.close",
+      "file": "mc-close.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-close.svg",
+      "repository_path": "ui/public/icons/mc-close.svg",
+      "manifest_row": "U29",
+      "action": "Create_after_proven_absence",
+      "bytes": 228,
+      "sha256": "7152adffdaf46d9936c9f340a1cf989a690be57c12329f721c52edfc63e25ed9",
+      "design_label": "Close or cancel this view",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.discard-draft",
+      "file": "mc-discard-draft.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-discard-draft.svg",
+      "repository_path": "ui/public/icons/mc-discard-draft.svg",
+      "manifest_row": "U30",
+      "action": "Create_after_proven_absence",
+      "bytes": 255,
+      "sha256": "aeab6d9c9ed5f47a999acbfd988344592d01d3adb4ccb15280249d92b606b0a6",
+      "design_label": "Discard unsaved edits",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.delete",
+      "file": "mc-delete.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-delete.svg",
+      "repository_path": "ui/public/icons/mc-delete.svg",
+      "manifest_row": "U31",
+      "action": "Create_after_proven_absence",
+      "bytes": 261,
+      "sha256": "e3a501d7a88cbb68c2d65592c6903b22381f0616de12d13b889939d628daf940",
+      "design_label": "Delete admitted object",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.import",
+      "file": "mc-import.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-import.svg",
+      "repository_path": "ui/public/icons/mc-import.svg",
+      "manifest_row": "U32",
+      "action": "Create_after_proven_absence",
+      "bytes": 243,
+      "sha256": "7e906ce5a05a25bfe6fb0a495aee329e3eb425b9060e9134b7cbbe93bb888b7f",
+      "design_label": "Import into MoneyCraft",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.export",
+      "file": "mc-export.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-export.svg",
+      "repository_path": "ui/public/icons/mc-export.svg",
+      "manifest_row": "U33",
+      "action": "Create_after_proven_absence",
+      "bytes": 242,
+      "sha256": "aa56714a024cfcf445e27220b6213053efdc445c63988460ebc0f8199c7c3392",
+      "design_label": "Export from MoneyCraft",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.print",
+      "file": "mc-print.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-print.svg",
+      "repository_path": "ui/public/icons/mc-print.svg",
+      "manifest_row": "U34",
+      "action": "Create_after_proven_absence",
+      "bytes": 260,
+      "sha256": "20aabf807a13050f668242fe7779f678fa6b11bc74f9b581747f4c1fde9119ff",
+      "design_label": "Print report",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.waiting",
+      "file": "mc-waiting.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-waiting.svg",
+      "repository_path": "ui/public/icons/mc-waiting.svg",
+      "manifest_row": "U35",
+      "action": "Create_after_proven_absence",
+      "bytes": 249,
+      "sha256": "f3faa17f6e20ea41d4224eecc64b2af8e21805d4fe5031a6fd9e9c63b09e4499",
+      "design_label": "Pending",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.unknown",
+      "file": "mc-unknown.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-unknown.svg",
+      "repository_path": "ui/public/icons/mc-unknown.svg",
+      "manifest_row": "U36",
+      "action": "Create_after_proven_absence",
+      "bytes": 340,
+      "sha256": "fce8547cfded177ec1ad9ab626a3372f5ba706d42214b0f11f58ab62c349a5d0",
+      "design_label": "Outcome unknown",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.error",
+      "file": "mc-error.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-error.svg",
+      "repository_path": "ui/public/icons/mc-error.svg",
+      "manifest_row": "U37",
+      "action": "Create_after_proven_absence",
+      "bytes": 309,
+      "sha256": "3ade7a78a3574aad0b4fdc99a26a81877b44a58505cf95d7f83a6b6417790644",
+      "design_label": "Failed",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.confirmed",
+      "file": "mc-confirmed.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-confirmed.svg",
+      "repository_path": "ui/public/icons/mc-confirmed.svg",
+      "manifest_row": "U38",
+      "action": "Create_after_proven_absence",
+      "bytes": 251,
+      "sha256": "b41e546c5908aa912a2290559ff844ba80105d920d22a8605066ed776a65dd6d",
+      "design_label": "Confirmed",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.warning",
+      "file": "mc-warning.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-warning.svg",
+      "repository_path": "ui/public/icons/mc-warning.svg",
+      "manifest_row": "U39",
+      "action": "Create_after_proven_absence",
+      "bytes": 296,
+      "sha256": "9399c0b383005cce761f91e81800ab7ced440701d7097cd0a3a6259879f3d2ec",
+      "design_label": "Attention required",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.company",
+      "file": "mc-company.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-company.svg",
+      "repository_path": "ui/public/icons/mc-company.svg",
+      "manifest_row": "U40",
+      "action": "Create_after_proven_absence",
+      "bytes": 274,
+      "sha256": "2a1e406e30b73e04c7ddb3e3ed63794905988d96a9f271e9271e4740c1d3fa26",
+      "design_label": "Company",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.ledger",
+      "file": "mc-ledger.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-ledger.svg",
+      "repository_path": "ui/public/icons/mc-ledger.svg",
+      "manifest_row": "U41",
+      "action": "Create_after_proven_absence",
+      "bytes": 306,
+      "sha256": "80952a6fc29ad0ce8729533fe3c77efe90e0dd71247b97744a9329d63d6d9e28",
+      "design_label": "Ledger",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.back",
+      "file": "mc-back.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-back.svg",
+      "repository_path": "ui/public/icons/mc-back.svg",
+      "manifest_row": "U42",
+      "action": "Create_after_proven_absence",
+      "bytes": 230,
+      "sha256": "d033183db84b0502716453e7a339f485ae362598f6701450cc4f21a91d90da34",
+      "design_label": "Return",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.filter",
+      "file": "mc-filter.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-filter.svg",
+      "repository_path": "ui/public/icons/mc-filter.svg",
+      "manifest_row": "U43",
+      "action": "Create_after_proven_absence",
+      "bytes": 230,
+      "sha256": "22596967f3567289c005e030f85efe565b6ba04c03f1396ae57bebbd8eac69a1",
+      "design_label": "Filter",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.clear-filter",
+      "file": "mc-clear-filter.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-clear-filter.svg",
+      "repository_path": "ui/public/icons/mc-clear-filter.svg",
+      "manifest_row": "U44",
+      "action": "Create_after_proven_absence",
+      "bytes": 251,
+      "sha256": "c95295fe738e11c039e84621dd73688134702256233f21ccc78cd4cc52d04fba",
+      "design_label": "Clear filters",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.refresh",
+      "file": "mc-refresh.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-refresh.svg",
+      "repository_path": "ui/public/icons/mc-refresh.svg",
+      "manifest_row": "U45",
+      "action": "Create_after_proven_absence",
+      "bytes": 276,
+      "sha256": "b9458861a6443c826db874533f4f2612aee8ac6774af2361ccdf9c0a19135da2",
+      "design_label": "Refresh or check status",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.details",
+      "file": "mc-details.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-details.svg",
+      "repository_path": "ui/public/icons/mc-details.svg",
+      "manifest_row": "U46",
+      "action": "Create_after_proven_absence",
+      "bytes": 321,
+      "sha256": "2295d13de9f938f2e5166f8580c065fcf2e95c387bc5f9bb23b0b13e36e1a821",
+      "design_label": "Details",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.keyboard",
+      "file": "mc-keyboard.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-keyboard.svg",
+      "repository_path": "ui/public/icons/mc-keyboard.svg",
+      "manifest_row": "U47",
+      "action": "Create_after_proven_absence",
+      "bytes": 328,
+      "sha256": "49350fcc1cd26f85e6146e860e7c7b4c63e9aa6f206b54385eda6b382d44166c",
+      "design_label": "Keyboard preferences",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.calendar",
+      "file": "mc-calendar.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-calendar.svg",
+      "repository_path": "ui/public/icons/mc-calendar.svg",
+      "manifest_row": "U48",
+      "action": "Create_after_proven_absence",
+      "bytes": 313,
+      "sha256": "ada24283164dce63bc03c6ee47b7b633f0515aa2cefc45c2304cdf1e6381b9ed",
+      "design_label": "Date",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    },
+    {
+      "semantic_id": "mc.icon.search",
+      "file": "mc-search.svg",
+      "source_path": "design_assets/ui-icons/v1.0.0/mc-search.svg",
+      "repository_path": "ui/public/icons/mc-search.svg",
+      "manifest_row": "U49",
+      "action": "Create_after_proven_absence",
+      "bytes": 248,
+      "sha256": "0fb1bfe8d3747d5276cc4a824d06594ef516ba74db995c8aa6efb03b8c1bb9d3",
+      "design_label": "Search",
+      "view_box": [
+        0,
+        0,
+        24,
+        24
+      ]
+    }
+  ]
+}

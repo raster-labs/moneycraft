@@ -15,9 +15,11 @@ import { NavigationStackStore } from '../../state/navigation-stack.store';
 import { AccountingMastersService } from './accounting-masters.service';
 import { ChartOfAccountsStore } from './chart-of-accounts.store';
 import { CoaExplorerComponent } from './coa-explorer.component';
+import { GroupWorkbenchComponent } from './group-workbench.component';
 import { LedgerWorkbenchComponent } from './ledger-workbench.component';
 import { AccountGroup, Ledger, PREDEFINED_28_ACCOUNT_GROUPS } from './masters.models';
 import { SecondaryMasterModalComponent } from './secondary-master-modal.component';
+import { VoucherTypeWorkbenchComponent } from './voucher-type-workbench.component';
 
 function seedBenchmarkCompany(store: CompanyContextStore): CompanySummary {
   const comp: CompanySummary = {
@@ -567,6 +569,124 @@ describe('Phase 2 Chart of Accounts Explorer, Accounting Masters & Alt+C Seconda
     expect(vts[0].baseCategory).toBe('SALES');
     expect(vts[0].isSystemVoucherType).toBe(true);
     expect(vts[0].preventDuplicateNumbers).toBe(true);
+
+    httpMock.verify();
+  });
+
+  it('Loop 1 Parity: GroupWorkbenchComponent, VoucherTypeWorkbenchComponent, and LedgerWorkbenchComponent F12 $$IsAllBillWiseOn toggles', async () => {
+    await TestBed.configureTestingModule({
+      imports: [GroupWorkbenchComponent, VoucherTypeWorkbenchComponent, LedgerWorkbenchComponent],
+      providers: [
+        provideRouter(APP_ROUTES),
+        provideHttpClient(withInterceptors([idempotencyInterceptor, etagInterceptor])),
+        provideHttpClientTesting(),
+      ],
+    }).compileComponents();
+
+    const httpMock = TestBed.inject(HttpTestingController);
+    const companyStore = TestBed.inject(CompanyContextStore);
+    const coaStore = TestBed.inject(ChartOfAccountsStore);
+    seedBenchmarkCompany(companyStore);
+
+    const groups = buildPredefined28Groups('comp-tn-01');
+    const indirectExpensesGrp = groups.find((g) => g.name === 'Indirect Expenses')!;
+    const debtorsGrp = groups.find((g) => g.name === 'Sundry Debtors')!;
+    coaStore.setGroupsAndLedgers(groups, []);
+
+    // 1. GroupWorkbenchComponent: inherits nature from parent group & protects predefined 28 system groups
+    const grpFixture = TestBed.createComponent(GroupWorkbenchComponent);
+    grpFixture.detectChanges();
+    await grpFixture.whenStable();
+    grpFixture.detectChanges();
+
+    const grpComp = grpFixture.componentInstance;
+    grpComp.onFieldEdit('name', 'South Zone Debtors');
+    grpComp.onParentSelected({ id: debtorsGrp.id, label: debtorsGrp.name });
+    grpComp.formBehavesLikeSubledger.set(true);
+    expect(grpComp.formNature()).toBe('ASSETS');
+
+    const saveGrpPromise = grpComp.saveGroup();
+    const grpPostReq = httpMock.expectOne('/api/v1/companies/comp-tn-01/account-groups');
+    expect(grpPostReq.request.body.name).toBe('South Zone Debtors');
+    expect(grpPostReq.request.body.behavesLikeSubledger).toBe(true);
+    grpPostReq.flush({
+      ...debtorsGrp,
+      id: 'grp-south-debtors',
+      name: 'South Zone Debtors',
+      parentGroupId: debtorsGrp.id,
+      isSystemGroup: false,
+    });
+    await saveGrpPromise;
+    expect(grpComp.statusMessage()).toContain('South Zone Debtors');
+
+    // System group protects Delete button
+    grpComp.selectGroupForAlter(debtorsGrp);
+    grpFixture.detectChanges();
+    const delGrpBtn: HTMLButtonElement = grpFixture.nativeElement.querySelector(
+      '[data-testid="delete-group-btn"]',
+    );
+    expect(delGrpBtn.disabled).toBe(true);
+
+    // 2. VoucherTypeWorkbenchComponent: configures Method of Voucher Numbering, Prevent Duplicates & Manufacturing Journal
+    const vtFixture = TestBed.createComponent(VoucherTypeWorkbenchComponent);
+    vtFixture.detectChanges();
+    for (const r of httpMock.match((req) => req.url.includes('/voucher-types'))) {
+      r.flush([]);
+    }
+    await vtFixture.whenStable();
+
+    const vtComp = vtFixture.componentInstance;
+    vtComp.startCreateVoucherType();
+    vtComp.formName = 'BOM Manufacturing Journal';
+    vtComp.formAbbreviation = 'MfgJrn';
+    vtComp.onBaseCategorySelected({ id: 'STOCK_JOURNAL', label: 'Stock Journal' });
+    vtComp.formNumberingMethod = 'AUTOMATIC_RETAIN_NUMBERS';
+    vtComp.formPreventDuplicates = true;
+    vtComp.formIsManufacturingJournal = true;
+
+    const saveVtPromise = vtComp.saveVoucherType();
+    const vtPostReq = httpMock.expectOne('/api/v1/companies/comp-tn-01/voucher-types');
+    expect(vtPostReq.request.body.baseCategory).toBe('STOCK_JOURNAL');
+    expect(vtPostReq.request.body.isManufacturingJournal).toBe(true);
+    expect(vtPostReq.request.body.preventDuplicateNumbers).toBe(true);
+    vtPostReq.flush({
+      id: 'vt-mfg-1',
+      companyId: 'comp-tn-01',
+      name: 'BOM Manufacturing Journal',
+      abbreviation: 'MfgJrn',
+      baseCategory: 'STOCK_JOURNAL',
+      defaultEntryMode: 'ITEM_INVOICE',
+      numberingMethod: 'AUTOMATIC_RETAIN_NUMBERS',
+      approvalPolicy: 'SINGLE_STEP',
+      preventDuplicateNumbers: true,
+      useEffectiveDates: false,
+      allowZeroValuedTransactions: false,
+      makeOptionalByDefault: false,
+      allowNarrationPerLedger: false,
+      printAfterSave: false,
+      isManufacturingJournal: true,
+      isSystemVoucherType: false,
+      active: true,
+      versionNo: 1,
+    });
+    await saveVtPromise;
+    expect(vtComp.statusMessage()).toContain('BOM Manufacturing Journal');
+
+    // 3. LedgerWorkbenchComponent: F12 billWiseForNonTradingAccounts ($$IsAllBillWiseOn) exposes Bill-Wise on non-party ledger
+    const ledFixture = TestBed.createComponent(LedgerWorkbenchComponent);
+    ledFixture.detectChanges();
+    await ledFixture.whenStable();
+
+    const ledComp = ledFixture.componentInstance;
+    ledComp.onGroupSelected({ id: indirectExpensesGrp.id, label: indirectExpensesGrp.name });
+    ledFixture.detectChanges();
+    expect(ledFixture.nativeElement.querySelector('[data-testid="party-billwise-section"]')).toBeNull();
+
+    await companyStore.updateF12Config({ billWiseForNonTradingAccounts: true });
+    ledFixture.detectChanges();
+    expect(
+      ledFixture.nativeElement.querySelector('[data-testid="party-billwise-section"]'),
+    ).not.toBeNull();
 
     httpMock.verify();
   });

@@ -62,6 +62,24 @@ import { StatutoryService } from './statutory.service';
               placeholder="042025"
             />
           </label>
+          @if (registrations().length > 0 || multiGstinEnabled()) {
+            <label class="inline-field">
+              <span>GSTIN</span>
+              <select
+                class="mc-input"
+                aria-label="Select GSTIN Registration"
+                data-testid="gstr3b-gstin-select"
+                [ngModel]="selectedRegistrationId()"
+                (focus)="ensureRegistrationsLoaded()"
+                (ngModelChange)="onRegistrationChange($event)"
+              >
+                <option value="">All / Primary GSTIN</option>
+                @for (reg of registrations(); track reg.id) {
+                  <option [value]="reg.id">{{ reg.stateCode }} — {{ reg.gstin }}</option>
+                }
+              </select>
+            </label>
+          }
           <button type="button" class="mc-btn mc-btn-primary" (click)="reloadReport()">
             Refresh
           </button>
@@ -362,6 +380,10 @@ export class Gstr3bDashboardComponent implements OnInit {
   readonly activeGstin = computed(
     () => this.report()?.gstin ?? this.companyContext.activeCompany()?.features.gstin ?? '',
   );
+  readonly multiGstinEnabled = computed(() =>
+    Boolean(this.companyContext.activeCompany()?.features.multiGstinEnabled),
+  );
+  private registrationsLoaded = false;
 
   ngOnInit(): void {
     const pFrom = this.companyContext.periodFrom();
@@ -370,6 +392,28 @@ export class Gstr3bDashboardComponent implements OnInit {
     if (/^\d{4}-\d{2}/.test(pFrom)) {
       this.returnPeriod.set(`${pFrom.slice(5, 7)}${pFrom.slice(0, 4)}`);
     }
+    void this.reloadReport();
+  }
+
+  async ensureRegistrationsLoaded(): Promise<void> {
+    if (this.registrationsLoaded) {
+      return;
+    }
+    const companyId = this.companyContext.activeCompany()?.id;
+    if (!companyId) {
+      return;
+    }
+    this.registrationsLoaded = true;
+    try {
+      const list = await this.statutoryService.listGstRegistrations(companyId);
+      this.registrations.set(list);
+    } catch {
+      this.registrations.set([]);
+    }
+  }
+
+  onRegistrationChange(registrationId: string): void {
+    this.selectedRegistrationId.set(registrationId);
     void this.reloadReport();
   }
 

@@ -1,5 +1,6 @@
 package com.raster.moneycraft.foundation.auth;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.raster.moneycraft.foundation.authority.InstallationSecurityState;
 import com.raster.moneycraft.foundation.security.CompanyGrantInfo;
 import com.raster.moneycraft.foundation.security.CompanyRole;
@@ -64,8 +65,30 @@ public final class AuthDtos {
         List<SystemRole> systemRoles,
         List<CompanyGrantSummaryDto> companyGrants,
         boolean passkeyEnrolled,
+        boolean superAdmin,
         String csrfToken
     ) {
+        public AuthenticatedPrincipalDto(
+            UUID principalId,
+            String username,
+            String displayName,
+            List<SystemRole> systemRoles,
+            List<CompanyGrantSummaryDto> companyGrants,
+            boolean passkeyEnrolled,
+            String csrfToken
+        ) {
+            this(
+                principalId,
+                username,
+                displayName,
+                systemRoles,
+                companyGrants,
+                passkeyEnrolled,
+                false,
+                csrfToken
+            );
+        }
+
         public static AuthenticatedPrincipalDto from(MoneyCraftPrincipal principal, String csrfToken) {
             List<CompanyGrantSummaryDto> mappedGrants = principal.companyGrants().stream()
                 .map(CompanyGrantSummaryDto::from)
@@ -77,12 +100,88 @@ public final class AuthDtos {
                 principal.systemRoles(),
                 mappedGrants,
                 principal.passkeyEnrolled(),
+                principal.superAdmin(),
                 csrfToken
             );
         }
     }
 
     public record LoginRequest(String username, String password) {
+    }
+
+    public record PasswordStepUpRequest(
+        String password,
+        UUID targetProfileId,
+        String action,
+        Long expectedRevision
+    ) {
+    }
+
+    public record PasswordStepUpResponse(
+        UUID stepUpIntentId,
+        OffsetDateTime expiresAt,
+        String action,
+        UUID targetProfileId,
+        Long expectedRevision
+    ) {
+    }
+
+    public record SuperAdminDesignationRequest(String reason) {
+    }
+
+    public record SuperAdminDesignationDto(
+        UUID principalId,
+        String username,
+        String state,
+        String ceremonySource,
+        String ceremonyReason,
+        OffsetDateTime designatedAt,
+        OffsetDateTime revokedAt
+    ) {
+    }
+
+    public record NativeAuthorizeApproveRequest(
+        @JsonProperty("client_id") String clientId,
+        @JsonProperty("redirect_uri") String redirectUri,
+        String scope,
+        String state,
+        String nonce,
+        @JsonProperty("code_challenge") String codeChallenge,
+        @JsonProperty("code_challenge_method") String codeChallengeMethod,
+        String nativeAuthorizeQuery
+    ) {
+    }
+
+    public record NativeAuthorizeApproveResponse(
+        String redirectUri,
+        String code,
+        String state
+    ) {
+    }
+
+    public record NativeTokenResponseDto(
+        @JsonProperty("token_type") String tokenType,
+        @JsonProperty("access_token") String accessToken,
+        @JsonProperty("refresh_token") String refreshToken,
+        @JsonProperty("id_token") String idToken,
+        @JsonProperty("expires_in") long expiresIn,
+        String scope
+    ) {
+    }
+
+    public record NativeOidcDiscoveryDto(
+        String issuer,
+        @JsonProperty("authorization_endpoint") String authorizationEndpoint,
+        @JsonProperty("token_endpoint") String tokenEndpoint,
+        @JsonProperty("revocation_endpoint") String revocationEndpoint,
+        @JsonProperty("jwks_uri") String jwksUri,
+        @JsonProperty("response_types_supported") List<String> responseTypesSupported,
+        @JsonProperty("grant_types_supported") List<String> grantTypesSupported,
+        @JsonProperty("code_challenge_methods_supported") List<String> codeChallengeMethodsSupported,
+        @JsonProperty("token_endpoint_auth_methods_supported") List<String> tokenEndpointAuthMethodsSupported,
+        @JsonProperty("id_token_signing_alg_values_supported") List<String> idTokenSigningAlgValuesSupported,
+        @JsonProperty("public_key_pem") String publicKeyPem
+    ) {
     }
 
     public record PasskeyRegisterOptionsRequest(String label) {
@@ -176,6 +275,13 @@ public final class AuthDtos {
     ) {
     }
 
+    public record PublicOidcIssuerDto(
+        UUID id,
+        String registrationId,
+        String displayName
+    ) {
+    }
+
     public record CreatePrincipalRequest(
         String username,
         String displayName,
@@ -197,6 +303,7 @@ public final class AuthDtos {
     public record AssignCompanyGrantRequest(
         UUID companyId,
         CompanyRole roleCode,
+        List<String> permissions,
         List<String> voucherTypeAllowlist,
         Integer backdatedDaysLimit,
         Boolean exportPermitted

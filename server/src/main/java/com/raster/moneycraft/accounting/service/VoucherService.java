@@ -2,6 +2,7 @@ package com.raster.moneycraft.accounting.service;
 
 import com.raster.moneycraft.accounting.dto.CursorPage;
 import com.raster.moneycraft.accounting.dto.VoucherDtos;
+import com.raster.moneycraft.accounting.spi.VoucherExtensionValidator;
 import com.raster.moneycraft.accounting.spi.VoucherInventoryBridge;
 import com.raster.moneycraft.accounting.spi.VoucherStatutoryBridge;
 import com.raster.moneycraft.foundation.audit.AuditChainService;
@@ -35,6 +36,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -48,7 +50,7 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * ACID Double-Entry Voucher Engine enforcing MCJ1-TXN-01 lock ordering, exact fixed-point
  * BigDecimal arithmetic, Single-Entry & Double-Entry views, Bill-Wise/Cost/Bank/Forex sub-ledgers,
- * FOUR_EYES governance, Tally Alt+X cancellation, MCA Rule 3(1) Edit Log, and MC-AUDIT-2.
+ * FOUR_EYES governance, Alt+X statutory cancellation, MCA Rule 3(1) Edit Log, and MC-AUDIT-2.
  */
 @Service
 public class VoucherService {
@@ -100,6 +102,7 @@ public class VoucherService {
     private final TransactionTemplate businessTxTemplate;
     private final ObjectProvider<VoucherInventoryBridge> inventoryBridgeProvider;
     private final ObjectProvider<VoucherStatutoryBridge> statutoryBridgeProvider;
+    private final ObjectProvider<VoucherExtensionValidator> extensionValidatorProvider;
 
     public VoucherService(
         AuthorityGuard authorityGuard,
@@ -116,6 +119,41 @@ public class VoucherService {
         ObjectProvider<VoucherInventoryBridge> inventoryBridgeProvider,
         ObjectProvider<VoucherStatutoryBridge> statutoryBridgeProvider
     ) {
+        this(
+            authorityGuard,
+            rbacGuard,
+            sequenceHelper,
+            numberingService,
+            editLogSnapshotService,
+            auditChainService,
+            cursorCodec,
+            jcsCanonicalizer,
+            objectMapper,
+            businessJdbcTemplate,
+            businessTransactionManager,
+            inventoryBridgeProvider,
+            statutoryBridgeProvider,
+            null
+        );
+    }
+
+    @Autowired
+    public VoucherService(
+        AuthorityGuard authorityGuard,
+        RbacAuthorizationService rbacGuard,
+        CompanyMasterSequenceHelper sequenceHelper,
+        VoucherNumberingService numberingService,
+        EditLogSnapshotService editLogSnapshotService,
+        AuditChainService auditChainService,
+        CursorCodec cursorCodec,
+        JcsCanonicalizer jcsCanonicalizer,
+        ObjectMapper objectMapper,
+        @Qualifier("businessJdbcTemplate") JdbcTemplate businessJdbcTemplate,
+        @Qualifier("transactionManager") PlatformTransactionManager businessTransactionManager,
+        ObjectProvider<VoucherInventoryBridge> inventoryBridgeProvider,
+        ObjectProvider<VoucherStatutoryBridge> statutoryBridgeProvider,
+        ObjectProvider<VoucherExtensionValidator> extensionValidatorProvider
+    ) {
         this.authorityGuard = authorityGuard;
         this.rbacGuard = rbacGuard;
         this.sequenceHelper = sequenceHelper;
@@ -129,6 +167,7 @@ public class VoucherService {
         this.businessTxTemplate = new TransactionTemplate(businessTransactionManager);
         this.inventoryBridgeProvider = inventoryBridgeProvider;
         this.statutoryBridgeProvider = statutoryBridgeProvider;
+        this.extensionValidatorProvider = extensionValidatorProvider;
     }
 
     public VoucherDtos.VoucherDetailDto createVoucher(
@@ -189,6 +228,15 @@ public class VoucherService {
             VoucherTypeMeta vt = resolveVoucherType(companyId, request.voucherTypeId(), request.voucherTypeName());
             if (vt.postsAccountingEntries()) {
                 CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
+            }
+            if ("LIVE".equals(origin)) {
+                rbacGuard.requireVoucherTypeAllowed(actor, companyId, vt.name(), vt.baseCategory());
+                LocalDate latestDate = businessJdbcTemplate.queryForObject(
+                    "SELECT MAX(voucher_date) FROM mc_journal WHERE company_id = ? AND status = 'POSTED'",
+                    LocalDate.class,
+                    companyId
+                );
+                rbacGuard.requireBackdatedDaysWithinLimit(actor, companyId, voucherDate, latestDate);
             }
             HeaderSpec header = normalizeHeaderSpec(request, vt, seq.baseCurrencyCode());
 
@@ -252,6 +300,12 @@ public class VoucherService {
             BigDecimal totalDr = sumSide(preparedLines, "DR");
             BigDecimal totalCr = sumSide(preparedLines, "CR");
 
+            if ("LIVE".equals(origin)
+                && shouldHoldActiveGl(header.status(), header.postingNature(), vt.postsAccountingEntries())
+                && ("SALES".equals(vt.baseCategory()) || "DEBIT_NOTE".equals(vt.baseCategory()))) {
+                enforcePartyCreditLimits(companyId, null, seq.currencyScale(), preparedLines, lockedLedgers);
+            }
+
             UUID journalId = UUID.randomUUID();
             VoucherStatutoryBridge statBridge = statutoryBridgeProvider.getIfAvailable();
             UUID resolvedCompanyGstinId = header.companyGstinId() != null
@@ -269,6 +323,23 @@ public class VoucherService {
                 resolvedCompanyGstinId,
                 request.voucherNumber(),
                 preserveExplicitNumber
+            );
+
+            runExtensionValidation(
+                actor,
+                companyId,
+                journalId,
+                vt,
+                header,
+                voucherDate,
+                effectiveDate,
+                allocatedNumber.voucherNumber(),
+                totalDr,
+                totalCr,
+                preparedLines,
+                lockedLedgers,
+                origin,
+                request
             );
 
             boolean postActiveGl = shouldHoldActiveGl(header.status(), header.postingNature(), vt.postsAccountingEntries());
@@ -489,6 +560,13 @@ public class VoucherService {
             if (vt.postsAccountingEntries() || priorVt.postsAccountingEntries()) {
                 CompanyMasterSequenceHelper.requireMasterWriteRole(rbacGuard, actor, companyId);
             }
+            rbacGuard.requireVoucherTypeAllowed(actor, companyId, vt.name(), vt.baseCategory());
+            LocalDate latestDate = businessJdbcTemplate.queryForObject(
+                "SELECT MAX(voucher_date) FROM mc_journal WHERE company_id = ? AND status = 'POSTED'",
+                LocalDate.class,
+                companyId
+            );
+            rbacGuard.requireBackdatedDaysWithinLimit(actor, companyId, voucherDate, latestDate);
             HeaderSpec header = normalizeHeaderSpecForUpdate(request, vt, existing, seq.baseCurrencyCode());
 
             VoucherInventoryBridge invBridge = inventoryBridgeProvider.getIfAvailable();
@@ -588,6 +666,11 @@ public class VoucherService {
             BigDecimal totalDr = sumSide(preparedLines, "DR");
             BigDecimal totalCr = sumSide(preparedLines, "CR");
 
+            if (shouldHoldActiveGl(header.status(), header.postingNature(), vt.postsAccountingEntries())
+                && ("SALES".equals(vt.baseCategory()) || "DEBIT_NOTE".equals(vt.baseCategory()))) {
+                enforcePartyCreditLimits(companyId, voucherId, seq.currencyScale(), preparedLines, lockedLedgers);
+            }
+
             UUID resolvedCompanyGstinId = header.companyGstinId() != null
                 ? header.companyGstinId()
                 : (beforeSnapshot.companyGstinId() != null
@@ -626,6 +709,23 @@ public class VoucherService {
                 resolvedNumber = alloc.voucherNumber();
                 resolvedSeqNo = alloc.voucherSeqNo();
             }
+
+            runExtensionValidation(
+                actor,
+                companyId,
+                voucherId,
+                vt,
+                header,
+                voucherDate,
+                effectiveDate,
+                resolvedNumber,
+                totalDr,
+                totalCr,
+                preparedLines,
+                lockedLedgers,
+                "LIVE",
+                request
+            );
 
             int nextBatch = existing.currentPostingBatchNo();
             if (!activeNetSlices.isEmpty()) {
@@ -1684,8 +1784,29 @@ public class VoucherService {
 
         boolean hasMore = fetched.size() > pageSize;
         List<SummaryWithSeq> pageSlice = hasMore ? fetched.subList(0, pageSize) : fetched;
+        Map<UUID, List<VoucherDtos.DayBookLineBreakupDto>> breakupsByJournalId =
+            loadDayBookLineBreakups(companyId, pageSlice, scale);
         List<VoucherDtos.VoucherSummaryDto> items = pageSlice.stream()
             .map(SummaryWithSeq::summary)
+            .map(s -> new VoucherDtos.VoucherSummaryDto(
+                s.id(),
+                s.voucherDate(),
+                s.effectiveDate(),
+                s.voucherTypeId(),
+                s.voucherTypeName(),
+                s.voucherTypeCategory(),
+                s.voucherNumber(),
+                s.status(),
+                s.postingNature(),
+                s.persistedView(),
+                s.primaryParticulars(),
+                s.totalDebit(),
+                s.totalCredit(),
+                s.narration(),
+                s.versionNo(),
+                s.alterId(),
+                breakupsByJournalId.getOrDefault(s.id(), List.of())
+            ))
             .toList();
 
         String nextCursor = null;
@@ -1712,6 +1833,48 @@ public class VoucherService {
         }
 
         return new CursorPage<>(items, nextCursor, hasMore);
+    }
+
+    private Map<UUID, List<VoucherDtos.DayBookLineBreakupDto>> loadDayBookLineBreakups(
+        UUID companyId,
+        List<SummaryWithSeq> pageSlice,
+        int scale
+    ) {
+        if (pageSlice.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(", ", pageSlice.stream().map(x -> "?").toList());
+        List<Object> queryParams = new ArrayList<>(pageSlice.size() + 1);
+        queryParams.add(companyId);
+        for (SummaryWithSeq item : pageSlice) {
+            queryParams.add(item.summary().id());
+        }
+        String sql = """
+            SELECT jl.journal_id, jl.line_no, l.name AS ledger_name, jl.side, jl.amount
+              FROM mc_journal_line jl
+              JOIN mc_ledger l
+                ON l.company_id = jl.company_id AND l.id = jl.ledger_id
+             WHERE jl.company_id = ?
+               AND jl.journal_id IN (%s)
+             ORDER BY jl.journal_id ASC, jl.line_no ASC
+            """.formatted(placeholders);
+
+        Map<UUID, List<VoucherDtos.DayBookLineBreakupDto>> grouped = new LinkedHashMap<>();
+        businessJdbcTemplate.query(
+            sql,
+            rs -> {
+                UUID jId = rs.getObject("journal_id", UUID.class);
+                VoucherDtos.DayBookLineBreakupDto line = new VoucherDtos.DayBookLineBreakupDto(
+                    rs.getInt("line_no"),
+                    rs.getString("ledger_name"),
+                    rs.getString("side"),
+                    ExactMoneyValidator.formatExactScale(rs.getBigDecimal("amount"), scale)
+                );
+                grouped.computeIfAbsent(jId, k -> new ArrayList<>()).add(line);
+            },
+            queryParams.toArray()
+        );
+        return grouped;
     }
 
     public List<VoucherDtos.OpenBillDto> listOpenBills(
@@ -1793,6 +1956,24 @@ public class VoucherService {
             vt.numberingMethod(),
             voucherDate
         );
+    }
+
+    public List<VoucherDtos.UnusedVoucherNumberDto> listAvailableUnusedNumbers(
+        MoneyCraftPrincipal principal,
+        UUID companyId,
+        UUID voucherTypeId,
+        String voucherTypeName
+    ) {
+        rbacGuard.requireCompanyAccess(principal, companyId);
+        return numberingService.listAvailableUnusedNumbers(companyId, voucherTypeId, voucherTypeName);
+    }
+
+    public List<VoucherDtos.UnusedVoucherNumberDto> listAvailableUnusedNumbers(
+        UUID companyId,
+        UUID voucherTypeId,
+        String voucherTypeName
+    ) {
+        return numberingService.listAvailableUnusedNumbers(companyId, voucherTypeId, voucherTypeName);
     }
 
     // -------------------------------------------------------------------------
@@ -2389,7 +2570,9 @@ public class VoucherService {
             List<LockedLedgerMeta> rows = businessJdbcTemplate.query(
                 """
                 SELECT l.id, l.name, l.group_id, l.maintain_balances_bill_by_bill,
-                       l.default_credit_period_days, l.cost_centres_applicable, l.active
+                       l.default_credit_period_days, l.cost_centres_applicable, l.active,
+                       l.check_credit_days_during_voucher, l.credit_limit,
+                       l.opening_balance, trim(l.opening_side) AS opening_side
                   FROM mc_ledger l
                  WHERE l.company_id = ? AND l.id = ?
                    FOR UPDATE
@@ -2401,7 +2584,11 @@ public class VoucherService {
                     rs.getBoolean("maintain_balances_bill_by_bill"),
                     rs.getObject("default_credit_period_days", Integer.class),
                     rs.getBoolean("cost_centres_applicable"),
-                    rs.getBoolean("active")
+                    rs.getBoolean("active"),
+                    rs.getBoolean("check_credit_days_during_voucher"),
+                    rs.getBigDecimal("credit_limit"),
+                    rs.getBigDecimal("opening_balance"),
+                    rs.getString("opening_side")
                 ),
                 companyId,
                 ledgerId
@@ -2672,6 +2859,16 @@ public class VoucherService {
 
             Integer creditDays = ba.creditPeriodDays();
             LocalDate dueDate = ba.dueDate();
+            if (("NEW_REF".equals(allocType) || "ADVANCE".equals(allocType))
+                && dueDate != null
+                && dueDate.isBefore(effectiveDate)) {
+                throw new MoneyCraftException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "MC-ACC-BILL-DUE-DATE-BEFORE-VOUCHER-DATE",
+                    "Bill Due Date Before Voucher Date",
+                    "Due Date is earlier than Bill Date in Bill-wise details."
+                );
+            }
             if ("NEW_REF".equals(allocType) && dueDate == null) {
                 if (creditDays == null && ledger.defaultCreditPeriodDays() != null) {
                     creditDays = ledger.defaultCreditPeriodDays();
@@ -2863,6 +3060,7 @@ public class VoucherService {
         }
         List<PreparedCostAlloc> result = new ArrayList<>(rawAllocs.size());
         Map<UUID, BigDecimal> categorySignedSums = new LinkedHashMap<>();
+        Set<UUID> seenCostCentreIds = new TreeSet<>(Comparator.comparing(UUID::toString));
 
         for (int cIdx = 0; cIdx < rawAllocs.size(); cIdx++) {
             VoucherDtos.CostAllocationDto ca = rawAllocs.get(cIdx);
@@ -2873,6 +3071,14 @@ public class VoucherService {
                     "MC-ACC-COST-CENTRE-REQUIRED",
                     "Cost Centre Required",
                     prefix + ".costCentreId is required."
+                );
+            }
+            if (!seenCostCentreIds.add(ca.costCentreId())) {
+                throw new MoneyCraftException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "MC-ACC-DUPLICATE-COST-CENTRE",
+                    "Duplicate Cost Centre in Cost Allocation",
+                    "Name of Cost Centre is duplicate in Cost Allocation."
                 );
             }
             UUID centreCatId = findCostCentreCategoryId(companyId, ca.costCentreId());
@@ -4081,6 +4287,68 @@ public class VoucherService {
     ) {
     }
 
+    private void enforcePartyCreditLimits(
+        UUID companyId,
+        UUID excludeJournalId,
+        int currencyScale,
+        List<PreparedLine> preparedLines,
+        Map<UUID, LockedLedgerMeta> lockedLedgers
+    ) {
+        Map<UUID, BigDecimal> voucherNetDebitByLedger = new LinkedHashMap<>();
+        for (PreparedLine line : preparedLines) {
+            BigDecimal delta = "DR".equals(line.side()) ? line.amount() : line.amount().negate();
+            voucherNetDebitByLedger.merge(line.ledgerId(), delta, BigDecimal::add);
+        }
+        for (Map.Entry<UUID, BigDecimal> entry : voucherNetDebitByLedger.entrySet()) {
+            if (entry.getValue().signum() <= 0) {
+                continue;
+            }
+            LockedLedgerMeta ledger = lockedLedgers.get(entry.getKey());
+            if (ledger == null
+                || !ledger.checkCreditDaysDuringVoucher()
+                || ledger.creditLimit() == null
+                || ledger.creditLimit().signum() <= 0) {
+                continue;
+            }
+            BigDecimal openingSignedDr = ledger.openingBalance() == null
+                ? BigDecimal.ZERO
+                : ("CR".equalsIgnoreCase(ledger.openingSide())
+                    ? ledger.openingBalance().negate()
+                    : ledger.openingBalance());
+            BigDecimal postedNetDr = businessJdbcTemplate.queryForObject(
+                """
+                SELECT COALESCE(
+                    SUM(CASE WHEN trim(side) = 'DR' THEN base_currency_amount ELSE -base_currency_amount END),
+                    0::numeric
+                )
+                  FROM mc_entry
+                 WHERE company_id = ?
+                   AND ledger_id = ?
+                   AND (?::uuid IS NULL OR journal_id <> ?::uuid)
+                """,
+                BigDecimal.class,
+                companyId,
+                ledger.id(),
+                excludeJournalId,
+                excludeJournalId
+            );
+            BigDecimal projectedDr = openingSignedDr
+                .add(postedNetDr == null ? BigDecimal.ZERO : postedNetDr)
+                .add(entry.getValue());
+            if (projectedDr.compareTo(ledger.creditLimit()) > 0) {
+                throw new MoneyCraftException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "MC-VOUCHER-CREDIT-LIMIT-EXCEEDED",
+                    "Party Credit Limit Exceeded",
+                    "Projected debit balance "
+                        + ExactMoneyValidator.formatExactScale(projectedDr, currencyScale)
+                        + " for ledger '" + ledger.name() + "' exceeds configured credit limit of "
+                        + ExactMoneyValidator.formatExactScale(ledger.creditLimit(), currencyScale) + "."
+                );
+            }
+        }
+    }
+
     private record LockedLedgerMeta(
         UUID id,
         String name,
@@ -4088,7 +4356,11 @@ public class VoucherService {
         boolean maintainBalancesBillByBill,
         Integer defaultCreditPeriodDays,
         boolean costCentresApplicable,
-        boolean active
+        boolean active,
+        boolean checkCreditDaysDuringVoucher,
+        BigDecimal creditLimit,
+        BigDecimal openingBalance,
+        String openingSide
     ) {
     }
 
@@ -4200,6 +4472,342 @@ public class VoucherService {
     private record SummaryWithSeq(
         VoucherDtos.VoucherSummaryDto summary,
         long seqOrMax
+    ) {
+    }
+
+    private void runExtensionValidation(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        UUID journalId,
+        VoucherTypeMeta vt,
+        HeaderSpec header,
+        LocalDate voucherDate,
+        LocalDate effectiveDate,
+        String voucherNumber,
+        BigDecimal totalDr,
+        BigDecimal totalCr,
+        List<PreparedLine> preparedLines,
+        Map<UUID, LockedLedgerMeta> lockedLedgers,
+        String origin,
+        VoucherDtos.UpsertVoucherRequest request
+    ) {
+        if (extensionValidatorProvider == null || "MIGRATION".equals(origin)) {
+            return;
+        }
+        VoucherExtensionValidator validator = extensionValidatorProvider.getIfAvailable();
+        if (validator == null) {
+            return;
+        }
+        List<String> ledgerNames = new ArrayList<>(preparedLines.size());
+        for (PreparedLine line : preparedLines) {
+            LockedLedgerMeta meta = lockedLedgers.get(line.ledgerId());
+            if (meta != null && meta.name() != null) {
+                ledgerNames.add(meta.name());
+            }
+        }
+        validator.validateVoucher(
+            new VoucherExtensionValidator.VoucherExtensionContext(
+                actor,
+                companyId,
+                journalId,
+                vt.name(),
+                vt.baseCategory(),
+                header.status(),
+                header.postingNature(),
+                voucherDate,
+                effectiveDate,
+                voucherNumber,
+                header.supplierInvoiceNo(),
+                header.narration(),
+                header.currencyCode(),
+                totalDr,
+                totalCr,
+                preparedLines.size(),
+                origin,
+                List.copyOf(ledgerNames),
+                request
+            )
+        );
+    }
+
+    public VoucherDtos.AdjacentVoucherResponse getAdjacentVoucher(
+        MoneyCraftPrincipal principal,
+        UUID companyId,
+        UUID currentVoucherId,
+        UUID voucherTypeId,
+        String voucherCategory,
+        LocalDate voucherDate,
+        String rawDirection
+    ) {
+        rbacGuard.requireCompanyAccess(principal, companyId);
+        String dir = rawDirection == null ? "PREV" : rawDirection.trim().toUpperCase(Locale.ROOT);
+        if ("PREVIOUS".equals(dir)) {
+            dir = "PREV";
+        }
+        if (!"PREV".equals(dir) && !"NEXT".equals(dir)) {
+            throw new MoneyCraftException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "MC-ACC-INVALID-DIRECTION",
+                "Invalid Voucher Navigation Direction",
+                "Direction must be PREV or NEXT."
+            );
+        }
+
+        String normCategory = voucherCategory == null ? "" : voucherCategory.trim().toUpperCase(Locale.ROOT);
+        UUID effectiveTypeId = voucherTypeId;
+        String effectiveCategory = "ALL".equals(normCategory) ? "" : normCategory;
+
+        LocalDate anchorDate = voucherDate;
+        Long anchorSeq = null;
+        UUID anchorId = null;
+
+        if (currentVoucherId != null) {
+            List<VoucherCursorAnchor> curRows = businessJdbcTemplate.query(
+                """
+                SELECT j.id, j.voucher_date, j.master_seq_id, j.voucher_type_id, vt.base_category
+                  FROM mc_journal j
+                  JOIN mc_voucher_type vt
+                    ON vt.company_id = j.company_id AND vt.id = j.voucher_type_id
+                 WHERE j.company_id = ? AND j.id = ?
+                """,
+                (rs, rowNum) -> new VoucherCursorAnchor(
+                    rs.getObject("id", UUID.class),
+                    rs.getObject("voucher_date", LocalDate.class),
+                    rs.getLong("master_seq_id"),
+                    rs.getObject("voucher_type_id", UUID.class),
+                    rs.getString("base_category")
+                ),
+                companyId,
+                currentVoucherId
+            );
+            if (curRows.isEmpty()) {
+                throw new MoneyCraftException(
+                    HttpStatus.NOT_FOUND,
+                    "MC-ACC-VOUCHER-NOT-FOUND",
+                    "Voucher Not Found",
+                    "Current voucher not found: " + currentVoucherId
+                );
+            }
+            VoucherCursorAnchor cur = curRows.getFirst();
+            anchorDate = cur.voucherDate();
+            anchorSeq = cur.masterSeqId();
+            anchorId = cur.id();
+            if (effectiveTypeId == null && effectiveCategory.isEmpty() && !"ALL".equals(normCategory)) {
+                effectiveCategory = cur.baseCategory();
+            }
+        }
+
+        UUID targetId = queryAdjacentTargetId(
+            companyId,
+            effectiveTypeId,
+            effectiveCategory,
+            anchorId,
+            anchorDate,
+            anchorSeq,
+            dir
+        );
+        if (targetId == null && anchorId == null && "PREV".equals(dir) && anchorDate != null) {
+            // Fallback when creating a voucher dated before existing entries: step to latest voucher in scope
+            targetId = queryAdjacentTargetId(
+                companyId,
+                effectiveTypeId,
+                effectiveCategory,
+                null,
+                null,
+                null,
+                "PREV"
+            );
+        }
+
+        if (targetId == null) {
+            boolean hasPrev = anchorId != null && queryAdjacentTargetId(
+                companyId, effectiveTypeId, effectiveCategory, anchorId, anchorDate, anchorSeq, "PREV"
+            ) != null;
+            boolean hasNext = anchorId != null && queryAdjacentTargetId(
+                companyId, effectiveTypeId, effectiveCategory, anchorId, anchorDate, anchorSeq, "NEXT"
+            ) != null;
+            return new VoucherDtos.AdjacentVoucherResponse(
+                false,
+                dir,
+                currentVoucherId,
+                null,
+                hasPrev,
+                hasNext,
+                null
+            );
+        }
+
+        VoucherDtos.VoucherDetailDto detail = getVoucher(principal, companyId, targetId);
+        boolean hasPrev = queryAdjacentTargetId(
+            companyId,
+            effectiveTypeId,
+            effectiveCategory,
+            detail.id(),
+            detail.voucherDate(),
+            detail.masterSeqId(),
+            "PREV"
+        ) != null;
+        boolean hasNext = queryAdjacentTargetId(
+            companyId,
+            effectiveTypeId,
+            effectiveCategory,
+            detail.id(),
+            detail.voucherDate(),
+            detail.masterSeqId(),
+            "NEXT"
+        ) != null;
+
+        return new VoucherDtos.AdjacentVoucherResponse(
+            true,
+            dir,
+            currentVoucherId,
+            detail.id(),
+            hasPrev,
+            hasNext,
+            detail
+        );
+    }
+
+    private UUID queryAdjacentTargetId(
+        UUID companyId,
+        UUID voucherTypeId,
+        String baseCategory,
+        UUID anchorId,
+        LocalDate anchorDate,
+        Long anchorSeq,
+        String direction
+    ) {
+        StringBuilder sql = new StringBuilder(
+            """
+            SELECT j.id
+              FROM mc_journal j
+              JOIN mc_voucher_type vt
+                ON vt.company_id = j.company_id AND vt.id = j.voucher_type_id
+             WHERE j.company_id = ?
+               AND j.status <> 'CANCELLED'
+            """
+        );
+        List<Object> params = new ArrayList<>();
+        params.add(companyId);
+
+        if (voucherTypeId != null) {
+            sql.append(" AND j.voucher_type_id = ?");
+            params.add(voucherTypeId);
+        } else if (baseCategory != null && !baseCategory.isEmpty()) {
+            sql.append(" AND vt.base_category = ?");
+            params.add(baseCategory);
+        }
+
+        if (anchorId != null && anchorDate != null && anchorSeq != null) {
+            if ("PREV".equals(direction)) {
+                sql.append(" AND (j.voucher_date, j.master_seq_id, j.id) < (?, ?, ?)");
+            } else {
+                sql.append(" AND (j.voucher_date, j.master_seq_id, j.id) > (?, ?, ?)");
+            }
+            params.add(anchorDate);
+            params.add(anchorSeq);
+            params.add(anchorId);
+        } else if (anchorDate != null) {
+            if ("PREV".equals(direction)) {
+                sql.append(" AND j.voucher_date <= ?");
+            } else {
+                sql.append(" AND j.voucher_date >= ?");
+            }
+            params.add(anchorDate);
+        }
+
+        if ("PREV".equals(direction)) {
+            sql.append(" ORDER BY j.voucher_date DESC, j.master_seq_id DESC, j.id DESC LIMIT 1");
+        } else {
+            sql.append(" ORDER BY j.voucher_date ASC, j.master_seq_id ASC, j.id ASC LIMIT 1");
+        }
+
+        List<UUID> ids = businessJdbcTemplate.query(
+            sql.toString(),
+            (rs, rowNum) -> rs.getObject("id", UUID.class),
+            params.toArray()
+        );
+        return ids.isEmpty() ? null : ids.getFirst();
+    }
+
+    public VoucherDtos.LastNarrationResponse getLastNarration(
+        MoneyCraftPrincipal principal,
+        UUID companyId,
+        UUID voucherTypeId,
+        String voucherCategory,
+        UUID ledgerId
+    ) {
+        rbacGuard.requireCompanyAccess(principal, companyId);
+        String normCat = voucherCategory == null ? "" : voucherCategory.trim().toUpperCase(Locale.ROOT);
+
+        StringBuilder sql = new StringBuilder(
+            """
+            SELECT j.id, j.narration, j.voucher_number, j.voucher_date, j.voucher_type_id, vt.name AS vt_name
+              FROM mc_journal j
+              JOIN mc_voucher_type vt
+                ON vt.company_id = j.company_id AND vt.id = j.voucher_type_id
+             WHERE j.company_id = ?
+               AND j.status <> 'CANCELLED'
+               AND length(trim(j.narration)) > 0
+            """
+        );
+        List<Object> params = new ArrayList<>();
+        params.add(companyId);
+
+        if (voucherTypeId != null) {
+            sql.append(" AND j.voucher_type_id = ?");
+            params.add(voucherTypeId);
+        } else if (!normCat.isEmpty() && !"ALL".equals(normCat)) {
+            sql.append(" AND vt.base_category = ?");
+            params.add(normCat);
+        }
+
+        if (ledgerId != null) {
+            sql.append(
+                """
+                 AND (
+                     j.party_ledger_id = ?
+                     OR EXISTS (
+                         SELECT 1
+                           FROM mc_journal_line jl
+                          WHERE jl.company_id = j.company_id
+                            AND jl.journal_id = j.id
+                            AND jl.ledger_id = ?
+                     )
+                 )
+                """
+            );
+            params.add(ledgerId);
+            params.add(ledgerId);
+        }
+
+        sql.append(" ORDER BY j.voucher_date DESC, j.master_seq_id DESC, j.id DESC LIMIT 1");
+
+        List<VoucherDtos.LastNarrationResponse> rows = businessJdbcTemplate.query(
+            sql.toString(),
+            (rs, rowNum) -> new VoucherDtos.LastNarrationResponse(
+                true,
+                rs.getString("narration"),
+                rs.getObject("id", UUID.class),
+                rs.getString("voucher_number"),
+                rs.getObject("voucher_date", LocalDate.class),
+                rs.getObject("voucher_type_id", UUID.class),
+                rs.getString("vt_name")
+            ),
+            params.toArray()
+        );
+        if (rows.isEmpty()) {
+            return new VoucherDtos.LastNarrationResponse(false, "", null, null, null, voucherTypeId, null);
+        }
+        return rows.getFirst();
+    }
+
+    private record VoucherCursorAnchor(
+        UUID id,
+        LocalDate voucherDate,
+        long masterSeqId,
+        UUID voucherTypeId,
+        String baseCategory
     ) {
     }
 }

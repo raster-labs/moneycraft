@@ -11,11 +11,16 @@ import {
   viewChildren,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal, RUPEE_SYMBOL } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { AmountCellComponent } from '../../shared/components/amount-cell/amount-cell.component';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import {
   TypeaheadOption,
   TypeaheadSelectComponent,
@@ -41,6 +46,7 @@ export interface EditableCostAllocationRow {
     IndianCurrencyPipe,
     AmountCellComponent,
     CodeBadgeComponent,
+    SemanticIconComponent,
     TypeaheadSelectComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -153,11 +159,26 @@ export interface EditableCostAllocationRow {
               <span class="mc-cost-hint"><mc-code-badge code="Ctrl+A" /> = Accept</span>
               <button
                 type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="cancelled.emit()"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Cancel</span>
+                @if (actionHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
+              <button
+                type="button"
                 class="mc-btn mc-btn-primary"
                 data-testid="cost-accept-btn"
                 (click)="commitAllocations()"
               >
-                Accept (<span class="mc-key-ctrl">A</span>)
+                <mc-icon name="save-document" [size]="16" />
+                <span>Save (<span class="mc-key-ctrl">A</span>)</span>
+                @if (actionHint('ledger.save', 'S/s'); as sHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ sHint }}]</span>
+                }
               </button>
             </div>
           </div>
@@ -284,6 +305,15 @@ export class CostAllocationPopoverComponent {
 
   private rowCounter = 1;
   private wasOpen = false;
+  private modalHandle: ActiveModalContextHandle | null = null;
+
+  actionHint(commandId: string, pairSpec: 'S/s' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'ledger.create',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
 
   readonly costCentreOptions = computed<readonly TypeaheadOption[]>(() =>
     this.coaStore.costCentres().map((cc) => ({
@@ -335,6 +365,7 @@ export class CostAllocationPopoverComponent {
     this.destroyRef.onDestroy(() => {
       disposeAccept();
       disposeEsc();
+      this.releaseModal();
     });
 
     effect(() => {
@@ -342,11 +373,49 @@ export class CostAllocationPopoverComponent {
       if (open && !this.wasOpen) {
         this.wasOpen = true;
         this.validationError.set(null);
+        this.releaseModal();
+        this.modalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'ledger.save',
+              label: 'Save',
+              letterPair: asciiPair('S/s'),
+              permissionRef: 'voucher.create',
+              effect: 'Commit cost centre allocations.',
+              normalActivation: () => this.commitAllocations(),
+              iconSemanticId: 'mc.icon.save-document',
+              stateTokenRole: 'action.primary',
+            },
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Cancel',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close cost allocation popover.',
+              normalActivation: () => this.cancelled.emit(),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
         void this.initializeModal();
       } else if (!open && this.wasOpen) {
         this.wasOpen = false;
+        this.releaseModal();
       }
     });
+  }
+
+  private releaseModal(): void {
+    if (this.modalHandle) {
+      this.modalHandle.close();
+      this.modalHandle = null;
+    }
   }
 
   private async initializeModal(): Promise<void> {
@@ -491,6 +560,16 @@ export class CostAllocationPopoverComponent {
     if (activeRows.length === 0) {
       this.validationError.set('Select at least one Cost Centre with a positive allocation amount.');
       return;
+    }
+
+    const seenCentres = new Set<string>();
+    for (const r of activeRows) {
+      const key = (r.costCentreId ?? r.costCentreName).trim().toLowerCase();
+      if (seenCentres.has(key)) {
+        this.validationError.set('Name of Cost Centre is duplicate in Cost Allocation.');
+        return;
+      }
+      seenCentres.add(key);
     }
 
     const sum = this.summary();

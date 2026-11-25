@@ -7,9 +7,11 @@ import com.raster.moneycraft.foundation.config.MoneyCraftProperties;
 import com.raster.moneycraft.foundation.security.MoneyCraftPrincipal;
 import com.raster.moneycraft.foundation.security.RbacAuthorizationService;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,8 +21,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * MoneyCraft Protected Authority administration, RBAC grants, service keys, MC-AUDIT-2 verification,
- * and fail-closed QUARANTINE recovery endpoints (/api/v1/admin).
+ * MoneyCraft Protected Authority administration, RBAC grants, service keys, Super Admin ceremonies,
+ * MC-AUDIT-2 verification, and fail-closed QUARANTINE recovery endpoints (/api/v1/admin).
  */
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -29,6 +31,7 @@ public class AdminController {
 
     private final MoneyCraftProperties moneyCraftProperties;
     private final AuthService moneyCraftAuthService;
+    private final SuperAdminService superAdminService;
     private final OidcPkceService enterpriseOidcService;
     private final AuditChainService mcAuditChainService;
     private final AuthorityGuard authorityGuard;
@@ -37,6 +40,7 @@ public class AdminController {
     public AdminController(
         MoneyCraftProperties moneyCraftProperties,
         AuthService moneyCraftAuthService,
+        SuperAdminService superAdminService,
         OidcPkceService enterpriseOidcService,
         AuditChainService mcAuditChainService,
         AuthorityGuard authorityGuard,
@@ -44,6 +48,7 @@ public class AdminController {
     ) {
         this.moneyCraftProperties = moneyCraftProperties;
         this.moneyCraftAuthService = moneyCraftAuthService;
+        this.superAdminService = superAdminService;
         this.enterpriseOidcService = enterpriseOidcService;
         this.mcAuditChainService = mcAuditChainService;
         this.authorityGuard = authorityGuard;
@@ -72,6 +77,26 @@ public class AdminController {
     ) {
         MoneyCraftPrincipal owner = rbacGuard.requireInstallationOwner();
         return moneyCraftAuthService.assignCompanyGrant(owner, principalRef, payload);
+    }
+
+    @PutMapping("/super-admin-designations/{principalId}")
+    public AuthDtos.SuperAdminDesignationDto designateInstallationSuperAdmin(
+        @PathVariable("principalId") UUID principalId,
+        @RequestBody(required = false) AuthDtos.SuperAdminDesignationRequest payload
+    ) {
+        MoneyCraftPrincipal owner = rbacGuard.requireInstallationOwner();
+        String reason = payload == null ? null : payload.reason();
+        return superAdminService.designateSuperAdmin(owner, principalId, reason);
+    }
+
+    @DeleteMapping("/super-admin-designations/{principalId}")
+    public AuthDtos.SuperAdminDesignationDto revokeInstallationSuperAdmin(
+        @PathVariable("principalId") UUID principalId,
+        @RequestBody(required = false) AuthDtos.SuperAdminDesignationRequest payload
+    ) {
+        MoneyCraftPrincipal owner = rbacGuard.requireInstallationOwner();
+        String reason = payload == null ? null : payload.reason();
+        return superAdminService.revokeSuperAdmin(owner, principalId, reason);
     }
 
     @PostMapping("/service-keys")

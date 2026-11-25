@@ -176,6 +176,21 @@ describe('Phase 6 — Financial Statements, SmartFind, Auto-BRS & Clean-Room .18
 
     expect(host.querySelector('[data-testid="bs-vertical-view"]')).toBeTruthy();
 
+    // Loop 5: Scale Factor (`LAKHS` -> 6,10,949.71 / 1,00,000 = 6.11) and Vertical View `Alt+R` / `Alt+U` line removal/restoration
+    fixture.componentInstance.setScaleFactor('LAKHS');
+    fixture.detectChanges();
+    expect(host.querySelector('[data-testid="bs-total-assets"]')?.textContent).toContain('6.11');
+    fixture.componentInstance.setScaleFactor('DEFAULT');
+    fixture.detectChanges();
+
+    fixture.componentInstance.selectedKey.set('L:grp-cap');
+    fixture.componentInstance.removeSelectedLine();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.visibleLiabilityLines().length).toBe(0);
+    fixture.componentInstance.restoreLastRemovedLine();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.visibleLiabilityLines().length).toBe(1);
+
     // Ctrl+P triggers PDF export
     const ctrlP = new KeyboardEvent('keydown', { key: 'p', code: 'KeyP', ctrlKey: true });
     shortcutRegistry.dispatchKeyboardEvent(ctrlP);
@@ -253,6 +268,13 @@ describe('Phase 6 — Financial Statements, SmartFind, Auto-BRS & Clean-Room .18
     expect(host.querySelector('[data-testid="pnl-closing-stock"]')?.textContent).toContain(
       '24,385.71',
     );
+
+    // Loop 5: Profit & Loss Scale Factor (`THOUSANDS` -> 1,25,000.00 / 1,000 = 125.00)
+    fixture.componentInstance.setScaleFactor('THOUSANDS');
+    fixture.detectChanges();
+    expect(host.querySelector('[data-testid="pnl-sales-total"]')?.textContent).toContain('125.00');
+    fixture.componentInstance.setScaleFactor('DEFAULT');
+    fixture.detectChanges();
   });
 
   it('TrialBalanceComponent renders balanced ₹ 7,60,448.00, supports F5 Group/Ledger toggle, and drills down & pops via NavigationStackStore restoring exact row focus', async () => {
@@ -957,7 +979,10 @@ describe('Phase 6 — Financial Statements, SmartFind, Auto-BRS & Clean-Room .18
     comp.snapshotPathInput = '/var/moneycraft/staging/100000';
     const stagePromise = comp.stageSnapshot();
     const stageReq = httpMock.expectOne(
-      (r) => r.method === 'POST' && r.url.endsWith('/api/v1/companies/c1/imports/tally-1800/stage'),
+      (r) =>
+        r.method === 'POST' &&
+        (r.url.endsWith('/api/v1/companies/c1/imports/legacy-1800/stage') ||
+          r.url.endsWith('/api/v1/companies/c1/imports/tally-1800/stage')),
     );
     expect(stageReq.request.body.snapshotDirectoryPath).toBe('/var/moneycraft/staging/100000');
     stageReq.flush({
@@ -1061,12 +1086,18 @@ describe('Phase 6 — Financial Statements, SmartFind, Auto-BRS & Clean-Room .18
     );
 
     comp.selectedFormat.set('XML');
+    comp.importMasterDuplicateRule = 'COMBINE_OPENING_BALANCES';
+    comp.importOverwriteVoucherByGuid = true;
+    comp.importExceptionBehavior = 'RECORD_EXCEPTIONS_AND_IMPORT';
     comp.importContent = '<ENVELOPE><HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER></ENVELOPE>';
     const impPromise = comp.runImport();
     const impReq = httpMock.expectOne(
       (r) => r.method === 'POST' && r.url.endsWith('/api/v1/companies/c1/imports/xml'),
     );
     expect(impReq.request.body.rawXml).toContain('<ENVELOPE>');
+    expect(impReq.request.body.masterDuplicateRule).toBe('COMBINE_OPENING_BALANCES');
+    expect(impReq.request.body.overwriteVoucherByGuid).toBe(true);
+    expect(impReq.request.body.exceptionBehavior).toBe('RECORD_EXCEPTIONS_AND_IMPORT');
     impReq.flush({
       status: 'COMMITTED',
       format: 'XML',
@@ -1074,6 +1105,17 @@ describe('Phase 6 — Financial Statements, SmartFind, Auto-BRS & Clean-Room .18
       ledgersImported: 2,
       stockItemsImported: 1,
       vouchersImported: 4,
+      exceptionsRecorded: 1,
+      exceptions: [
+        {
+          exceptionId: 'exc-loop3-01',
+          entityType: 'VOUCHER',
+          identifier: 'GLD-BAD-003',
+          errorCode: 'MC-EXG-UNBALANCED-VOUCHER',
+          message: 'Unbalanced voucher lines: DR 450.00 != CR 200.00',
+          resolved: false,
+        },
+      ],
       message: 'Imported Tally XML envelope with -Dr/+Cr sign parity.',
     });
     await impPromise;
@@ -1081,6 +1123,336 @@ describe('Phase 6 — Financial Statements, SmartFind, Auto-BRS & Clean-Room .18
     expect(host.querySelector('[data-testid="exchange-import-result"]')?.textContent).toContain(
       'Vouchers: 4',
     );
+    expect(comp.importExceptions().length).toBe(1);
+    expect(host.querySelector('[data-testid="exchange-exceptions-table"]')?.textContent).toContain(
+      'GLD-BAD-003',
+    );
+
+    // Loop 3: Resolve Import Exception via UI (`Created due to Data Exception Resolution`)
+    comp.resolveDebitLedgerName = 'Alpha Traders';
+    comp.resolveCreditLedgerName = 'Gold Sales A/c';
+    comp.resolveAmount = '450.00';
+    const resolvePromise = comp.resolveException('exc-loop3-01');
+    const resolveReq = httpMock.expectOne(
+      (r) =>
+        r.method === 'POST' &&
+        r.url.endsWith('/api/v1/companies/c1/exchange/exceptions/exc-loop3-01/resolve'),
+    );
+    expect(resolveReq.request.body.debitLedgerName).toBe('Alpha Traders');
+    expect(resolveReq.request.body.creditLedgerName).toBe('Gold Sales A/c');
+    expect(resolveReq.request.body.amount).toBe('450.00');
+    resolveReq.flush({
+      exceptionId: 'exc-loop3-01',
+      entityType: 'VOUCHER',
+      identifier: 'GLD-BAD-003',
+      errorCode: 'MC-EXG-UNBALANCED-VOUCHER',
+      message: 'Unbalanced voucher lines: DR 450.00 != CR 200.00',
+      resolved: true,
+      resolvedEntityId: 'vch-resolved-01',
+    });
+    await resolvePromise;
+    fixture.detectChanges();
+    expect(comp.importExceptions()[0].resolved).toBe(true);
+
+    // Loop 3: Sample Excel Files selector & download (`Alt+L`)
+    comp.selectedSampleExcelType = 'ACCOUNTING_MASTERS';
+    const samplePromise = comp.downloadSampleExcelFile(comp.selectedSampleExcelType);
+    const sampleReq = httpMock.expectOne(
+      (r) =>
+        r.method === 'GET' &&
+        r.url.endsWith('/api/v1/companies/c1/exchange/sample-excel?type=ACCOUNTING_MASTERS'),
+    );
+    sampleReq.flush(new Blob(['PK-sample-xlsx'], { type: 'application/octet-stream' }));
+    await samplePromise;
+    fixture.detectChanges();
+
+    // Loop 3: Mapping Template client-side column validation (`A..ZZ`, `from <= to`), creation (`ALL_COMPANIES`), and deletion
+    comp.newTemplateName = 'Sales Register Template';
+    comp.newTemplateFromColumn = '99';
+    comp.newTemplateToColumn = 'D';
+    await comp.saveNewTemplate();
+    expect(comp.errorBanner()).toContain('Enter a value from A to ZZ');
+
+    comp.newTemplateFromColumn = 'Z';
+    comp.newTemplateToColumn = 'A';
+    await comp.saveNewTemplate();
+    expect(comp.errorBanner()).toContain(
+      "the value in the 'to' field should be greater than or equal to the value in the 'from' field",
+    );
+
+    comp.newTemplateFromColumn = 'A';
+    comp.newTemplateToColumn = 'F';
+    comp.newTemplateCompanyScope = 'ALL_COMPANIES';
+    comp.newTemplateExcludeRowColumn = 'Day';
+    comp.newTemplateExcludeRowValue = 'Sunday';
+    const saveTplPromise = comp.saveNewTemplate();
+    const saveTplReq = httpMock.expectOne(
+      (r) => r.method === 'POST' && r.url.endsWith('/api/v1/companies/c1/exchange/templates'),
+    );
+    expect(saveTplReq.request.body.templateScope).toBe('ALL_COMPANIES');
+    expect(saveTplReq.request.body.fromColumn).toBe('A');
+    expect(saveTplReq.request.body.toColumn).toBe('F');
+    expect(saveTplReq.request.body.excludeRowColumn).toBe('Day');
+    saveTplReq.flush({
+      id: 'tpl-shared-01',
+      templateName: 'Sales Register Template',
+      entityScope: 'VOUCHERS',
+      sheetName: 'Sheet1',
+      headerRowIndex: 1,
+      templateScope: 'ALL_COMPANIES',
+      fromColumn: 'A',
+      toColumn: 'F',
+      excludeRowColumn: 'Day',
+      excludeRowOperator: 'CONTAINS',
+      excludeRowValue: 'Sunday',
+      columnMappings: { amount: 'Amount' },
+    });
+    await saveTplPromise;
+    fixture.detectChanges();
+    expect(comp.templates().length).toBe(1);
+    expect(comp.templates()[0].templateScope).toBe('ALL_COMPANIES');
+    expect(comp.templates()[0].fromColumn).toBe('A');
+    expect(comp.templates()[0].toColumn).toBe('F');
+
+    const delTplPromise = comp.deleteMappingTemplate('tpl-shared-01');
+    const delTplReq = httpMock.expectOne(
+      (r) =>
+        r.method === 'DELETE' &&
+        r.url.endsWith('/api/v1/companies/c1/exchange/templates/tpl-shared-01'),
+    );
+    delTplReq.flush(null);
+    await delTplPromise;
+    fixture.detectChanges();
+    expect(comp.templates().length).toBe(0);
+
+    // Loop 4: Client/Server Data Synchronization (`Alt+Z`) self-sync GUID guard, rule creation & execution
+    comp.newSyncRuleName = 'Self Sync Attempt';
+    comp.newSyncTargetCompanyGuid = 'c1';
+    await comp.createNewSyncRule();
+    expect(comp.errorBanner()).toContain(
+      'Client and Server companies have same GUID. Cannot proceed with synchronization.',
+    );
+
+    comp.newSyncRuleName = 'HO to Branch Sync';
+    comp.newSyncRuleType = 'FULL_SYNC';
+    comp.newSyncDirection = 'SEND_ONLY';
+    comp.newSyncTargetCompanyGuid = 'c2-branch-guid';
+    comp.newSyncTargetCompanyName = 'Branch Sync Target Co';
+    const createSyncPromise = comp.createNewSyncRule();
+    const createSyncReq = httpMock.expectOne(
+      (r) => r.method === 'POST' && r.url.endsWith('/api/v1/companies/c1/exchange/sync-rules'),
+    );
+    expect(createSyncReq.request.body.ruleName).toBe('HO to Branch Sync');
+    expect(createSyncReq.request.body.targetCompanyGuid).toBe('c2-branch-guid');
+    createSyncReq.flush({
+      id: 'sync-rule-1',
+      companyId: 'c1',
+      ruleName: 'HO to Branch Sync',
+      ruleType: 'FULL_SYNC',
+      direction: 'SEND_ONLY',
+      targetCompanyId: 'c2-branch-guid',
+      targetCompanyGuid: 'c2-branch-guid',
+      targetCompanyName: 'Branch Sync Target Co',
+      serverUrl: 'http://localhost:18080',
+      masterDuplicateRule: 'MODIFY_WITH_NEW_DATA',
+      overwriteVoucherByGuid: true,
+      lastSyncAlterId: 0,
+      active: true,
+    });
+    await createSyncPromise;
+    fixture.detectChanges();
+    expect(comp.syncRules().length).toBe(1);
+
+    const execSyncPromise = comp.runSyncRule('sync-rule-1');
+    const execSyncReq = httpMock.expectOne(
+      (r) =>
+        r.method === 'POST' &&
+        r.url.endsWith('/api/v1/companies/c1/exchange/sync-rules/sync-rule-1/execute'),
+    );
+    execSyncReq.flush({
+      sessionId: 'sync-sess-1',
+      ruleId: 'sync-rule-1',
+      ruleName: 'HO to Branch Sync',
+      sourceCompanyId: 'c1',
+      targetCompanyId: 'c2-branch-guid',
+      status: 'COMPLETED',
+      previousAlterIdWatermark: 0,
+      newAlterIdWatermark: 24,
+      mastersSynced: 5,
+      vouchersSynced: 4,
+      exceptionsRecorded: 0,
+      message: 'Synchronising Company "Dakshin Precision" for Rule "HO to Branch Sync" completed.',
+    });
+    await execSyncPromise;
+    fixture.detectChanges();
+    expect(comp.lastSyncSessionResult()?.newAlterIdWatermark).toBe(24);
+    expect(comp.syncRules()[0].lastSyncAlterId).toBe(24);
+
+    // Loop 4: TallyAudit & MCA Edit Log Activity Summary (`entityType`, `onlyAltered`, `username`)
+    comp.editLogEntityTypeFilter = 'STOCK_ITEM';
+    comp.editLogOnlyAltered = true;
+    comp.editLogUsernameFilter = 'owner';
+    const loadElPromise = comp.loadEditLogSummary();
+    const loadElReq = httpMock.expectOne(
+      (r) =>
+        r.method === 'GET' &&
+        r.url.endsWith(
+          '/api/v1/companies/c1/exchange/edit-log-summary?entityType=STOCK_ITEM&onlyAltered=true&username=owner',
+        ),
+    );
+    loadElReq.flush({
+      companyId: 'c1',
+      entityTypeFilter: 'STOCK_ITEM',
+      onlyAltered: true,
+      totalItems: 1,
+      alteredItems: 1,
+      items: [
+        {
+          entityType: 'STOCK_ITEM',
+          entityId: 'item-gold-1',
+          displayName: 'Gold Widget',
+          voucherNumber: null,
+          activityType: 'ALTERED',
+          alteredDueTo: 'MASTER_ALTERATION',
+          versionCount: 2,
+          latestAlterId: 18,
+          lastModifiedBy: 'owner',
+          lastModifiedAt: '2026-04-12T10:00:00Z',
+        },
+      ],
+    });
+    await loadElPromise;
+    fixture.detectChanges();
+    expect(comp.editLogSummary()?.items.length).toBe(1);
+    expect(
+      host.querySelector('[data-testid="exchange-edit-log-summary-table"]')?.textContent,
+    ).toContain('Gold Widget');
+
+    // Loop 5: Multi-Account Reports (`CONFIRMATION_OF_ACCOUNTS` & `REMINDER_LETTER`) with 4-slab ageing
+    comp.multiAccountReportType = 'REMINDER_LETTER';
+    comp.multiAccountExportFormat = 'HTML';
+    const maPromise = comp.runMultiAccountReportExport();
+    const maReq = httpMock.expectOne(
+      (r) => r.method === 'POST' && r.url.endsWith('/api/v1/companies/c1/exports/multi-account-report'),
+    );
+    expect(maReq.request.body.reportType).toBe('REMINDER_LETTER');
+    maReq.flush({
+      companyId: 'c1',
+      companyName: 'Dakshin Precision',
+      reportType: 'REMINDER_LETTER',
+      fromDate: '2025-04-01',
+      toDate: '2026-03-31',
+      format: 'HTML',
+      partyCount: 1,
+      statements: [
+        {
+          ledgerId: 'led-alpha',
+          partyName: 'Alpha Traders',
+          groupName: 'Sundry Debtors',
+          gstin: '33AABCU9603R1ZM',
+          openingBalance: '1400.00',
+          openingSide: 'DR',
+          periodDebit: '2150.00',
+          periodCredit: '0.00',
+          closingBalance: '3550.00',
+          closingSide: 'DR',
+          slab0To30: '1500.00',
+          slab31To60: '500.00',
+          slab61To90: '550.00',
+          slabOver90: '1000.00',
+        },
+      ],
+      renderedContent: '<html><body>Alpha Traders 1000.00</body></html>',
+    });
+    await maPromise;
+    fixture.detectChanges();
+    expect(comp.multiAccountReportResponse()?.partyCount).toBe(1);
+    expect(host.querySelector('[data-testid="exchange-multi-account-table"]')?.textContent).toContain(
+      'Alpha Traders',
+    );
+
+    // Loop 5: Interactive Dashboard Tiles Workbench (`Add Tile`, `Remove Tile`, `Expand Tile`, `Vertical View`)
+    const tilesPromise = comp.loadDashboardTiles();
+    const tilesReq = httpMock.expectOne(
+      (r) => r.method === 'POST' && r.url.endsWith('/api/v1/companies/c1/exports/dashboard-tiles'),
+    );
+    tilesReq.flush({
+      companyId: 'c1',
+      companyName: 'Dakshin Precision',
+      fromDate: '2025-04-01',
+      toDate: '2026-03-31',
+      format: 'HTML',
+      totalTiles: 2,
+      tiles: [
+        {
+          tileCode: 'TRIAL_BALANCE_SUMMARY',
+          tileTitle: 'Trial Balance Summary',
+          primaryMetricLabel: 'Total Debit',
+          primaryMetricValue: '3,38,580.00',
+          breakdown: { totalDebit: '338580.00', totalCredit: '338580.00', netVariance: '0.00' },
+        },
+        {
+          tileCode: 'RECEIVABLES_AND_PAYABLES',
+          tileTitle: 'Receivables & Payables',
+          primaryMetricLabel: 'Sundry Debtors Closing',
+          primaryMetricValue: '1,31,564.00',
+          breakdown: { sundryDebtors: '131564.00', side: 'DR' },
+        },
+      ],
+      renderedContent: '<html><body>Dashboard Tiles</body></html>',
+    });
+    await tilesPromise;
+    fixture.detectChanges();
+    expect(comp.visibleDashboardTiles().length).toBe(2);
+
+    comp.toggleExpandDashboardTile('TRIAL_BALANCE_SUMMARY');
+    fixture.detectChanges();
+    expect(
+      host.querySelector('[data-testid="expanded-tile-details-TRIAL_BALANCE_SUMMARY"]')?.textContent,
+    ).toContain('338580.00');
+
+    comp.toggleDashboardVerticalView();
+    expect(comp.dashboardVerticalView()).toBe(true);
+
+    comp.removeDashboardTile('TRIAL_BALANCE_SUMMARY');
+    fixture.detectChanges();
+    expect(comp.visibleDashboardTiles().length).toBe(1);
+    expect(comp.removedDashboardTiles().length).toBe(1);
+
+    comp.restoreAllDashboardTiles();
+    fixture.detectChanges();
+    expect(comp.visibleDashboardTiles().length).toBe(2);
+
+    // Loop 5: Company Data Verification (`Alt+Y` `runCompanyDataVerification`)
+    const verifyPromise = comp.runCompanyDataVerification();
+    const verifyReq = httpMock.expectOne(
+      (r) => r.method === 'GET' && r.url.endsWith('/api/v1/companies/c1/exchange/data-verification'),
+    );
+    verifyReq.flush({
+      companyId: 'c1',
+      companyName: 'Dakshin Precision',
+      trialBalanceDifference: '0.00',
+      unbalancedVoucherCount: 0,
+      unitMismatchCount: 0,
+      missingHsnOrGstinCount: 0,
+      pendingImportExceptionCount: 0,
+      readyForSplitOrSync: true,
+      checks: [
+        {
+          checkCode: 'DOUBLE_ENTRY_GL_PARITY',
+          checkTitle: 'General Ledger Double-Entry Balance (DR == CR)',
+          status: 'PASS',
+          issueCount: 0,
+          detail: 'Posted GL Dr/Cr variance: 0.00',
+        },
+      ],
+    });
+    await verifyPromise;
+    fixture.detectChanges();
+    expect(comp.dataVerificationReport()?.readyForSplitOrSync).toBe(true);
+    expect(
+      host.querySelector('[data-testid="exchange-data-verify-ready-badge"]')?.textContent,
+    ).toContain('READY FOR SPLIT / SYNC');
   });
 
   it('CashFlowAndRatiosComponent renders Operating/Investing/Financing Cash Flow and switches to Tally two-pane Ratio Analysis', async () => {

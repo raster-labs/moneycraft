@@ -1,0 +1,201 @@
+{
+  "schema": "MC-PHASE-MANIFEST-1",
+  "recordId": "E00",
+  "phase": "g0-bootstrap",
+  "header": {
+    "exactPath": "execution/phases/g0-bootstrap/files.json",
+    "action": "Create",
+    "selfHashExempt": true,
+    "postWriteDigestRecordedIn": [
+      "execution/records.json",
+      "execution/admission/repository.json",
+      "execution/ledger.md"
+    ],
+    "commissionRef": "MoneyCraft_v1.0.0_Full_Convergence_Commission_2026-11-16",
+    "controllingHandoffArchive": "/Users/pushparaj/projects/Money_Craft/argon_workspace/MoneyCraft_Development_Handoff_v1.0.0/MoneyCraft_Development_Handoff_v1.0.0.zip",
+    "controllingHandoffArchiveSha256": "c1a509739b9cf88757296a1db02a49be382e654a6b957eac790df3055d45acf5",
+    "sourceDesignDoc": "17_PHASE_MANIFEST_G1_MIGRATION_AND_VERIFICATION.md",
+    "sourceDesignDocSha256": "1bd69f22783573e74ad344ce552d4bebbaf6e4fc7a0c6cee085bbb260a87db86",
+    "workOrderDoc": "41_FIRST_DEVELOPMENT_WORK_ORDER.md",
+    "workOrderDocSha256": "c46b4aa227ebe8a6d33c1673ccfe7112afe35c73e0a79b529a8d5503d8f20b5c",
+    "canonicalRepositoryRoot": "/Users/pushparaj/projects/Money_Craft/moneycraft-target",
+    "repositoryBranch": "main",
+    "immutableBaseCommit": "52f103dc2d76c45d86ba525a8f38441e74876a6c"
+  },
+  "rows": [
+    {
+      "rowId": "E00",
+      "exactPath": "execution/phases/g0-bootstrap/files.json",
+      "action": "Create",
+      "purpose": "Materialised G0-BOOT-050 first-write confinement manifest bound to actual repository root and Git base commit 52f103dc2d76c45d86ba525a8f38441e74876a6c.",
+      "requirementIds": [
+        "GEN-006",
+        "OPS-013",
+        "QUAL-002"
+      ],
+      "acceptanceCaseIds": [
+        "AT-GEN-006",
+        "AT-OPS-013",
+        "AT-QUAL-002"
+      ],
+      "designRecordRefs": [
+        "EXEC-PLAN-070",
+        "G0-BOOT-050"
+      ],
+      "dependsOn": [],
+      "verificationRefs": [
+        "V-MANIFEST",
+        "V-G0"
+      ],
+      "beforeSha256": "NOT_APPLICABLE_AFTER_PROVEN_ABSENCE",
+      "expectedResult": "Stage-bound G0 bootstrap manifest enumerating E00, E01, E02, E03, E35, and B02 without circular self-hash."
+    },
+    {
+      "rowId": "E01",
+      "exactPath": "execution/context.json",
+      "action": "Create",
+      "purpose": "Execution commission, documentary baseline SHA-256, canonical repository root, immutable base commit, and read-only evidence root bindings.",
+      "requirementIds": [
+        "GEN-006",
+        "OPS-013"
+      ],
+      "acceptanceCaseIds": [
+        "AT-GEN-006",
+        "AT-OPS-013"
+      ],
+      "designRecordRefs": [
+        "EXEC-PLAN-070",
+        "G0-BOOT-050"
+      ],
+      "dependsOn": [
+        "E00"
+      ],
+      "verificationRefs": [
+        "V-MANIFEST"
+      ],
+      "beforeSha256": "NOT_APPLICABLE_AFTER_PROVEN_ABSENCE",
+      "expectedResult": "Truthful execution context record with explicit pending holds for DR-001, DR-002, NC-090-01, and NC-090-02."
+    },
+    {
+      "rowId": "E02",
+      "exactPath": "execution/records.json",
+      "action": "Create",
+      "purpose": "Authoritative index of execution record identities, revisions, status, timestamps, SHA-256 digests, and dependencies.",
+      "requirementIds": [
+        "QUAL-002",
+        "OPS-013"
+      ],
+      "acceptanceCaseIds": [
+        "AT-QUAL-002",
+        "AT-OPS-013"
+      ],
+      "designRecordRefs": [
+        "EXEC-PLAN-070",
+        "G0-BOOT-050"
+      ],
+      "dependsOn": [
+        "E01"
+      ],
+      "verificationRefs": [
+        "V-MANIFEST"
+      ],
+      "beforeSha256": "NOT_APPLICABLE_AFTER_PROVEN_ABSENCE",
+      "expectedResult": "Complete non-circular record index capturing exact post-write digests of E00, E01, B02, and pre-existing G0-G4 evidence artifacts."
+    },
+    {
+      "rowId": "E03",
+      "exactPath": "execution/ledger.md",
+      "action": "Create",
+      "purpose": "Chronological continuation ledger recording manual preflight observations, checker qualification, digests, holds, and bounded next steps.",
+      "requirementIds": [
+        "OPS-013",
+        "QUAL-002"
+      ],
+      "acceptanceCaseIds": [
+        "AT-OPS-013",
+        "AT-QUAL-002"
+      ],
+      "designRecordRefs": [
+        "EXEC-PLAN-070",
+        "G0-BOOT-050"
+      ],
+      "dependsOn": [
+        "E01",
+        "E02",
+        "E35"
+      ],
+      "verificationRefs": [
+        "V-MANIFEST"
+      ],
+      "beforeSha256": "NOT_APPLICABLE_AFTER_PROVEN_ABSENCE",
+      "expectedResult": "Append-only chronological bootstrap & convergence ledger recording E35 and B02 post-write SHA-256 digests."
+    },
+    {
+      "rowId": "E35",
+      "exactPath": "execution/admission/repository.json",
+      "action": "Create",
+      "purpose": "Repository root, Git base revision, module-graph inventory, symlink check, and explicit Create/Modify admission record.",
+      "requirementIds": [
+        "GEN-006",
+        "DEP-001",
+        "DEP-005",
+        "OPS-011",
+        "QUAL-002"
+      ],
+      "acceptanceCaseIds": [
+        "AT-GEN-006",
+        "AT-DEP-001",
+        "AT-DEP-005",
+        "AT-OPS-011",
+        "AT-QUAL-002"
+      ],
+      "designRecordRefs": [
+        "EXEC-PLAN-070",
+        "G0-BOOT-050"
+      ],
+      "dependsOn": [
+        "E00",
+        "E01",
+        "E02"
+      ],
+      "verificationRefs": [
+        "V-MANIFEST",
+        "V-LOCK"
+      ],
+      "beforeSha256": "NOT_APPLICABLE_AFTER_PROVEN_ABSENCE",
+      "expectedResult": "Repository admission record bound to /Users/pushparaj/projects/Money_Craft/moneycraft-target @ 52f103dc2d76c45d86ba525a8f38441e74876a6c without self-hash."
+    },
+    {
+      "rowId": "B02",
+      "exactPath": "tools/verify_manifest.py",
+      "action": "Modify",
+      "purpose": "Standard-library-only confinement, phase-manifest (--self-test / --phase / --mode), and zero-stub/zero-H2/zero-float hygiene verifier.",
+      "requirementIds": [
+        "GEN-006",
+        "QUAL-001",
+        "QUAL-002",
+        "QUAL-005"
+      ],
+      "acceptanceCaseIds": [
+        "AT-GEN-006",
+        "AT-QUAL-001",
+        "AT-QUAL-002",
+        "AT-QUAL-005"
+      ],
+      "designRecordRefs": [
+        "EXEC-PLAN-070",
+        "G0-BOOT-050"
+      ],
+      "dependsOn": [
+        "E00",
+        "E01",
+        "E35"
+      ],
+      "verificationRefs": [
+        "V-MANIFEST"
+      ],
+      "beforeSha256": "114392ba180843ace675a4ddd47bde13c3bb9ed37565b6673b45f930d8ef276d",
+      "expectedResult": "Preserves default build.py hygiene scan while passing --self-test (7 cases) and --phase g0-bootstrap --mode after."
+    }
+  ]
+}

@@ -1,17 +1,25 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
+  computed,
   effect,
   inject,
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../../core/keyboard/shortcut-command.registry';
 import { IndianCurrencyPipe } from '../../../core/money/indian-currency.pipe';
 import { CompanyContextStore } from '../../../state/company-context.store';
 import { NavigationStackStore } from '../../../state/navigation-stack.store';
 import { SmartFindResultItem, SmartFindStore } from '../../../state/smart-find.store';
 import { CodeBadgeComponent } from '../code-badge/code-badge.component';
+import { SemanticIconComponent } from '../semantic-icon/semantic-icon.component';
 
 export interface HighlightSegment {
   readonly text: string;
@@ -46,7 +54,7 @@ export function splitHighlightSegments(
 @Component({
   selector: 'mc-smart-find-modal',
   standalone: true,
-  imports: [CodeBadgeComponent, IndianCurrencyPipe],
+  imports: [CodeBadgeComponent, IndianCurrencyPipe, SemanticIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (smartFind.isOpen()) {
@@ -83,16 +91,19 @@ export function splitHighlightSegments(
           </div>
 
           <div class="mc-smartfind-input-bar">
-            <input
-              #queryInput
-              type="text"
-              class="mc-input"
-              data-testid="smartfind-query-input"
-              [value]="smartFind.query()"
-              (input)="onInput($event)"
-              placeholder="Find Ledger, Voucher No, GSTIN, Narration, Bill Ref, Part No or Amount..."
-              aria-label="SmartFind query"
-            />
+            <div class="mc-smartfind-search-wrap">
+              <mc-icon name="search" [size]="16" />
+              <input
+                #queryInput
+                type="text"
+                class="mc-input"
+                data-testid="smartfind-query-input"
+                [value]="smartFind.query()"
+                (input)="onInput($event)"
+                placeholder="Find Ledger, Voucher No, GSTIN, Narration, Bill Ref, Part No or Amount..."
+                aria-label="SmartFind query"
+              />
+            </div>
             @if (smartFind.query().trim().length > 0 && !smartFind.loading()) {
               <div class="mc-smartfind-stats">
                 <span>{{ smartFind.totalMatches() }} match(es)</span>
@@ -154,7 +165,7 @@ export function splitHighlightSegments(
                 } @else if (smartFind.loading()) {
                   Searching books...
                 } @else {
-                  No matching masters or transactions found for "{{ smartFind.query() }}".
+                  No matching records
                 }
               </div>
             }
@@ -164,7 +175,17 @@ export function splitHighlightSegments(
             <span class="mc-smartfind-hint">
               Enter = Open &bull; Alt+S = Toggle Company Scope &bull; Press Ctrl+F again for Browser Find
             </span>
-            <button type="button" class="mc-btn" (click)="smartFind.close()">Close (Esc)</button>
+            <button
+              type="button"
+              class="mc-btn mc-btn-secondary"
+              (click)="smartFind.close()"
+            >
+              <mc-icon name="close" [size]="16" />
+              <span>Close</span>
+              @if (closeHint(); as hint) {
+                <span class="mc-action-key-badge" aria-hidden="true">[{{ hint }}]</span>
+              }
+            </button>
           </div>
         </div>
       </div>
@@ -193,6 +214,13 @@ export function splitHighlightSegments(
       display: flex;
       flex-direction: column;
       gap: 6px;
+    }
+
+    .mc-smartfind-search-wrap {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: var(--mc-space-2);
     }
 
     .mc-smartfind-stats {
@@ -233,7 +261,7 @@ export function splitHighlightSegments(
 
     .mc-smartfind-row-active {
       background: var(--mc-color-row-selected);
-      border-left: 3px solid var(--mc-color-verdigris-teal);
+      border-left: 3px solid var(--mc-color-pressed-teal);
     }
 
     .mc-smartfind-title-line {
@@ -268,7 +296,7 @@ export function splitHighlightSegments(
     .mc-smartfind-empty {
       padding: var(--mc-space-5);
       text-align: center;
-      color: var(--mc-color-slate-600);
+      color: var(--mc-color-slate-700);
       font-weight: 500;
     }
 
@@ -281,15 +309,40 @@ export function splitHighlightSegments(
 })
 export class SmartFindModalComponent {
   readonly smartFind = inject(SmartFindStore);
+  private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
   private readonly navStack = inject(NavigationStackStore);
   private readonly companyContext = inject(CompanyContextStore);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly queryInputRef = viewChild<ElementRef<HTMLInputElement>>('queryInput');
+  private modalHandle: ActiveModalContextHandle | null = null;
+
+  readonly closeHint = computed(() =>
+    this.shortcutRegistry.effectiveActionHint('message.details', 'editor.close', asciiPair('C/c')),
+  );
 
   constructor() {
     effect(() => {
       if (this.smartFind.isOpen()) {
+        this.releaseModal();
+        this.modalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'message.details',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Close',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close SmartFind modal.',
+              normalActivation: () => this.smartFind.close(),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
         queueMicrotask(() => {
           const el = this.queryInputRef()?.nativeElement;
           if (el) {
@@ -297,7 +350,13 @@ export class SmartFindModalComponent {
             el.select();
           }
         });
+      } else {
+        this.releaseModal();
       }
+    });
+
+    this.destroyRef.onDestroy(() => {
+      this.releaseModal();
     });
   }
 
@@ -375,6 +434,13 @@ export class SmartFindModalComponent {
   onBackdropClick(event: MouseEvent): void {
     if (event.target === event.currentTarget) {
       this.smartFind.close();
+    }
+  }
+
+  private releaseModal(): void {
+    if (this.modalHandle) {
+      this.modalHandle.close();
+      this.modalHandle = null;
     }
   }
 }

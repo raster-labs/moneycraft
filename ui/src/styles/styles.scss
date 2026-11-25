@@ -1,5 +1,6 @@
 @use 'brand-tokens';
 @use 'typography';
+@use 'dark-and-scale';
 
 *,
 *::before,
@@ -16,12 +17,12 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--mc-color-verdigris-teal);
-  outline-offset: 1px;
-  box-shadow: var(--mc-focus-ring);
+  outline: 2px solid #142F42;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #FFFFFF;
 }
 
-/* Reusable Dense ERP Controls & Containers */
+/* Reusable Dense ERP Controls & Containers (VIS-001 / UI-VIS-100 WCAG AA Contract) */
 .mc-card {
   background: var(--mc-color-surface);
   border: var(--mc-border-subtle);
@@ -29,7 +30,8 @@ body {
   box-shadow: var(--mc-shadow-card);
 }
 
-.mc-btn {
+.mc-btn,
+.mc-btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -37,44 +39,163 @@ body {
   min-height: 30px;
   padding: 0.25rem 0.75rem;
   border-radius: var(--mc-radius-sm);
-  border: var(--mc-border-strong);
+  border: 1px solid var(--mc-color-deep-ledger-slate);
   background: var(--mc-color-surface);
-  color: var(--mc-color-slate-900);
+  color: var(--mc-color-deep-ledger-slate);
   font-weight: 600;
+  opacity: 1;
   cursor: pointer;
-  transition: background-color 100ms ease, border-color 100ms ease;
+  transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
 
   &:hover:not(:disabled) {
-    background: var(--mc-color-teal-50);
-    border-color: var(--mc-color-verdigris-teal);
+    background: var(--mc-color-cool-alabaster);
+    color: var(--mc-color-deep-ledger-slate);
+    border-color: var(--mc-color-deep-ledger-slate);
+  }
+
+  &:active:not(:disabled) {
+    background: var(--mc-color-cool-alabaster);
+    color: var(--mc-color-deep-ledger-slate);
+    border-color: var(--mc-color-deep-ledger-slate);
+    box-shadow: inset 0 0 0 2px #142F42;
+  }
+
+  &:focus-visible:active:not(:disabled) {
+    box-shadow: 0 0 0 2px #FFFFFF, inset 0 0 0 2px #142F42;
   }
 
   &:disabled {
-    opacity: 0.55;
+    background: var(--mc-color-cool-alabaster);
+    color: var(--mc-color-deep-ledger-slate);
+    border: 1px dashed #142F42;
+    opacity: 1;
+    box-shadow: none;
     cursor: not-allowed;
   }
 }
 
 .mc-btn-primary {
-  background: var(--mc-color-verdigris-teal);
-  border-color: var(--mc-color-verdigris-teal);
-  color: var(--mc-color-surface);
+  background: var(--mc-color-pressed-teal);
+  border-color: var(--mc-color-pressed-teal);
+  color: #FFFFFF;
 
   &:hover:not(:disabled) {
-    background: var(--mc-color-pressed-teal);
-    border-color: var(--mc-color-pressed-teal);
+    background: var(--mc-color-deep-ledger-slate);
+    border-color: var(--mc-color-deep-ledger-slate);
+    color: #FFFFFF;
+  }
+
+  &:active:not(:disabled) {
+    background: var(--mc-color-deep-ledger-slate);
+    border-color: var(--mc-color-deep-ledger-slate);
+    color: #FFFFFF;
+    box-shadow: inset 0 0 0 2px #FFFFFF;
+  }
+
+  &:focus-visible:active:not(:disabled) {
+    box-shadow: 0 0 0 2px #FFFFFF, inset 0 0 0 2px #FFFFFF;
+  }
+
+  &:disabled {
+    background: var(--mc-color-cool-alabaster);
+    color: var(--mc-color-deep-ledger-slate);
+    border: 1px dashed #142F42;
+    opacity: 1;
+    box-shadow: none;
   }
 }
 
 .mc-btn-danger {
   background: var(--mc-color-danger-600);
   border-color: var(--mc-color-danger-600);
-  color: var(--mc-color-surface);
+  color: #FFFFFF;
 
   &:hover:not(:disabled) {
-    background: var(--mc-color-danger-700);
-    border-color: var(--mc-color-danger-700);
+    background: var(--mc-color-deep-ledger-slate);
+    border-color: var(--mc-color-deep-ledger-slate);
+    color: #FFFFFF;
   }
+
+  &:active:not(:disabled) {
+    background: var(--mc-color-deep-ledger-slate);
+    border-color: var(--mc-color-deep-ledger-slate);
+    color: #FFFFFF;
+    box-shadow: inset 0 0 0 2px #FFFFFF;
+  }
+
+  &:focus-visible:active:not(:disabled) {
+    box-shadow: 0 0 0 2px #FFFFFF, inset 0 0 0 2px #FFFFFF;
+  }
+
+  &:disabled {
+    background: var(--mc-color-cool-alabaster);
+    color: var(--mc-color-deep-ledger-slate);
+    border: 1px dashed #142F42;
+    opacity: 1;
+    box-shadow: none;
+  }
+}
+
+.mc-action-key-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  font-family: var(--mc-font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* UI-VIS-100 Semantic Status Banners */
+.mc-status-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--mc-space-2);
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--mc-radius-sm);
+  font-size: var(--mc-font-size-sm);
+  font-weight: 600;
+}
+
+.mc-status-confirmed {
+  background: var(--mc-color-pressed-teal);
+  color: #FFFFFF;
+  border: 1px solid var(--mc-color-pressed-teal);
+}
+
+.mc-status-error {
+  background: var(--mc-color-danger-600);
+  color: #FFFFFF;
+  border: 1px solid var(--mc-color-danger-600);
+}
+
+.mc-status-warning {
+  background: #FFFFFF;
+  color: var(--mc-color-warning-700);
+  border: 1px solid var(--mc-color-warning-700);
+}
+
+.mc-status-unknown {
+  background: var(--mc-color-deep-ledger-slate);
+  color: var(--mc-color-cool-alabaster);
+  border: 1px solid var(--mc-color-deep-ledger-slate);
+}
+
+.mc-status-pending {
+  background: var(--mc-color-cool-alabaster);
+  color: var(--mc-color-deep-ledger-slate);
+  border: 1px solid var(--mc-color-deep-ledger-slate);
+}
+
+.mc-empty-records {
+  padding: var(--mc-space-4);
+  text-align: center;
+  color: var(--mc-color-deep-ledger-slate);
+  background: var(--mc-color-surface);
+  font-weight: 500;
 }
 
 .mc-input,
@@ -153,8 +274,10 @@ body {
   }
 
   tbody tr.mc-row-selected {
-    background: var(--mc-color-row-selected);
-    font-weight: 500;
+    background: var(--mc-color-mint-signal);
+    color: var(--mc-color-deep-ledger-slate);
+    box-shadow: inset 3px 0 0 var(--mc-color-deep-ledger-slate);
+    font-weight: 600;
   }
 }
 
@@ -247,6 +370,49 @@ body {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+@media (forced-colors: active) {
+  *,
+  *::before,
+  *::after {
+    forced-color-adjust: auto;
+  }
+
+  body,
+  .mc-card,
+  .mc-modal-dialog {
+    background: Canvas;
+    color: CanvasText;
+    border-color: CanvasText;
+  }
+
+  .mc-btn,
+  .mc-btn-primary,
+  .mc-btn-secondary,
+  .mc-btn-danger {
+    background: ButtonFace;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+    box-shadow: none;
+
+    &:disabled {
+      color: GrayText;
+      border: 1px dashed GrayText;
+      opacity: 1;
+    }
+  }
+
+  :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+
+  svg {
+    color: currentColor;
+    stroke: currentColor;
+  }
 }
 
 @media print {

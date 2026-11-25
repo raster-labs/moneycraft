@@ -1,0 +1,170 @@
+{
+  "schema": "MC-EXECUTION-RECORDS-1",
+  "recordId": "E02",
+  "version": 2,
+  "recordedAt": "2026-11-16T12:06:00Z",
+  "canonicalRepositoryRoot": "/Users/pushparaj/projects/Money_Craft/moneycraft-target",
+  "immutableBaseCommit": "52f103dc2d76c45d86ba525a8f38441e74876a6c",
+  "records": [
+    {
+      "recordId": "E00",
+      "exactPath": "execution/phases/g0-bootstrap/files.json",
+      "revision": 1,
+      "status": "MATERIALISED",
+      "author": "docs-specs",
+      "recordedAt": "2026-11-16T08:00:00Z",
+      "sha256": "f3a1f0970a6777c620a9b31ec0d0e00758719ed7403eab19306bc5ad8474fc62",
+      "dependsOn": [],
+      "supersedes": null
+    },
+    {
+      "recordId": "E01",
+      "exactPath": "execution/context.json",
+      "revision": 2,
+      "status": "MATERIALISED",
+      "author": "docs-specs",
+      "recordedAt": "2026-11-16T12:05:00Z",
+      "sha256": "952ed7ca4058d24a1646e1d2aa1c6d0e4b1d50aed17c4aecfd9849b530660c57",
+      "dependsOn": [
+        "E00"
+      ],
+      "supersedes": "9d5b9c1303861bd9f06b9269cfce9e42f1e6ab4ef41118ebbfa07b6938270b76"
+    },
+    {
+      "recordId": "E02",
+      "exactPath": "execution/records.json",
+      "revision": 2,
+      "status": "MATERIALISED",
+      "author": "docs-specs",
+      "recordedAt": "2026-11-16T12:06:00Z",
+      "selfHashExempt": true,
+      "sha256": null,
+      "postWriteDigestRecordedIn": [
+        "execution/admission/repository.json",
+        "execution/ledger.md"
+      ],
+      "dependsOn": [
+        "E01"
+      ],
+      "supersedes": "fd7a7298ea78225ce3e5e73c84ede34c236b334a30f013bbbab975c16f649496"
+    },
+    {
+      "recordId": "E03",
+      "exactPath": "execution/ledger.md",
+      "revision": 2,
+      "status": "MATERIALISED",
+      "author": "docs-specs",
+      "recordedAt": "2026-11-16T12:07:00Z",
+      "selfHashExempt": true,
+      "sha256": null,
+      "postWriteDigestRecordedIn": [
+        "git-object-store"
+      ],
+      "dependsOn": [
+        "E01",
+        "E02",
+        "E35"
+      ],
+      "supersedes": null
+    },
+    {
+      "recordId": "E35",
+      "exactPath": "execution/admission/repository.json",
+      "revision": 2,
+      "status": "ADMITTED",
+      "author": "docs-specs",
+      "recordedAt": "2026-11-16T12:06:30Z",
+      "selfHashExempt": true,
+      "sha256": null,
+      "postWriteDigestRecordedIn": [
+        "execution/ledger.md"
+      ],
+      "dependsOn": [
+        "E00",
+        "E01",
+        "E02"
+      ],
+      "supersedes": "663b025549dbc1db31430ef5c08eda26e79bc2eec1a1859ce4cd75e79f36295d"
+    },
+    {
+      "recordId": "B02",
+      "exactPath": "tools/verify_manifest.py",
+      "revision": 2,
+      "status": "QUALIFIED",
+      "author": "docs-specs",
+      "recordedAt": "2026-11-16T08:00:00Z",
+      "beforeSha256": "114392ba180843ace675a4ddd47bde13c3bb9ed37565b6673b45f930d8ef276d",
+      "sha256": "2a1ff0b937f3da3b8475518d423543efe82ad189a13a474837da0cb94ebfa7b9",
+      "dependsOn": [
+        "E00",
+        "E01",
+        "E35"
+      ],
+      "supersedes": "114392ba180843ace675a4ddd47bde13c3bb9ed37565b6673b45f930d8ef276d"
+    },
+    {
+      "recordId": "HIST-G0",
+      "exactPath": "execution/G0_BOOTSTRAP_EVIDENCE.md",
+      "revision": 1,
+      "status": "VERIFIED_BASELINE",
+      "author": "local-engineering-track",
+      "recordedAt": "2026-11-14T15:25:08Z",
+      "sha256": "e41f0c1277c694bdb57b9ab22e4fba5f08e5e0cac31aa80458ec97e6782da61c",
+      "dependsOn": [],
+      "supersedes": null
+    },
+    {
+      "recordId": "HIST-G1",
+      "exactPath": "execution/G1_BINARY_FORMAT_SPEC.md",
+      "revision": 1,
+      "status": "VERIFIED_BASELINE",
+      "author": "local-engineering-track",
+      "recordedAt": "2026-11-14T15:56:00Z",
+      "sha256": "0b7c44656a847d17d190187d8c9f8f9f72b9eb585fdf7a6aee4889570b6f29f1",
+      "dependsOn": [
+        "HIST-G0"
+      ],
+      "supersedes": null
+    },
+    {
+      "recordId": "HIST-G2",
+      "exactPath": "execution/G2_FOUNDATION_ACCOUNTING_EVIDENCE.md",
+      "revision": 1,
+      "status": "VERIFIED_BASELINE",
+      "author": "local-engineering-track",
+      "recordedAt": "2026-11-14T22:53:00Z",
+      "sha256": "d9a4edeaa94f5dd6733acbba59a351e5fdab8168eeacef6765527ddada43c438",
+      "dependsOn": [
+        "HIST-G0",
+        "HIST-G1"
+      ],
+      "supersedes": null
+    },
+    {
+      "recordId": "HIST-G3",
+      "exactPath": "execution/G3_ERP_STATUTORY_PARITY_EVIDENCE.md",
+      "revision": 1,
+      "status": "VERIFIED_BASELINE",
+      "author": "local-engineering-track",
+      "recordedAt": "2026-11-14T22:54:00Z",
+      "sha256": "7169d4435fe6ea3fdeea55b8779423e4419655e25927817b15eaebddd153f3ce",
+      "dependsOn": [
+        "HIST-G2"
+      ],
+      "supersedes": null
+    },
+    {
+      "recordId": "HIST-G4",
+      "exactPath": "execution/G4_DUAL_WAR_RELEASE_MANIFEST.json",
+      "revision": 1,
+      "status": "VERIFIED_BASELINE",
+      "author": "local-engineering-track",
+      "recordedAt": "2026-11-14T22:54:30Z",
+      "sha256": "bed0cd4f6d690f41226e12b3a49acf580f5f7e1698c203bf22e9dc80868d5a96",
+      "dependsOn": [
+        "HIST-G3"
+      ],
+      "supersedes": null
+    }
+  ]
+}

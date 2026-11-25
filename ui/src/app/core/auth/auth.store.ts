@@ -2,6 +2,8 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { RuntimeConfigService } from '../http/runtime-config.service';
+import { ShortcutCommandRegistry } from '../keyboard/shortcut-command.registry';
+import { UiPreferencesService } from '../preferences/ui-preferences.service';
 
 export type SystemRole = 'INSTALLATION_OWNER' | 'SECURITY_AUDITOR' | 'SYSTEM_OPERATOR';
 
@@ -29,6 +31,7 @@ export interface AuthenticatedPrincipal {
   readonly systemRoles: readonly SystemRole[];
   readonly companyGrants: readonly CompanyGrantSummary[];
   readonly passkeyEnrolled: boolean;
+  readonly superAdmin?: boolean;
   readonly csrfToken?: string;
 }
 
@@ -38,18 +41,24 @@ export interface LoginCredentials {
 }
 
 export interface OidcIssuerInfo {
+  readonly id?: string;
   readonly issuerId: string;
   readonly registrationId?: string;
   readonly displayName: string;
   readonly issuerUri?: string;
   readonly clientId?: string;
   readonly pkceRequired?: boolean;
+  readonly enabled?: boolean;
+  readonly lifecycleProfile?: string | null;
+  readonly checkedAt?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
 export class AuthStore {
   private readonly http = inject(HttpClient);
   private readonly runtimeConfig = inject(RuntimeConfigService);
+  private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
+  private readonly uiPreferences = inject(UiPreferencesService);
 
   private readonly principalSignal = signal<AuthenticatedPrincipal | null>(null);
   private readonly sessionCheckedSignal = signal<boolean>(false);
@@ -69,6 +78,16 @@ export class AuthStore {
   readonly isInstallationOwner = computed(() =>
     this.systemRoles().includes('INSTALLATION_OWNER'),
   );
+  readonly isSuperAdmin = computed(() => {
+    const p = this.principalSignal();
+    if (!p) {
+      return false;
+    }
+    if (p.superAdmin === true) {
+      return true;
+    }
+    return (p.systemRoles as readonly string[]).includes('SUPER_ADMIN');
+  });
   readonly canAccessAdminConsole = computed(() => {
     const roles = this.systemRoles();
     return (
@@ -82,6 +101,12 @@ export class AuthStore {
     this.principalSignal.set(principal);
     this.sessionCheckedSignal.set(true);
     this.errorSignal.set(null);
+    this.shortcutRegistry.syncAuthenticatedPrincipal(principal?.principalId ?? null);
+    if (principal?.principalId) {
+      void this.uiPreferences.onAuthenticatedSessionResolved(principal.principalId);
+    } else {
+      this.uiPreferences.handleLogoutOrSessionExpiry();
+    }
   }
 
   hasSystemRole(role: SystemRole): boolean {
@@ -113,10 +138,14 @@ export class AuthStore {
       this.principalSignal.set(me);
       this.sessionCheckedSignal.set(true);
       this.errorSignal.set(null);
+      this.shortcutRegistry.syncAuthenticatedPrincipal(me?.principalId ?? null);
+      void this.uiPreferences.onAuthenticatedSessionResolved(me?.principalId ?? null);
       return me;
     } catch {
       this.principalSignal.set(null);
       this.sessionCheckedSignal.set(true);
+      this.shortcutRegistry.syncAuthenticatedPrincipal(null);
+      this.uiPreferences.handleLogoutOrSessionExpiry();
       return null;
     } finally {
       this.loadingSignal.set(false);
@@ -136,6 +165,8 @@ export class AuthStore {
       );
       this.principalSignal.set(principal);
       this.sessionCheckedSignal.set(true);
+      this.shortcutRegistry.syncAuthenticatedPrincipal(principal.principalId);
+      void this.uiPreferences.onAuthenticatedSessionResolved(principal.principalId);
       return principal;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sign-in failed. Verify credentials.';
@@ -156,7 +187,40 @@ export class AuthStore {
       // Clear local session state regardless of server error
     } finally {
       this.principalSignal.set(null);
+      this.shortcutRegistry.syncAuthenticatedPrincipal(null);
+      this.uiPreferences.handleLogoutOrSessionExpiry();
       this.loadingSignal.set(false);
+    }
+  }
+
+  async loadPublicOidcIssuers(): Promise<readonly OidcIssuerInfo[]> {
+    try {
+      const rawList = await firstValueFrom(
+        this.http.get<readonly Record<string, unknown>[]>(
+          this.runtimeConfig.url('/auth/oidc/issuers'),
+          { withCredentials: true },
+        ),
+      );
+      const mapped: OidcIssuerInfo[] = (Array.isArray(rawList) ? rawList : []).map((raw) => {
+        const idVal = String(raw['issuerId'] ?? raw['id'] ?? raw['registrationId'] ?? '');
+        return {
+          id: raw['id'] ? String(raw['id']) : idVal,
+          issuerId: idVal,
+          registrationId: raw['registrationId'] ? String(raw['registrationId']) : idVal,
+          displayName: String(raw['displayName'] ?? raw['name'] ?? idVal),
+          issuerUri: raw['issuerUri'] ? String(raw['issuerUri']) : undefined,
+          clientId: raw['clientId'] ? String(raw['clientId']) : undefined,
+          pkceRequired: raw['pkceRequired'] !== undefined ? Boolean(raw['pkceRequired']) : true,
+          enabled: raw['enabled'] !== undefined ? Boolean(raw['enabled']) : true,
+          lifecycleProfile: raw['lifecycleProfile'] ? String(raw['lifecycleProfile']) : null,
+          checkedAt: raw['checkedAt'] ? String(raw['checkedAt']) : null,
+        };
+      });
+      this.oidcIssuersSignal.set(mapped);
+      return mapped;
+    } catch {
+      this.oidcIssuersSignal.set([]);
+      return [];
     }
   }
 
@@ -182,6 +246,8 @@ export class AuthStore {
       );
       this.principalSignal.set(principal);
       this.sessionCheckedSignal.set(true);
+      this.shortcutRegistry.syncAuthenticatedPrincipal(principal.principalId);
+      void this.uiPreferences.onAuthenticatedSessionResolved(principal.principalId);
       return principal;
     } finally {
       this.loadingSignal.set(false);

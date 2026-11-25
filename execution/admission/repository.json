@@ -1,0 +1,94 @@
+{
+  "schema": "MC-REPOSITORY-ADMISSION-1",
+  "recordId": "E35",
+  "version": 2,
+  "recordedAt": "2026-11-16T12:06:30Z",
+  "selfHashExempt": true,
+  "postWriteDigestRecordedIn": "execution/ledger.md",
+  "repository": {
+    "canonicalRoot": "/Users/pushparaj/projects/Money_Craft/moneycraft-target",
+    "repositoryIdentity": "local-git:Money_Craft/moneycraft-target",
+    "branch": "main",
+    "immutableBaseCommit": "52f103dc2d76c45d86ba525a8f38441e74876a6c",
+    "symlinkCheckResult": "PASS_ZERO_SYMLINKS_IN_ROOT_OR_PARENT_CHAIN"
+  },
+  "mavenModuleGraph": {
+    "parentArtifact": "com.raster.moneycraft:moneycraft-parent:1.0.0",
+    "modules": [
+      {
+        "module": "reader",
+        "artifactId": "moneycraft-reader",
+        "packaging": "jar",
+        "boundary": "Standalone Java 25 .1800 binary snapshot parser; zero Spring/JPA/Servlet/network dependencies."
+      },
+      {
+        "module": "ui",
+        "artifactId": "moneycraft-ui",
+        "packaging": "pom",
+        "boundary": "Angular 22 LTS SPA, Brand v0.2.0 + 24 UI-VIS-100 SVGs, Doc 50 Light/Dark/System + 75%..200% scale + schemaVersion:2 prefs, HELP-110-001..026, KEY-001 + Doc 59 100% shortcut parity."
+      },
+      {
+        "module": "server",
+        "artifactId": "moneycraft-server",
+        "packaging": "war",
+        "boundary": "Spring Boot 4.1.x + Spring Security 7.1.x Dual-PG18 modular monolith (10 bounded contexts incl. extension, UI prefs, SUPER_ADMIN Govt/Banking vault, host native PKCE); zero Swing/AWT/device dependencies."
+      },
+      {
+        "module": "desktop",
+        "artifactId": "moneycraft-desktop",
+        "packaging": "jar",
+        "boundary": "Swing v1.0.0 & Increment N Java 25 Swing client + RFC 8252/9700 PKCE + Keychain/DPAPI/Secret-Service vault + 3-level Gateway/24 vouchers/100% shortcuts + ESC/POS & 7-state print ledger + Windows .msi/.exe; isolated from server WAR."
+      },
+      {
+        "module": "qa",
+        "artifactId": "moneycraft-qa",
+        "packaging": "jar",
+        "boundary": "Testcontainers PostgreSQL 18, Tomcat 11 & WildFly 42 Dual-WAR Failsafe ITs, PDFBox 3, FaultProxy, and Playwright E2E."
+      }
+    ]
+  },
+  "admittedIncrements": {
+    "g0-bootstrap": {
+      "status": "ADMITTED_AND_QUALIFIED",
+      "manifestPath": "execution/phases/g0-bootstrap/files.json",
+      "manifestPostWriteSha256": "f3a1f0970a6777c620a9b31ec0d0e00758719ed7403eab19306bc5ad8474fc62",
+      "contextPostWriteSha256": "952ed7ca4058d24a1646e1d2aa1c6d0e4b1d50aed17c4aecfd9849b530660c57",
+      "recordsPostWriteSha256": "5ce2ecb8b8ee0fd9f2c8549554401b76a88431c83807c302c5cff7603786f3c0",
+      "checkerPath": "tools/verify_manifest.py",
+      "checkerBeforeSha256": "114392ba180843ace675a4ddd47bde13c3bb9ed37565b6673b45f930d8ef276d",
+      "checkerAfterSha256": "2a1ff0b937f3da3b8475518d423543efe82ad189a13a474837da0cb94ebfa7b9"
+    },
+    "v1-0-0-convergence-and-increment-x-n": {
+      "status": "ADMITTED_UNDER_DOC_58_EXECUTION_CONTRACT",
+      "contractPath": "/Users/pushparaj/projects/Money_Craft/argon_workspace/58_INCREMENT_X_AND_N_EXECUTION_CONTRACT.md",
+      "expandOnlyMigrations": [
+        "server/src/main/resources/db/authority-migration/V002__authority_oidc_federation_lifecycle.sql",
+        "server/src/main/resources/db/migration/V009__increment_x_extensions_tdl_and_spreadsheet_batches.sql"
+      ],
+      "preservedImmutableMigrations": [
+        "server/src/main/resources/db/authority-migration/V001__authority_foundation.sql",
+        "server/src/main/resources/db/migration/V001__business_foundation_and_audit.sql",
+        "server/src/main/resources/db/migration/V002__coa_ledgers_and_voucher_core.sql",
+        "server/src/main/resources/db/migration/V003__native_migration_staging.sql",
+        "server/src/main/resources/db/migration/V004__billwise_costcentres_and_forex.sql",
+        "server/src/main/resources/db/migration/V005__inventory_godowns_batches_and_bom.sql",
+        "server/src/main/resources/db/migration/V006__statutory_gst_ims_einvoice_and_tds.sql",
+        "server/src/main/resources/db/migration/V007__banking_brs_payroll_and_ocr_staging.sql",
+        "server/src/main/resources/db/migration/V008__mca_edit_log_and_report_views.sql"
+      ]
+    },
+    "v1-1-0-iteration-and-parity": {
+      "status": "ADMITTED_UNDER_V110_HANDOFF_AND_DOC_59",
+      "handoffPath": "/Users/pushparaj/projects/Money_Craft/argon_workspace/MoneyCraft_Development_Handoff_v1.1.0",
+      "keyboardAndMenuParityContract": "/Users/pushparaj/projects/Money_Craft/argon_workspace/59_TALLY_KEYBOARD_AND_MENU_PARITY_MATRIX.md",
+      "expandOnlyMigrations": [
+        "server/src/main/resources/db/authority-migration/V003__authority_v110_preferences_govconfig_and_native_auth.sql"
+      ],
+      "desktopPackagingPaths": [
+        "deploy/windows/build-windows-installer.ps1",
+        "deploy/windows/install-moneycraft-windows.ps1",
+        ".github/workflows/windows-desktop-installer.yml"
+      ]
+    }
+  }
+}

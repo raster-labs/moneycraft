@@ -7,6 +7,7 @@ import com.raster.moneycraft.foundation.config.MoneyCraftProperties;
 import com.raster.moneycraft.foundation.crypto.JcsCanonicalizer;
 import com.raster.moneycraft.foundation.error.MoneyCraftException;
 import com.raster.moneycraft.foundation.events.SseBroadcasterService;
+import com.raster.moneycraft.foundation.security.CompanyPermissions;
 import com.raster.moneycraft.foundation.security.CompanyRole;
 import com.raster.moneycraft.foundation.security.MoneyCraftPrincipal;
 import com.raster.moneycraft.foundation.security.RbacAuthorizationService;
@@ -211,6 +212,10 @@ public class AuthService {
         context.setAuthentication(authToken);
         SecurityContextHolder.setContext(context);
         session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
+        if (principal.isOidcAuthenticated()) {
+            String bindingAttr = "MC_OIDC_BINDING:" + principal.principalId() + ":" + principal.oidcIssuerId();
+            session.setAttribute(bindingAttr, Boolean.TRUE);
+        }
 
         CsrfToken csrf = csrfTokenRepository.generateToken(request);
         csrfTokenRepository.saveToken(csrf, request, response);
@@ -423,6 +428,19 @@ public class AuthService {
         }
 
         UUID installationId = requireActiveInstallationId();
+        List<String> explicitPermissions = request.permissions() == null
+            ? List.of()
+            : List.copyOf(request.permissions());
+        for (String perm : explicitPermissions) {
+            if (!CompanyPermissions.ALL_KNOWN_COMPANY_PERMISSIONS.contains(perm)) {
+                throw new MoneyCraftException(
+                    HttpStatus.BAD_REQUEST,
+                    "MC-GRANT-PERMISSION-INVALID",
+                    "Invalid Company Permission",
+                    "Unknown company permission '" + perm + "'."
+                );
+            }
+        }
         List<String> voucherAllowlist = request.voucherTypeAllowlist() == null
             ? List.of()
             : List.copyOf(request.voucherTypeAllowlist());
@@ -439,6 +457,7 @@ public class AuthService {
             targetPrincipalId,
             companyId,
             request.roleCode(),
+            explicitPermissions,
             voucherAllowlist,
             request.backdatedDaysLimit(),
             exportPermitted,
@@ -477,6 +496,7 @@ public class AuthService {
             creator.principalId(),
             companyId,
             CompanyRole.COMPANY_ADMIN,
+            List.of(),
             List.of(),
             null,
             true,
@@ -637,6 +657,7 @@ public class AuthService {
                 companyId,
                 CompanyRole.COMPANY_ADMIN,
                 List.of(),
+                List.of(),
                 null,
                 true,
                 false
@@ -715,14 +736,17 @@ public class AuthService {
         UUID targetPrincipalId,
         UUID companyId,
         CompanyRole roleCode,
+        List<String> explicitPermissions,
         List<String> voucherAllowlist,
         Integer backdatedDaysLimit,
         boolean exportPermitted,
         boolean appendStandaloneAudit
     ) {
+        String permissionsJson = toJsonString(explicitPermissions);
         String allowlistJson = toJsonString(voucherAllowlist);
         byte[] guardDigest = jcsCanonicalizer.sha256(
-            ("GRANT|" + targetPrincipalId + "|" + companyId + "|" + roleCode.name()).getBytes(StandardCharsets.UTF_8)
+            ("GRANT|" + targetPrincipalId + "|" + companyId + "|" + roleCode.name() + "|" + permissionsJson)
+                .getBytes(StandardCharsets.UTF_8)
         );
 
         UUID grantId = authorityTxTemplate.execute(status -> {
@@ -744,36 +768,72 @@ public class AuthService {
             );
             long resolvedEpoch = epoch == null ? 1L : epoch;
 
+            List<UUID> existingIds = authorityJdbcTemplate.query(
+                """
+                SELECT grant_id
+                  FROM ma_grant
+                 WHERE principal_id = ?
+                   AND company_id = ?
+                   AND role_code = ?
+                   AND source = 'EXPLICIT'
+                 ORDER BY created_at ASC
+                 LIMIT 1
+                 FOR UPDATE
+                """,
+                (rs, rowNum) -> rs.getObject("grant_id", UUID.class),
+                targetPrincipalId,
+                companyId,
+                roleCode.name()
+            );
+
+            if (!existingIds.isEmpty()) {
+                UUID existingGrantId = existingIds.getFirst();
+                authorityJdbcTemplate.update(
+                    """
+                    UPDATE ma_grant
+                       SET permissions = ?::jsonb,
+                           voucher_type_allowlist = ?::jsonb,
+                           backdated_days_limit = ?,
+                           export_permitted = ?,
+                           grant_epoch = ?,
+                           state = 'ACTIVE',
+                           granted_by = ?,
+                           version_no = version_no + 1,
+                           updated_at = clock_timestamp()
+                     WHERE grant_id = ?
+                    """,
+                    permissionsJson,
+                    allowlistJson,
+                    backdatedDaysLimit,
+                    exportPermitted,
+                    resolvedEpoch,
+                    actorPrincipalId,
+                    existingGrantId
+                );
+                return existingGrantId;
+            }
+
             UUID candidateId = UUID.randomUUID();
-            return authorityJdbcTemplate.queryForObject(
+            authorityJdbcTemplate.update(
                 """
                 INSERT INTO ma_grant (
                     grant_id, principal_id, company_id, role_code, permissions,
                     voucher_type_allowlist, backdated_days_limit, export_permitted,
-                    private_fields_permitted, grant_epoch, state, granted_by
-                ) VALUES (?, ?, ?, ?, '[]'::jsonb, ?::jsonb, ?, ?, true, ?, 'ACTIVE', ?)
-                ON CONFLICT (principal_id, company_id, role_code) DO UPDATE
-                   SET voucher_type_allowlist = EXCLUDED.voucher_type_allowlist,
-                       backdated_days_limit = EXCLUDED.backdated_days_limit,
-                       export_permitted = EXCLUDED.export_permitted,
-                       grant_epoch = EXCLUDED.grant_epoch,
-                       state = 'ACTIVE',
-                       granted_by = EXCLUDED.granted_by,
-                       version_no = ma_grant.version_no + 1,
-                       updated_at = clock_timestamp()
-                RETURNING grant_id
+                    private_fields_permitted, grant_epoch, state, granted_by, source, source_ref
+                ) VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, true, ?, 'ACTIVE', ?, 'EXPLICIT', NULL)
                 """,
-                (rs, rowNum) -> rs.getObject("grant_id", UUID.class),
                 candidateId,
                 targetPrincipalId,
                 companyId,
                 roleCode.name(),
+                permissionsJson,
                 allowlistJson,
                 backdatedDaysLimit,
                 exportPermitted,
                 resolvedEpoch,
                 actorPrincipalId
             );
+            return candidateId;
         });
 
         Runnable mirrorAndProject = () -> {
@@ -783,9 +843,10 @@ public class AuthService {
                     grant_id, principal_id, company_id, role_code, permissions,
                     voucher_type_allowlist, backdated_days_limit, export_permitted,
                     private_fields_permitted, active, grant_epoch, authority_epoch, authority_digest
-                ) VALUES (?, ?, ?, ?, '[]'::jsonb, ?::jsonb, ?, ?, true, true, 1, 1, ?)
+                ) VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, true, true, 1, 1, ?)
                 ON CONFLICT (principal_id, company_id, role_code) DO UPDATE
-                   SET voucher_type_allowlist = EXCLUDED.voucher_type_allowlist,
+                   SET permissions = EXCLUDED.permissions,
+                       voucher_type_allowlist = EXCLUDED.voucher_type_allowlist,
                        backdated_days_limit = EXCLUDED.backdated_days_limit,
                        export_permitted = EXCLUDED.export_permitted,
                        active = true,
@@ -798,6 +859,7 @@ public class AuthService {
                 targetPrincipalId,
                 companyId,
                 roleCode.name(),
+                permissionsJson,
                 allowlistJson,
                 backdatedDaysLimit,
                 exportPermitted,

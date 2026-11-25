@@ -1,0 +1,9 @@
+MoneyCraft initial browser semantic icons, design version 1.0.0
+Prepared 15 November 2026 for the MoneyCraft documentation finalisation commission.
+Project owner as recorded: Raster Images Pvt. Ltd.
+
+The 24 SVG sources in moneycraft-semantic-icons.json were authored afresh as geometric design artwork by the documentation agent. No external icon library or third-party vector geometry was imported. This record does not attribute historical acceptance to these new assets.
+
+These assets supplement the current design. They do not replace or modify the original MoneyCraft brand identity, logo, font binaries or required third-party notices. They introduce no product-key, activation, service, device or runtime dependency.
+
+Use the exact manifest digests and the semantic mappings in 46_INITIAL_BROWSER_VISUAL_CONTRACT.md. Actual product, browser and accessibility qualification remains NOT RUN.

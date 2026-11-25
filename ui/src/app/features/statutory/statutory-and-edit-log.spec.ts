@@ -319,6 +319,33 @@ describe('Phase 5 Statutory Returns, Rel 7.2 IMS, TDS 26Q & Alt+Q MCA Edit Log',
     expect(gstr3bEl.querySelector('[data-testid="gstr3b-net-payable"]')?.textContent).toContain(
       '156.00',
     );
+
+    // Loop 5: Multi-GSTIN registration selector on GSTR-3B (`ensureRegistrationsLoaded` + `onRegistrationChange`)
+    const regLoadPromise = gstr3bFixture.componentInstance.ensureRegistrationsLoaded();
+    const regListReq = httpMock.expectOne((req) =>
+      req.url.includes('/api/v1/companies/comp-tn-01/gst/registrations'),
+    );
+    regListReq.flush([
+      {
+        id: 'reg-tn-01',
+        gstin: '33AABCM1234F1Z4',
+        stateCode: '33',
+        stateName: 'Tamil Nadu',
+        registrationType: 'REGULAR',
+      },
+    ]);
+    await regLoadPromise;
+    gstr3bFixture.detectChanges();
+    expect(gstr3bFixture.componentInstance.registrations().length).toBe(1);
+
+    gstr3bFixture.componentInstance.onRegistrationChange('reg-tn-01');
+    const gstr3bByRegReq = httpMock.expectOne(
+      (req) =>
+        req.url.includes('/api/v1/companies/comp-tn-01/gst/gstr3b') &&
+        req.params.get('gstRegistrationId') === 'reg-tn-01',
+    );
+    gstr3bByRegReq.flush(gstr3bFixture.componentInstance.report());
+    await flushAsyncTicks();
     gstr3bFixture.destroy();
 
     // 1C. Rel 7.2 One-Click GSTR-9 Annual Return (.xlsx + .json exports)
@@ -585,6 +612,30 @@ describe('Phase 5 Statutory Returns, Rel 7.2 IMS, TDS 26Q & Alt+Q MCA Edit Log',
       '408.00',
     );
 
+    // 4. Loop 5: IMS Reset (`quickReset` -> `NO_ACTION` with `0.00` reduction, `0x1410926f0`)
+    const resetPromise = fixture.componentInstance.quickReset();
+    const resetReq = httpMock.expectOne((req) =>
+      req.url.includes('/api/v1/companies/comp-tn-01/gst/ims/actions'),
+    );
+    expect(resetReq.request.body).toMatchObject({
+      imsInvoiceId: 'ims-inv-3',
+      action: 'NO_ACTION',
+      itcReductionAmount: '0.00',
+      remarks: null,
+    });
+    resetReq.flush({
+      ...fixture.componentInstance.invoices()[2],
+      imsStatus: 'NO_ACTION',
+      itcReductionAmount: '0.00',
+      remarks: null,
+    });
+    await resetPromise;
+    fixture.detectChanges();
+    expect(fixture.componentInstance.invoices()[2].imsStatus).toBe('NO_ACTION');
+    expect(el.querySelector('[data-testid="ims-net-eligible-itc"]')?.textContent).toContain(
+      '18,000.00',
+    );
+
     fixture.destroy();
     httpMock.verify();
   });
@@ -770,14 +821,43 @@ describe('Phase 5 Statutory Returns, Rel 7.2 IMS, TDS 26Q & Alt+Q MCA Edit Log',
         canonicalSnapshot: {
           voucherTypeName: 'Journal',
           voucherNumber: '1',
-          narration: 'Audit & legal retainer',
-          debitTotal: '40000.00',
+          narration: 'Initial audit retainer',
+          debitTotal: '38000.00',
         },
         changedFields: [],
         snapshotSha256Hex: '8b2c4d9f01a3e56789abcdef0123456789abcdef0123456789abcdef01234567',
       },
       {
         versionNo: 2,
+        masterId: 101,
+        alterId: 105,
+        operation: 'ALTER',
+        actorUsername: 'audit_admin',
+        occurredAt: '2025-04-25T12:00:00Z',
+        voucherNumberSnapshot: '1',
+        voucherDateSnapshot: '2025-04-25',
+        canonicalSnapshot: {
+          voucherTypeName: 'Journal',
+          voucherNumber: '1',
+          narration: 'Audit & legal retainer',
+          debitTotal: '40000.00',
+        },
+        changedFields: [
+          {
+            fieldPath: 'narration',
+            beforeValue: 'Initial audit retainer',
+            afterValue: 'Audit & legal retainer',
+          },
+          {
+            fieldPath: 'debitTotal',
+            beforeValue: '38000.00',
+            afterValue: '40000.00',
+          },
+        ],
+        snapshotSha256Hex: 'c44e7a00112233445566778899aabbccddeeff00112233445566778899aabbcc',
+      },
+      {
+        versionNo: 3,
         masterId: 101,
         alterId: 108,
         operation: 'ALTER',
@@ -814,7 +894,7 @@ describe('Phase 5 Statutory Returns, Rel 7.2 IMS, TDS 26Q & Alt+Q MCA Edit Log',
       'Show Altered Values Only',
     );
 
-    // Only the altered `debitTotal` row is rendered by default (`40,000.00` -> `45,000.00`)
+    // Only the altered `debitTotal` row is rendered by default (`40,000.00` -> `45,000.00` between v2 and v3)
     const alteredRows = modalEl.querySelectorAll('[data-testid="edit-log-redline-table"] tbody tr');
     expect(alteredRows.length).toBe(1);
     expect(modalEl.querySelector('[data-testid="diff-before-cell"]')?.textContent?.trim()).toBe(
@@ -824,12 +904,23 @@ describe('Phase 5 Statutory Returns, Rel 7.2 IMS, TDS 26Q & Alt+Q MCA Edit Log',
       '45,000.00',
     );
 
+    // Loop 4: Compare Version 3 directly against Version 1 (index 0) via `selectCompareBaselineIndex(0)`
+    redlineFixture.componentInstance.selectCompareBaselineIndex(0);
+    redlineFixture.detectChanges();
+    expect(
+      modalEl.querySelector('[data-testid="edit-log-comparison-heading"]')?.textContent,
+    ).toContain('Comparing Version 1 (CREATE)');
+    const cumulativeRows = modalEl.querySelectorAll(
+      '[data-testid="edit-log-redline-table"] tbody tr',
+    );
+    expect(cumulativeRows.length).toBe(2);
+
     // Press F12 (`screen.configure` in MODAL scope) -> toggles to Show All Fields
     shortcutRegistry.triggerCommand('screen.configure');
     redlineFixture.detectChanges();
     expect(redlineFixture.componentInstance.showAlteredValuesOnly()).toBe(false);
     const allRows = modalEl.querySelectorAll('[data-testid="edit-log-redline-table"] tbody tr');
-    expect(allRows.length).toBeGreaterThan(1);
+    expect(allRows.length).toBeGreaterThan(2);
 
     // Closing modal pops NavigationStackStore back to depth 0
     editLogModalService.close();

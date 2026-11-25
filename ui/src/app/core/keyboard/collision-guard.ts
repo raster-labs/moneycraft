@@ -200,7 +200,7 @@ export function isEditableTextElement(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false;
   }
-  if (target.isContentEditable) {
+  if (target.isContentEditable || target.getAttribute('contenteditable') === 'true') {
     return true;
   }
   const tag = target.tagName;
@@ -210,6 +210,71 @@ export function isEditableTextElement(target: EventTarget | null): boolean {
   if (tag === 'INPUT') {
     const inputType = ((target as HTMLInputElement).type || 'text').toLowerCase();
     return !['button', 'checkbox', 'radio', 'submit', 'reset'].includes(inputType);
+  }
+  return false;
+}
+
+/**
+ * KEY-001 (`Doc 45 §4`) strict input-ownership predicate.
+ * Returns true whenever the event target or active element is inside an `<input>`,
+ * `<textarea>`, `<select>`, `[contenteditable]`, `mc-typeahead-select`, `mc-amount-cell`,
+ * or an explicit `[data-mc-input-owner]` / `[data-mc-scan-capture]` surface.
+ */
+export function isStrictInputOwnerElement(
+  target: EventTarget | null,
+  activeElement?: Element | null,
+): boolean {
+  const candidates: Element[] = [];
+  if (target instanceof Element) {
+    candidates.push(target);
+  }
+  if (activeElement instanceof Element && activeElement !== target) {
+    candidates.push(activeElement);
+  }
+
+  for (const el of candidates) {
+    if (el instanceof HTMLElement && el.isContentEditable) {
+      return true;
+    }
+    const contentEditableAttr = el.getAttribute('contenteditable');
+    if (contentEditableAttr === '' || contentEditableAttr === 'true') {
+      return true;
+    }
+    const tag = el.tagName;
+    if (tag === 'TEXTAREA' || tag === 'SELECT') {
+      return true;
+    }
+    if (tag === 'INPUT') {
+      const inputType = ((el as HTMLInputElement).type || 'text').toLowerCase();
+      if (!['button', 'submit', 'reset'].includes(inputType)) {
+        return true;
+      }
+    }
+    if (
+      typeof el.closest === 'function' &&
+      el.closest(
+        'mc-typeahead-select, mc-amount-cell, [contenteditable="true"], [data-mc-input-owner="true"], [data-mc-scan-capture="true"]',
+      ) !== null
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isImeOrAltGraphEvent(event: KeyboardEvent): boolean {
+  if (
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.key === 'Dead' ||
+    event.key === 'Process' ||
+    event.key === 'Unidentified' ||
+    event.key === 'AltGraph'
+  ) {
+    return true;
+  }
+  if (typeof event.getModifierState === 'function' && event.getModifierState('AltGraph')) {
+    return true;
   }
   return false;
 }

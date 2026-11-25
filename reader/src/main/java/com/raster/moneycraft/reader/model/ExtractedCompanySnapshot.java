@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Immutable canonical snapshot extracted from a TallyPrime .1800 directory and/or companion XML export.
+ * Immutable canonical snapshot extracted from a legacy .1800 company snapshot directory and/or companion XML export.
  */
 public record ExtractedCompanySnapshot(
         String snapshotSourceType,

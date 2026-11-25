@@ -1,0 +1,91 @@
+name: Windows Native Swing Desktop Installer (.msi & .exe)
+
+on:
+  pull_request:
+    branches: [develop, main, "release/**"]
+    paths:
+      - "desktop/**"
+      - "deploy/windows/**"
+      - ".github/workflows/windows-desktop-installer.yml"
+  push:
+    branches: [develop, main, "release/**", "hotfix/**"]
+    paths:
+      - "desktop/**"
+      - "deploy/windows/**"
+      - ".github/workflows/windows-desktop-installer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-installer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-windows-desktop:
+    name: "Build & Verify Windows x64 Swing Desktop (.msi + .exe)"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Run Manifest & Zero-Licensing Gates
+        shell: pwsh
+        run: |
+          python tools/verify_manifest.py
+          python tools/check_zero_licensing.py
+
+      - name: Verify Zero JDBC / Spring / JPA / Servlet Contamination in desktop
+        shell: pwsh
+        run: |
+          mvn -B dependency:tree -pl desktop | Tee-Object -FilePath "$env:RUNNER_TEMP/desktop-deps.txt"
+          $Forbidden = Select-String -Path "$env:RUNNER_TEMP/desktop-deps.txt" -Pattern "org\.postgresql|org\.springframework|org\.hibernate|jakarta\.persistence|jakarta\.servlet"
+          if ($Forbidden) {
+            Write-Error "SWG-001/SWG-002 violation: forbidden server or database dependency in desktop client"
+            exit 1
+          }
+
+      - name: Run Desktop Checkstyle & JUnit 5 Suite
+        shell: pwsh
+        run: mvn -B test -pl desktop
+
+      - name: Build Stripped Java 25 jlink Runtime & Windows .msi/.exe Installers
+        shell: pwsh
+        run: ./deploy/windows/build-windows-installer.ps1 -AppVersion 1.0.0 -Architecture x64 -SkipMavenTests
+
+      - name: Smoke-Verify Standalone Launcher & Installer Hashes
+        shell: pwsh
+        run: |
+          $Output = & "$env:JAVA_HOME/bin/java.exe" -jar desktop/target/moneycraft-desktop.jar --api-ip 192.168.1.100 --api-port 8443 --verify-theme
+          Write-Host $Output
+          if ($Output -notmatch "MoneyCraft Desktop 1\.0\.0 ready \[host=https://192\.168\.1\.100:8443") {
+            throw "Desktop launcher smoke verification failed: $Output"
+          }
+          $MsiPath = "desktop/target/installer/MoneyCraft-Desktop-1.0.0-x64.msi"
+          $ExePath = "desktop/target/installer/MoneyCraft-Desktop-1.0.0-x64.exe"
+          $SumsPath = "desktop/target/installer/SHA256SUMS.txt"
+          if (-not (Test-Path $MsiPath) -or -not (Test-Path $ExePath) -or -not (Test-Path $SumsPath)) {
+            throw "Missing expected Windows installer artifacts in desktop/target/installer/"
+          }
+
+      - name: Upload Windows Desktop Installer Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: moneycraft-desktop-windows-x64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            desktop/target/installer/MoneyCraft-Desktop-1.0.0-x64.msi
+            desktop/target/installer/MoneyCraft-Desktop-1.0.0-x64.exe
+            desktop/target/installer/SHA256SUMS.txt
+            deploy/windows/install-moneycraft-windows.ps1

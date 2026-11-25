@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Canonical TallyPrime 7.2 catalog of 28 predefined accounting groups and 24 active standard voucher types.
+ * Reference system catalog of 28 predefined accounting groups and 24 active standard voucher types.
  */
 public final class PredefinedTallyCatalog {
 

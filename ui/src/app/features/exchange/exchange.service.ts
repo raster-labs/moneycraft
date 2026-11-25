@@ -5,16 +5,34 @@ import { RuntimeConfigService } from '../../core/http/runtime-config.service';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import {
   CreateExchangeTemplateRequest,
+  DashboardTilesExportRequest,
+  DashboardTilesExportResponse,
+  DataVerificationReportDto,
+  EditLogSummaryResponseDto,
   ExchangeFormat,
   ExchangeMappingTemplateDto,
   ExportDataRequest,
   ExportDataResultDto,
+  ExecuteSpreadsheetBatchRequest,
   ImportDataRequest,
   ImportDataResultDto,
+  ImportExceptionItemDto,
   ImportJobProofDto,
   ImportJobStatus,
   ImportJobSummaryDto,
-  StageTally1800Request,
+  MultiAccountReportExportRequest,
+  MultiAccountReportExportResponse,
+  PrepareSpreadsheetBatchRequest,
+  RemapSpreadsheetBatchRequest,
+  ResolveImportExceptionRequest,
+  SampleExcelType,
+  SaveSpreadsheetTemplateRequest,
+  SpreadsheetBatchDto,
+  SpreadsheetTemplateDto,
+  StageLegacy1800Request,
+  SyncRuleDto,
+  SyncRuleRequest,
+  SyncSessionResultDto,
 } from './exchange.models';
 
 type RawRecord = Record<string, unknown>;
@@ -64,10 +82,10 @@ function normalizeJobSummary(raw: RawRecord): ImportJobSummaryDto {
   const zeroDec = ExactDecimal.tryParse(varianceAmount, 6, 'HALF_UP');
   return {
     id: String(raw['id'] ?? raw['jobId'] ?? ''),
-    jobType: String(raw['jobType'] ?? 'TALLY_1800'),
+    jobType: String(raw['jobType'] ?? 'LEGACY_1800'),
     status: (raw['status'] ?? 'STAGED') as ImportJobStatus,
     sourceCompanyName: String(
-      raw['sourceCompanyName'] ?? raw['companyName'] ?? 'Migrated .1800 Company',
+      raw['sourceCompanyName'] ?? raw['companyName'] ?? 'Migrated Legacy .1800 Company',
     ),
     snapshotDirectoryPath: String(raw['snapshotDirectoryPath'] ?? ''),
     isZeroVariance:
@@ -233,11 +251,18 @@ function normalizeTemplate(raw: RawRecord): ExchangeMappingTemplateDto {
   }
   return {
     id: String(raw['id'] ?? ''),
-    templateName: String(raw['templateName'] ?? raw['name'] ?? 'Custom Excel Template'),
+    templateName: String(raw['templateName'] ?? raw['name'] ?? 'Custom Spreadsheet Template'),
     entityScope: (raw['entityScope'] ?? raw['entityType'] ?? 'VOUCHERS') as 'MASTERS' | 'VOUCHERS',
     sheetName: String(raw['sheetName'] ?? 'Sheet1'),
     headerRowIndex: intVal(raw['headerRowIndex'], 1),
     columnMappings: cleanMappings,
+    templateScope:
+      raw['templateScope'] === 'ALL_COMPANIES' ? 'ALL_COMPANIES' : 'THIS_COMPANY',
+    fromColumn: raw['fromColumn'] ? String(raw['fromColumn']) : null,
+    toColumn: raw['toColumn'] ? String(raw['toColumn']) : null,
+    excludeRowColumn: raw['excludeRowColumn'] ? String(raw['excludeRowColumn']) : null,
+    excludeRowOperator: raw['excludeRowOperator'] ? String(raw['excludeRowOperator']) : null,
+    excludeRowValue: raw['excludeRowValue'] ? String(raw['excludeRowValue']) : null,
     createdAt: raw['createdAt'] ? String(raw['createdAt']) : undefined,
   };
 }
@@ -246,6 +271,7 @@ function normalizeImportDataResult(
   raw: RawRecord,
   fallbackFormat: ExchangeFormat,
 ): ImportDataResultDto {
+  const rawExcs = Array.isArray(raw['exceptions']) ? (raw['exceptions'] as RawRecord[]) : [];
   return {
     jobId: raw['jobId'] ? String(raw['jobId']) : null,
     format: (raw['format'] ?? fallbackFormat) as ExchangeFormat,
@@ -258,6 +284,21 @@ function normalizeImportDataResult(
     totalCredit: strWire(raw['totalCredit'] ?? raw['totalDebit'], '0.00'),
     isBalanced: raw['isBalanced'] !== undefined ? Boolean(raw['isBalanced']) : true,
     message: String(raw['message'] ?? `${fallbackFormat} payload verified and imported.`),
+    mastersSkipped: intVal(raw['mastersSkipped']),
+    vouchersUpdated: intVal(raw['vouchersUpdated']),
+    vouchersSkipped: intVal(raw['vouchersSkipped']),
+    exceptionsRecorded: intVal(raw['exceptionsRecorded']),
+    exceptions: rawExcs.map((e) => ({
+      exceptionId: String(e['exceptionId'] ?? ''),
+      jobId: e['jobId'] ? String(e['jobId']) : null,
+      entityType: String(e['entityType'] ?? 'VOUCHER'),
+      identifier: String(e['identifier'] ?? ''),
+      errorCode: String(e['errorCode'] ?? ''),
+      message: String(e['message'] ?? ''),
+      resolved: Boolean(e['resolved']),
+      resolvedEntityId: e['resolvedEntityId'] ? String(e['resolvedEntityId']) : null,
+      createdAt: e['createdAt'] ? String(e['createdAt']) : undefined,
+    })),
   };
 }
 
@@ -281,12 +322,12 @@ export class ExchangeService {
     return unwrapItems(raw).map(normalizeJobSummary);
   }
 
-  async stageTally1800(
+  async stageLegacy1800(
     companyId: string,
-    payload: StageTally1800Request,
+    payload: StageLegacy1800Request,
   ): Promise<ImportJobProofDto> {
     const raw = await firstValueFrom(
-      this.http.post<RawRecord>(this.companyBase(companyId, '/imports/tally-1800/stage'), payload, {
+      this.http.post<RawRecord>(this.companyBase(companyId, '/imports/legacy-1800/stage'), payload, {
         withCredentials: true,
       }),
     );
@@ -302,6 +343,14 @@ export class ExchangeService {
       return this.getImportJobProof(companyId, stagedProof.jobId);
     }
     return stagedProof;
+  }
+
+  /** Backward-compatible delegate to `stageLegacy1800`. */
+  async stageTally1800(
+    companyId: string,
+    payload: StageLegacy1800Request,
+  ): Promise<ImportJobProofDto> {
+    return this.stageLegacy1800(companyId, payload);
   }
 
   async getImportJobProof(companyId: string, jobId: string): Promise<ImportJobProofDto> {
@@ -343,6 +392,9 @@ export class ExchangeService {
           content: payload.content,
           rawXml: payload.content,
           dryRun: Boolean(payload.dryRun),
+          masterDuplicateRule: payload.masterDuplicateRule ?? 'MODIFY_WITH_NEW_DATA',
+          overwriteVoucherByGuid: Boolean(payload.overwriteVoucherByGuid),
+          exceptionBehavior: payload.exceptionBehavior ?? 'STOP_AT_FIRST_EXCEPTION',
         },
         { withCredentials: true },
       ),
@@ -359,7 +411,7 @@ export class ExchangeService {
     return this.normalizeExportResult(
       raw,
       'JSONEX',
-      'moneycraft-rel72-jsonex.json',
+      'moneycraft-jsonex-export.json',
       'application/json',
     );
   }
@@ -373,11 +425,49 @@ export class ExchangeService {
           content: payload.content,
           rawJson: payload.content,
           dryRun: Boolean(payload.dryRun),
+          masterDuplicateRule: payload.masterDuplicateRule ?? 'MODIFY_WITH_NEW_DATA',
+          overwriteVoucherByGuid: Boolean(payload.overwriteVoucherByGuid),
+          exceptionBehavior: payload.exceptionBehavior ?? 'STOP_AT_FIRST_EXCEPTION',
         },
         { withCredentials: true },
       ),
     );
     return normalizeImportDataResult(raw, 'JSONEX');
+  }
+
+  async exportAscii(companyId: string, payload: ExportDataRequest): Promise<ExportDataResultDto> {
+    const raw = await firstValueFrom(
+      this.http.post<RawRecord | string>(this.companyBase(companyId, '/exports/ascii'), payload, {
+        withCredentials: true,
+      }),
+    );
+    return this.normalizeExportResult(raw, 'ASCII', 'moneycraft-export.csv', 'text/csv');
+  }
+
+  async exportHtml(companyId: string, payload: ExportDataRequest): Promise<ExportDataResultDto> {
+    const raw = await firstValueFrom(
+      this.http.post<RawRecord | string>(this.companyBase(companyId, '/exports/html'), payload, {
+        withCredentials: true,
+      }),
+    );
+    return this.normalizeExportResult(raw, 'HTML', 'moneycraft-export.html', 'text/html');
+  }
+
+  async downloadSampleExcel(companyId: string, sampleType: SampleExcelType = 'ALL'): Promise<Blob> {
+    const blob = await firstValueFrom(
+      this.http.get(
+        this.companyBase(
+          companyId,
+          `/exchange/sample-excel?type=${encodeURIComponent(sampleType)}`,
+        ),
+        {
+          responseType: 'blob',
+          withCredentials: true,
+        },
+      ),
+    );
+    this.triggerDownload(blob, `moneycraft-sample-${sampleType.toLowerCase()}.xlsx`);
+    return blob;
   }
 
   async listTemplates(companyId: string): Promise<readonly ExchangeMappingTemplateDto[]> {
@@ -399,6 +489,15 @@ export class ExchangeService {
       }),
     );
     return normalizeTemplate(raw);
+  }
+
+  async deleteTemplate(companyId: string, templateId: string): Promise<void> {
+    await firstValueFrom(
+      this.http.delete<void>(
+        this.companyBase(companyId, `/exchange/templates/${encodeURIComponent(templateId)}`),
+        { withCredentials: true },
+      ),
+    );
   }
 
   async exportExcel(companyId: string, payload: ExportDataRequest): Promise<Blob> {
@@ -425,6 +524,9 @@ export class ExchangeService {
           base64Content: payload.base64Content ?? payload.content,
           templateId: payload.templateId ?? null,
           dryRun: Boolean(payload.dryRun),
+          masterDuplicateRule: payload.masterDuplicateRule ?? 'MODIFY_WITH_NEW_DATA',
+          overwriteVoucherByGuid: Boolean(payload.overwriteVoucherByGuid),
+          exceptionBehavior: payload.exceptionBehavior ?? 'STOP_AT_FIRST_EXCEPTION',
         },
         { withCredentials: true },
       ),
@@ -432,9 +534,236 @@ export class ExchangeService {
     return normalizeImportDataResult(raw, 'EXCEL');
   }
 
+  async listImportExceptions(companyId: string): Promise<readonly ImportExceptionItemDto[]> {
+    return firstValueFrom(
+      this.http.get<readonly ImportExceptionItemDto[]>(
+        this.companyBase(companyId, '/exchange/exceptions'),
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async resolveImportException(
+    companyId: string,
+    exceptionId: string,
+    payload: ResolveImportExceptionRequest,
+  ): Promise<ImportExceptionItemDto> {
+    return firstValueFrom(
+      this.http.post<ImportExceptionItemDto>(
+        this.companyBase(
+          companyId,
+          `/exchange/exceptions/${encodeURIComponent(exceptionId)}/resolve`,
+        ),
+        payload,
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async listSyncRules(companyId: string): Promise<readonly SyncRuleDto[]> {
+    return firstValueFrom(
+      this.http.get<readonly SyncRuleDto[]>(this.companyBase(companyId, '/exchange/sync-rules'), {
+        withCredentials: true,
+      }),
+    );
+  }
+
+  async createSyncRule(companyId: string, payload: SyncRuleRequest): Promise<SyncRuleDto> {
+    return firstValueFrom(
+      this.http.post<SyncRuleDto>(this.companyBase(companyId, '/exchange/sync-rules'), payload, {
+        withCredentials: true,
+      }),
+    );
+  }
+
+  async executeSyncRule(companyId: string, ruleId: string): Promise<SyncSessionResultDto> {
+    return firstValueFrom(
+      this.http.post<SyncSessionResultDto>(
+        this.companyBase(companyId, `/exchange/sync-rules/${encodeURIComponent(ruleId)}/execute`),
+        {},
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Increment X — Guided Multi-Format Columnar Spreadsheet Importer (`SHEET-001..008`)
+  // ---------------------------------------------------------------------------
+
+  async listSpreadsheetTemplates(companyId: string): Promise<readonly SpreadsheetTemplateDto[]> {
+    return firstValueFrom(
+      this.http.get<readonly SpreadsheetTemplateDto[]>(
+        this.companyBase(companyId, '/spreadsheet-imports/templates'),
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async saveSpreadsheetTemplate(
+    companyId: string,
+    payload: SaveSpreadsheetTemplateRequest,
+  ): Promise<SpreadsheetTemplateDto> {
+    return firstValueFrom(
+      this.http.post<SpreadsheetTemplateDto>(
+        this.companyBase(companyId, '/spreadsheet-imports/templates'),
+        payload,
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async listSpreadsheetBatches(companyId: string): Promise<readonly SpreadsheetBatchDto[]> {
+    return firstValueFrom(
+      this.http.get<readonly SpreadsheetBatchDto[]>(
+        this.companyBase(companyId, '/spreadsheet-imports/batches'),
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async getSpreadsheetBatch(companyId: string, batchId: string): Promise<SpreadsheetBatchDto> {
+    return firstValueFrom(
+      this.http.get<SpreadsheetBatchDto>(
+        this.companyBase(companyId, `/spreadsheet-imports/batches/${encodeURIComponent(batchId)}`),
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async prepareSpreadsheetBatch(
+    companyId: string,
+    payload: PrepareSpreadsheetBatchRequest,
+  ): Promise<SpreadsheetBatchDto> {
+    return firstValueFrom(
+      this.http.post<SpreadsheetBatchDto>(
+        this.companyBase(companyId, '/spreadsheet-imports/prepare'),
+        payload,
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async remapSpreadsheetBatch(
+    companyId: string,
+    batchId: string,
+    payload: RemapSpreadsheetBatchRequest,
+  ): Promise<SpreadsheetBatchDto> {
+    return firstValueFrom(
+      this.http.post<SpreadsheetBatchDto>(
+        this.companyBase(
+          companyId,
+          `/spreadsheet-imports/batches/${encodeURIComponent(batchId)}/remap`,
+        ),
+        payload,
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async executeOrResumeSpreadsheetBatch(
+    companyId: string,
+    batchId: string,
+    resume = false,
+    payload?: ExecuteSpreadsheetBatchRequest,
+  ): Promise<SpreadsheetBatchDto> {
+    const endpoint = resume ? 'resume' : 'execute';
+    return firstValueFrom(
+      this.http.post<SpreadsheetBatchDto>(
+        this.companyBase(
+          companyId,
+          `/spreadsheet-imports/batches/${encodeURIComponent(batchId)}/${endpoint}`,
+        ),
+        payload ?? { allowValidUnitsOnly: true },
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async cancelSpreadsheetBatch(companyId: string, batchId: string): Promise<SpreadsheetBatchDto> {
+    return firstValueFrom(
+      this.http.post<SpreadsheetBatchDto>(
+        this.companyBase(
+          companyId,
+          `/spreadsheet-imports/batches/${encodeURIComponent(batchId)}/cancel`,
+        ),
+        {},
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async downloadSpreadsheetErrorsCsv(companyId: string, batchId: string): Promise<string> {
+    const csvText = await firstValueFrom(
+      this.http.get(
+        this.companyBase(
+          companyId,
+          `/spreadsheet-imports/batches/${encodeURIComponent(batchId)}/errors.csv`,
+        ),
+        { responseType: 'text', withCredentials: true },
+      ),
+    );
+    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' });
+    this.triggerDownload(blob, `spreadsheet-import-errors-${batchId}.csv`);
+    return csvText;
+  }
+
   triggerTextDownload(result: ExportDataResultDto): void {
     const blob = new Blob([result.content], { type: result.mimeType });
     this.triggerDownload(blob, result.fileName);
+  }
+
+  async exportMultiAccountReport(
+    companyId: string,
+    request?: MultiAccountReportExportRequest,
+  ): Promise<MultiAccountReportExportResponse> {
+    return firstValueFrom(
+      this.http.post<MultiAccountReportExportResponse>(
+        this.companyBase(companyId, '/exports/multi-account-report'),
+        request ?? {},
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async getEditLogSummary(
+    companyId: string,
+    entityType: 'ALL' | 'VOUCHER' | 'LEDGER' | 'STOCK_ITEM' = 'ALL',
+    onlyAltered = false,
+    username?: string | null,
+  ): Promise<EditLogSummaryResponseDto> {
+    const cleanUser = username?.trim() ?? '';
+    const userParam = cleanUser ? `&username=${encodeURIComponent(cleanUser)}` : '';
+    return firstValueFrom(
+      this.http.get<EditLogSummaryResponseDto>(
+        this.companyBase(
+          companyId,
+          `/exchange/edit-log-summary?entityType=${encodeURIComponent(entityType)}&onlyAltered=${onlyAltered}${userParam}`,
+        ),
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async exportDashboardTiles(
+    companyId: string,
+    request?: DashboardTilesExportRequest,
+  ): Promise<DashboardTilesExportResponse> {
+    return firstValueFrom(
+      this.http.post<DashboardTilesExportResponse>(
+        this.companyBase(companyId, '/exports/dashboard-tiles'),
+        request ?? {},
+        { withCredentials: true },
+      ),
+    );
+  }
+
+  async verifyCompanyData(companyId: string): Promise<DataVerificationReportDto> {
+    return firstValueFrom(
+      this.http.get<DataVerificationReportDto>(
+        this.companyBase(companyId, '/exchange/data-verification'),
+        { withCredentials: true },
+      ),
+    );
   }
 
   private normalizeExportResult(

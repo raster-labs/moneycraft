@@ -62,3 +62,18 @@ export function systemRoleGuard(requiredRoles: readonly SystemRole[]): CanActiva
     return hasAny ? true : router.createUrlTree(['/app/gateway']);
   };
 }
+
+export const superAdminGuard: CanActivateFn = async () => {
+  const authStore = inject(AuthStore);
+  const router = inject(Router);
+
+  if (!authStore.sessionChecked()) {
+    await authStore.refreshSession();
+  }
+
+  if (!authStore.isAuthenticated()) {
+    return router.createUrlTree(['/login']);
+  }
+
+  return authStore.isSuperAdmin() ? true : router.createUrlTree(['/app/gateway']);
+};

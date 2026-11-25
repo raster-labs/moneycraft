@@ -6,7 +6,7 @@ import java.util.Objects;
 
 /**
  * Double-entry accounting line inside a voucher (TranMgr sub2 / ALLLEDGERENTRIES.LIST).
- * Universal Tally sign law: negative = Debit, positive = Credit.
+ * Universal XML envelope sign convention: negative = Debit, positive = Credit.
  */
 public record RawVoucherLine(
         String ledgerName,

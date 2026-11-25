@@ -8,7 +8,7 @@ import {
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
 import { INDIAN_GST_STATES, validateGstin } from '../../core/validation/gstin-validator';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
@@ -278,35 +278,145 @@ import {
 
           <!-- F11 Company Features Panel -->
           <div class="mc-f11-panel">
-            <div class="mc-form-section-title">F11: Company Features (Accounting, Inventory, Statutory &amp; MCA Audit)</div>
+            <div class="mc-f11-title-row">
+              <div class="mc-form-section-title">
+                F11: Company Features (Accounting, Inventory, Statutory &amp; MCA Audit)
+              </div>
+              <div class="mc-f11-tier-toggles">
+                <label class="mc-toggle-line">
+                  <input
+                    type="checkbox"
+                    name="f11ShowMore"
+                    data-testid="hub-f11-show-more-toggle"
+                    [ngModel]="f11ShowMore()"
+                    (ngModelChange)="onF11ShowMoreChange($event)"
+                  />
+                  <span>Show more features</span>
+                </label>
+                <label class="mc-toggle-line">
+                  <input
+                    type="checkbox"
+                    name="f11ShowAll"
+                    data-testid="hub-f11-show-all-toggle"
+                    [ngModel]="f11ShowAll()"
+                    (ngModelChange)="onF11ShowAllChange($event)"
+                  />
+                  <span>Show all features</span>
+                </label>
+              </div>
+            </div>
 
             <div class="mc-f11-columns">
               <div class="mc-f11-group">
-                <h3>Accounting &amp; Inventory</h3>
+                <h3>Accounting Features</h3>
                 <label class="mc-toggle-line">
                   <input type="checkbox" name="maintainAccounts" [(ngModel)]="featMaintainAccounts" />
                   <span>Maintain Accounts</span>
                 </label>
                 <label class="mc-toggle-line">
-                  <input type="checkbox" name="billWiseEnabled" [(ngModel)]="featBillWise" />
+                  <input
+                    type="checkbox"
+                    name="billWiseEnabled"
+                    [(ngModel)]="featBillWise"
+                    [disabled]="!featMaintainAccounts"
+                  />
                   <span>Enable Bill-wise entry</span>
                 </label>
-                <label class="mc-toggle-line">
-                  <input type="checkbox" name="costCentresEnabled" [(ngModel)]="featCostCentres" />
-                  <span>Enable Cost Centres</span>
-                </label>
+                @if (f11ShowMore() || f11ShowAll()) {
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="costCentresEnabled" [(ngModel)]="featCostCentres" />
+                    <span>Enable Cost Centres</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="interestCalculationEnabled"
+                      [(ngModel)]="featInterestCalculation"
+                    />
+                    <span>Enable Interest Calculation</span>
+                  </label>
+                }
+
+                <h3>Inventory Features</h3>
                 <label class="mc-toggle-line">
                   <input type="checkbox" name="maintainInventory" [(ngModel)]="featMaintainInventory" />
                   <span>Maintain Inventory</span>
                 </label>
                 <label class="mc-toggle-line">
-                  <input type="checkbox" name="inventoryIntegrated" [(ngModel)]="featInventoryIntegrated" />
+                  <input
+                    type="checkbox"
+                    name="inventoryIntegrated"
+                    [(ngModel)]="featInventoryIntegrated"
+                    [disabled]="!featMaintainInventory || !featMaintainAccounts"
+                  />
                   <span>Integrate Accounts with Inventory</span>
                 </label>
+                @if (f11ShowMore() || f11ShowAll()) {
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="multiplePriceLevelsEnabled"
+                      [(ngModel)]="featMultiplePriceLevels"
+                    />
+                    <span>Enable multiple Price Levels</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="batchesEnabled" [(ngModel)]="featBatches" />
+                    <span>Enable Batches</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="expiryDateForBatchesEnabled"
+                      [(ngModel)]="featExpiryDateForBatches"
+                      [disabled]="!featBatches"
+                    />
+                    <span>Maintain Expiry Date for Batches</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="useDiscountColumnInInvoices"
+                      [(ngModel)]="featUseDiscountColumn"
+                    />
+                    <span>Use Discount column in invoices</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="useSeparateActualAndBilledQty"
+                      [(ngModel)]="featUseSeparateActualBilledQty"
+                    />
+                    <span>Use separate Actual and Billed Quantity columns in invoices</span>
+                  </label>
+                }
+                @if (f11ShowAll()) {
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="jobOrderProcessingEnabled"
+                      [(ngModel)]="featJobOrderProcessing"
+                    />
+                    <span>Enable Job Order Processing</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="costTrackingEnabled" [(ngModel)]="featCostTracking" />
+                    <span>Enable Cost Tracking</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="jobCostingEnabled"
+                      [(ngModel)]="featJobCosting"
+                      [disabled]="!featCostCentres"
+                    />
+                    <span>Enable Job Costing</span>
+                  </label>
+                }
               </div>
 
               <div class="mc-f11-group">
-                <h3>Statutory, Tax &amp; MCA Edit Log</h3>
+                <h3>Taxation &amp; Statutory</h3>
                 <label class="mc-toggle-line">
                   <input
                     type="checkbox"
@@ -376,6 +486,38 @@ import {
                       }
                     </div>
 
+                    <div class="mc-grid-2">
+                      <label class="mc-toggle-line">
+                        <input
+                          type="checkbox"
+                          name="eWayBillApplicable"
+                          [(ngModel)]="featEWayBillApplicable"
+                        />
+                        <span>e-Way Bill applicable</span>
+                      </label>
+                      <label class="mc-toggle-line">
+                        <input
+                          type="checkbox"
+                          name="eInvoiceApplicable"
+                          [(ngModel)]="featEInvoiceApplicable"
+                        />
+                        <span>e-Invoicing applicable</span>
+                      </label>
+                    </div>
+
+                    @if (featEWayBillApplicable) {
+                      <div>
+                        <label class="mc-field-label" for="comp-ewb-limit">e-Way Bill Threshold Limit</label>
+                        <input
+                          id="comp-ewb-limit"
+                          type="text"
+                          name="eWayBillThresholdLimit"
+                          class="mc-input mc-code"
+                          [(ngModel)]="featEWayBillThreshold"
+                        />
+                      </div>
+                    }
+
                     <label class="mc-toggle-line">
                       <input type="checkbox" name="multiGstinEnabled" [(ngModel)]="featMultiGstin" />
                       <span>Enable Multi-GSTIN Registrations</span>
@@ -387,6 +529,61 @@ import {
                   <input type="checkbox" name="tdsEnabled" [(ngModel)]="featTdsEnabled" />
                   <span>Enable Tax Deducted at Source (TDS)</span>
                 </label>
+
+                @if (f11ShowMore() || f11ShowAll()) {
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="tcsEnabled" [(ngModel)]="featTcsEnabled" />
+                    <span>Enable Tax Collected at Source (TCS)</span>
+                  </label>
+                }
+
+                @if (f11ShowAll()) {
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="vatEnabled" [(ngModel)]="featVatEnabled" />
+                    <span>Enable Value Added Tax (VAT)</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="exciseEnabled" [(ngModel)]="featExciseEnabled" />
+                    <span>Enable Excise</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="serviceTaxEnabled" [(ngModel)]="featServiceTaxEnabled" />
+                    <span>Enable Service Tax</span>
+                  </label>
+                }
+
+                @if (f11ShowMore() || f11ShowAll()) {
+                  <h3>Payroll &amp; Others</h3>
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="payrollEnabled" [(ngModel)]="featPayrollEnabled" />
+                    <span>Maintain Payroll</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="payrollStatutoryEnabled"
+                      [(ngModel)]="featPayrollStatutoryEnabled"
+                      [disabled]="!featPayrollEnabled"
+                    />
+                    <span>Enable Payroll Statutory</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="multipleAddressesEnabled"
+                      [(ngModel)]="featMultipleAddresses"
+                    />
+                    <span>Enable multiple addresses</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="markModifiedVouchers"
+                      [(ngModel)]="featMarkModifiedVouchers"
+                    />
+                    <span>Mark modified vouchers</span>
+                  </label>
+                }
 
                 <label class="mc-toggle-line">
                   <input
@@ -489,9 +686,283 @@ import {
           </table>
         </section>
       }
+      @if (postCreateF11ModalOpen()) {
+        <div
+          class="mc-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Company created successfully — F11: Company Features"
+          data-testid="post-create-f11-modal"
+          (keydown.escape)="closePostCreateF11Modal()"
+        >
+          <div class="mc-modal-dialog mc-post-f11-dialog">
+            <div class="mc-modal-header">
+              <span>
+                Company created successfully — F11: Company Features ({{ createdCompanySummary()?.legalName }})
+              </span>
+              <div class="mc-f11-tier-toggles">
+                <label class="mc-toggle-line">
+                  <input
+                    type="checkbox"
+                    name="modalF11ShowMore"
+                    [ngModel]="f11ShowMore()"
+                    (ngModelChange)="onF11ShowMoreChange($event)"
+                  />
+                  <span>Show more features</span>
+                </label>
+                <label class="mc-toggle-line">
+                  <input
+                    type="checkbox"
+                    name="modalF11ShowAll"
+                    [ngModel]="f11ShowAll()"
+                    (ngModelChange)="onF11ShowAllChange($event)"
+                  />
+                  <span>Show all features</span>
+                </label>
+                <button
+                  type="button"
+                  class="mc-btn mc-btn-secondary"
+                  data-testid="post-create-f11-close-btn"
+                  (click)="closePostCreateF11Modal()"
+                >
+                  Close (Esc)
+                </button>
+              </div>
+            </div>
+            <div class="mc-modal-body">
+              <div class="mc-f11-columns">
+                <div class="mc-f11-group">
+                  <h3>Accounting &amp; Inventory</h3>
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="modalMaintainAccounts" [(ngModel)]="featMaintainAccounts" />
+                    <span>Maintain Accounts</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="modalBillWise"
+                      [(ngModel)]="featBillWise"
+                      [disabled]="!featMaintainAccounts"
+                    />
+                    <span>Enable Bill-wise entry</span>
+                  </label>
+                  @if (f11ShowMore() || f11ShowAll()) {
+                    <label class="mc-toggle-line">
+                      <input type="checkbox" name="modalCostCentres" [(ngModel)]="featCostCentres" />
+                      <span>Enable Cost Centres</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalInterestCalc"
+                        [(ngModel)]="featInterestCalculation"
+                      />
+                      <span>Enable Interest Calculation</span>
+                    </label>
+                  }
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="modalMaintainInventory" [(ngModel)]="featMaintainInventory" />
+                    <span>Maintain Inventory</span>
+                  </label>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="modalInvIntegrated"
+                      [(ngModel)]="featInventoryIntegrated"
+                      [disabled]="!featMaintainInventory || !featMaintainAccounts"
+                    />
+                    <span>Integrate Accounts with Inventory</span>
+                  </label>
+                  @if (f11ShowMore() || f11ShowAll()) {
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalPriceLevels"
+                        [(ngModel)]="featMultiplePriceLevels"
+                      />
+                      <span>Enable multiple Price Levels</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input type="checkbox" name="modalBatches" [(ngModel)]="featBatches" />
+                      <span>Enable Batches</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalExpiryBatches"
+                        [(ngModel)]="featExpiryDateForBatches"
+                        [disabled]="!featBatches"
+                      />
+                      <span>Maintain Expiry Date for Batches</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalDiscountCol"
+                        [(ngModel)]="featUseDiscountColumn"
+                      />
+                      <span>Use Discount column in invoices</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalSeparateActualBilled"
+                        [(ngModel)]="featUseSeparateActualBilledQty"
+                      />
+                      <span>Use separate Actual and Billed Quantity columns in invoices</span>
+                    </label>
+                  }
+                  @if (f11ShowAll()) {
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalJobOrder"
+                        [(ngModel)]="featJobOrderProcessing"
+                      />
+                      <span>Enable Job Order Processing</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input type="checkbox" name="modalCostTracking" [(ngModel)]="featCostTracking" />
+                      <span>Enable Cost Tracking</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalJobCosting"
+                        [(ngModel)]="featJobCosting"
+                        [disabled]="!featCostCentres"
+                      />
+                      <span>Enable Job Costing</span>
+                    </label>
+                  }
+                </div>
+
+                <div class="mc-f11-group">
+                  <h3>Taxation, Payroll &amp; MCA Edit Log</h3>
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="modalGstEnabled"
+                      [ngModel]="featGstEnabled()"
+                      (ngModelChange)="featGstEnabled.set($event)"
+                    />
+                    <span>Enable Goods and Services Tax (GST)</span>
+                  </label>
+                  @if (featGstEnabled()) {
+                    <div>
+                      <label class="mc-field-label" for="modal-gstin">GSTIN (Optional now)</label>
+                      <input
+                        id="modal-gstin"
+                        type="text"
+                        name="modalGstin"
+                        class="mc-input mc-code"
+                        [ngModel]="featGstin()"
+                        (ngModelChange)="featGstin.set($event)"
+                        placeholder="33AABCM1234F1Z4"
+                      />
+                    </div>
+                  }
+                  <label class="mc-toggle-line">
+                    <input type="checkbox" name="modalTdsEnabled" [(ngModel)]="featTdsEnabled" />
+                    <span>Enable Tax Deducted at Source (TDS)</span>
+                  </label>
+                  @if (f11ShowMore() || f11ShowAll()) {
+                    <label class="mc-toggle-line">
+                      <input type="checkbox" name="modalTcsEnabled" [(ngModel)]="featTcsEnabled" />
+                      <span>Enable Tax Collected at Source (TCS)</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input type="checkbox" name="modalPayrollEnabled" [(ngModel)]="featPayrollEnabled" />
+                      <span>Maintain Payroll</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalPayrollStat"
+                        [(ngModel)]="featPayrollStatutoryEnabled"
+                        [disabled]="!featPayrollEnabled"
+                      />
+                      <span>Enable Payroll Statutory</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalMultiAddr"
+                        [(ngModel)]="featMultipleAddresses"
+                      />
+                      <span>Enable multiple addresses</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalMarkModVch"
+                        [(ngModel)]="featMarkModifiedVouchers"
+                      />
+                      <span>Mark modified vouchers</span>
+                    </label>
+                  }
+                  @if (f11ShowAll()) {
+                    <label class="mc-toggle-line">
+                      <input type="checkbox" name="modalVatEnabled" [(ngModel)]="featVatEnabled" />
+                      <span>Enable Value Added Tax (VAT)</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input type="checkbox" name="modalExciseEnabled" [(ngModel)]="featExciseEnabled" />
+                      <span>Enable Excise</span>
+                    </label>
+                    <label class="mc-toggle-line">
+                      <input
+                        type="checkbox"
+                        name="modalServiceTaxEnabled"
+                        [(ngModel)]="featServiceTaxEnabled"
+                      />
+                      <span>Enable Service Tax</span>
+                    </label>
+                  }
+                  <label class="mc-toggle-line">
+                    <input
+                      type="checkbox"
+                      name="modalMcaEditLog"
+                      [(ngModel)]="featMcaEditLog"
+                      [disabled]="mcaEditLogLocked()"
+                    />
+                    <span>Enforce Immutable MCA Edit Log</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="mc-modal-footer">
+              <button
+                type="button"
+                class="mc-btn mc-btn-primary"
+                data-testid="post-create-f11-accept-btn"
+                (click)="confirmPostCreateFeatures()"
+              >
+                Accept Features &amp; Open Gateway (<span class="mc-key-ctrl">A</span>)
+              </button>
+            </div>
+          </div>
+        </div>
+      }
     </div>
   `,
   styles: `
+    .mc-post-f11-dialog {
+      width: min(760px, 95vw);
+    }
+    .mc-f11-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--mc-space-2);
+    }
+    .mc-f11-tier-toggles {
+      display: flex;
+      align-items: center;
+      gap: var(--mc-space-3);
+      flex-wrap: wrap;
+    }
     .mc-company-hub-layout {
       display: flex;
       flex-direction: column;
@@ -668,6 +1139,7 @@ export class CompanyHubComponent implements OnInit {
   readonly companyContext = inject(CompanyContextStore);
   private readonly shortcutRegistry = inject(ShortcutCommandRegistry);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly states = INDIAN_GST_STATES;
@@ -677,6 +1149,11 @@ export class CompanyHubComponent implements OnInit {
   readonly mcaEditLogLocked = signal<boolean>(false);
   readonly formError = signal<string | null>(null);
   readonly feedbackMessage = signal<string | null>(null);
+  readonly postCreateF11ModalOpen = signal<boolean>(false);
+  readonly createdCompanySummary = signal<CompanySummary | null>(null);
+
+  readonly f11ShowMore = signal<boolean>(true);
+  readonly f11ShowAll = signal<boolean>(false);
 
   formCode = 'MCPB01';
   formLegalName = '';
@@ -692,14 +1169,34 @@ export class CompanyHubComponent implements OnInit {
   featMaintainAccounts = true;
   featBillWise = true;
   featCostCentres = false;
+  featInterestCalculation = false;
   featMaintainInventory = true;
   featInventoryIntegrated = true;
+  featMultiplePriceLevels = false;
+  featBatches = true;
+  featExpiryDateForBatches = true;
+  featJobOrderProcessing = false;
+  featCostTracking = false;
+  featJobCosting = false;
+  featUseDiscountColumn = true;
+  featUseSeparateActualBilledQty = true;
   readonly featGstEnabled = signal<boolean>(true);
   featMultiGstin = false;
   featGstRegType: 'REGULAR' | 'COMPOSITION' | 'ISD' | 'SEZ' = 'REGULAR';
   readonly featGstin = signal<string>('');
   featGstr1Periodicity: 'MONTHLY' | 'QUARTERLY' = 'MONTHLY';
+  featEInvoiceApplicable = false;
+  featEWayBillApplicable = true;
+  featEWayBillThreshold = '50000.00';
   featTdsEnabled = true;
+  featTcsEnabled = false;
+  featVatEnabled = false;
+  featExciseEnabled = false;
+  featServiceTaxEnabled = false;
+  featPayrollEnabled = false;
+  featPayrollStatutoryEnabled = false;
+  featMultipleAddresses = false;
+  featMarkModifiedVouchers = false;
   featMcaEditLog = true;
 
   quickPeriodFrom = '2025-04-01';
@@ -708,6 +1205,20 @@ export class CompanyHubComponent implements OnInit {
   readonly gstinValidation = computed(() =>
     validateGstin(this.featGstin(), this.formStateCode()),
   );
+
+  onF11ShowMoreChange(val: boolean): void {
+    this.f11ShowMore.set(val);
+    if (!val) {
+      this.f11ShowAll.set(false);
+    }
+  }
+
+  onF11ShowAllChange(val: boolean): void {
+    this.f11ShowAll.set(val);
+    if (val) {
+      this.f11ShowMore.set(true);
+    }
+  }
 
   ngOnInit(): void {
     const mode = this.route.snapshot.queryParamMap.get('mode');
@@ -760,11 +1271,31 @@ export class CompanyHubComponent implements OnInit {
     this.featMaintainAccounts = true;
     this.featBillWise = true;
     this.featCostCentres = false;
+    this.featInterestCalculation = false;
     this.featMaintainInventory = true;
     this.featInventoryIntegrated = true;
+    this.featMultiplePriceLevels = false;
+    this.featBatches = true;
+    this.featExpiryDateForBatches = true;
+    this.featJobOrderProcessing = false;
+    this.featCostTracking = false;
+    this.featJobCosting = false;
+    this.featUseDiscountColumn = true;
+    this.featUseSeparateActualBilledQty = true;
     this.featGstEnabled.set(true);
     this.featGstin.set('');
+    this.featEInvoiceApplicable = false;
+    this.featEWayBillApplicable = true;
+    this.featEWayBillThreshold = '50000.00';
     this.featTdsEnabled = true;
+    this.featTcsEnabled = false;
+    this.featVatEnabled = false;
+    this.featExciseEnabled = false;
+    this.featServiceTaxEnabled = false;
+    this.featPayrollEnabled = false;
+    this.featPayrollStatutoryEnabled = false;
+    this.featMultipleAddresses = false;
+    this.featMarkModifiedVouchers = false;
     this.featMcaEditLog = true;
     this.activeTab.set('form');
   }
@@ -786,14 +1317,34 @@ export class CompanyHubComponent implements OnInit {
     this.featMaintainAccounts = comp.features.maintainAccounts;
     this.featBillWise = comp.features.billWiseEnabled;
     this.featCostCentres = comp.features.costCentresEnabled;
+    this.featInterestCalculation = Boolean(comp.features.interestCalculationEnabled);
     this.featMaintainInventory = comp.features.maintainInventory;
     this.featInventoryIntegrated = comp.features.inventoryIntegrated;
+    this.featMultiplePriceLevels = Boolean(comp.features.multiplePriceLevelsEnabled);
+    this.featBatches = comp.features.batchesEnabled !== false;
+    this.featExpiryDateForBatches = comp.features.expiryDateForBatchesEnabled !== false;
+    this.featJobOrderProcessing = Boolean(comp.features.jobOrderProcessingEnabled);
+    this.featCostTracking = Boolean(comp.features.costTrackingEnabled);
+    this.featJobCosting = Boolean(comp.features.jobCostingEnabled);
+    this.featUseDiscountColumn = comp.features.useDiscountColumnInInvoices !== false;
+    this.featUseSeparateActualBilledQty = comp.features.useSeparateActualAndBilledQty !== false;
     this.featGstEnabled.set(comp.features.gstEnabled);
     this.featMultiGstin = comp.features.multiGstinEnabled;
     this.featGstRegType = comp.features.gstRegistrationType;
     this.featGstin.set(comp.features.gstin);
     this.featGstr1Periodicity = comp.features.gstr1Periodicity;
+    this.featEInvoiceApplicable = Boolean(comp.features.eInvoiceApplicable);
+    this.featEWayBillApplicable = comp.features.eWayBillApplicable !== false;
+    this.featEWayBillThreshold = comp.features.eWayBillThresholdLimit ?? '50000.00';
     this.featTdsEnabled = comp.features.tdsEnabled;
+    this.featTcsEnabled = Boolean(comp.features.tcsEnabled);
+    this.featVatEnabled = Boolean(comp.features.vatEnabled);
+    this.featExciseEnabled = Boolean(comp.features.exciseEnabled);
+    this.featServiceTaxEnabled = Boolean(comp.features.serviceTaxEnabled);
+    this.featPayrollEnabled = Boolean(comp.features.payrollEnabled);
+    this.featPayrollStatutoryEnabled = Boolean(comp.features.payrollStatutoryEnabled);
+    this.featMultipleAddresses = Boolean(comp.features.multipleAddressesEnabled);
+    this.featMarkModifiedVouchers = Boolean(comp.features.markModifiedVouchers);
     this.featMcaEditLog = comp.features.mcaEditLogEnforced;
     this.activeTab.set('form');
   }
@@ -838,17 +1389,40 @@ export class CompanyHubComponent implements OnInit {
       versionNo: editingExisting?.versionNo,
       features: {
         maintainAccounts: this.featMaintainAccounts,
-        billWiseEnabled: this.featBillWise,
+        billWiseEnabled: this.featMaintainAccounts ? this.featBillWise : false,
         costCentresEnabled: this.featCostCentres,
+        interestCalculationEnabled: this.featInterestCalculation,
         maintainInventory: this.featMaintainInventory,
-        inventoryIntegrated: this.featInventoryIntegrated,
+        inventoryIntegrated:
+          this.featMaintainAccounts && this.featMaintainInventory
+            ? this.featInventoryIntegrated
+            : false,
+        multiplePriceLevelsEnabled: this.featMultiplePriceLevels,
+        batchesEnabled: this.featBatches,
+        expiryDateForBatchesEnabled: this.featBatches ? this.featExpiryDateForBatches : false,
+        jobOrderProcessingEnabled: this.featJobOrderProcessing,
+        costTrackingEnabled: this.featCostTracking,
+        jobCostingEnabled: this.featCostCentres ? this.featJobCosting : false,
+        useDiscountColumnInInvoices: this.featUseDiscountColumn,
+        useSeparateActualAndBilledQty: this.featUseSeparateActualBilledQty,
         gstEnabled: this.featGstEnabled(),
         multiGstinEnabled: this.featMultiGstin,
         gstRegistrationType: this.featGstRegType,
         gstin: this.featGstin().trim().toUpperCase(),
         gstr1Periodicity: this.featGstr1Periodicity,
         gstEffectiveFrom: this.formFyFrom,
+        eInvoiceApplicable: this.featEInvoiceApplicable,
+        eWayBillApplicable: this.featEWayBillApplicable,
+        eWayBillThresholdLimit: this.featEWayBillThreshold.trim() || '50000.00',
         tdsEnabled: this.featTdsEnabled,
+        tcsEnabled: this.featTcsEnabled,
+        vatEnabled: this.featVatEnabled,
+        exciseEnabled: this.featExciseEnabled,
+        serviceTaxEnabled: this.featServiceTaxEnabled,
+        payrollEnabled: this.featPayrollEnabled,
+        payrollStatutoryEnabled: this.featPayrollEnabled ? this.featPayrollStatutoryEnabled : false,
+        multipleAddressesEnabled: this.featMultipleAddresses,
+        markModifiedVouchers: this.featMarkModifiedVouchers,
         mcaEditLogEnforced: this.mcaEditLogLocked() ? true : this.featMcaEditLog,
       },
     };
@@ -858,13 +1432,29 @@ export class CompanyHubComponent implements OnInit {
       if (editId) {
         await this.companyContext.updateCompany(editId, payload);
         this.feedbackMessage.set(`Updated company "${payload.legalName}".`);
+        this.activeTab.set('list');
       } else {
-        await this.companyContext.createCompany(payload);
+        const created = await this.companyContext.createCompany(payload);
         this.feedbackMessage.set(`Created company "${payload.legalName}" with 28 predefined groups.`);
+        this.createdCompanySummary.set(created);
+        this.startAlterCompany(created);
+        this.postCreateF11ModalOpen.set(true);
       }
-      this.activeTab.set('list');
     } catch (err: unknown) {
       this.formError.set(err instanceof Error ? err.message : 'Failed to save company.');
+    }
+  }
+
+  closePostCreateF11Modal(): void {
+    this.postCreateF11ModalOpen.set(false);
+    this.activeTab.set('list');
+  }
+
+  async confirmPostCreateFeatures(): Promise<void> {
+    await this.saveCompanyForm();
+    if (!this.formError()) {
+      this.postCreateF11ModalOpen.set(false);
+      await this.router.navigateByUrl('/app/gateway');
     }
   }
 

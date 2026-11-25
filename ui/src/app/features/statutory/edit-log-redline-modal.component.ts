@@ -7,9 +7,14 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { FocusReturnDirective } from '../../shared/directives/focus-return.directive';
 import { EditLogModalService } from './edit-log-modal.service';
 import { EditLogVersionDto } from './statutory.models';
@@ -71,7 +76,7 @@ function flattenSnapshot(
 @Component({
   selector: 'mc-edit-log-redline-modal',
   standalone: true,
-  imports: [CodeBadgeComponent, FocusReturnDirective],
+  imports: [CodeBadgeComponent, FocusReturnDirective, SemanticIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (modalService.activeSession(); as session) {
@@ -96,24 +101,31 @@ function flattenSnapshot(
             <div class="header-actions">
               <button
                 type="button"
-                class="mc-btn"
+                class="mc-btn mc-btn-secondary"
                 data-testid="edit-log-toggle-altered-btn"
                 [attr.aria-pressed]="showAlteredValuesOnly()"
                 (click)="toggleShowAlteredOnly()"
               >
-                @if (showAlteredValuesOnly()) {
-                  Showing: Altered Values Only (F12: Show All)
-                } @else {
-                  Showing: All Fields (F12: Altered Only)
-                }
+                <mc-icon name="filter" [size]="16" />
+                <span>
+                  @if (showAlteredValuesOnly()) {
+                    Showing: Altered Values Only (F12: Show All)
+                  } @else {
+                    Showing: All Fields (F12: Altered Only)
+                  }
+                </span>
               </button>
               <button
                 type="button"
-                class="mc-btn"
+                class="mc-btn mc-btn-secondary"
                 data-testid="edit-log-close-btn"
                 (click)="modalService.close()"
               >
-                Esc Close
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+                @if (closeHint(); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
               </button>
             </div>
           </header>
@@ -125,9 +137,7 @@ function flattenSnapshot(
           } @else if (errorMessage(); as err) {
             <div class="state-banner state-error" role="alert">{{ err }}</div>
           } @else if (versions().length === 0) {
-            <div class="state-banner" data-testid="edit-log-empty">
-              No Edit Log versions recorded for this record.
-            </div>
+            <div class="mc-empty-records" data-testid="edit-log-empty">No matching records</div>
           } @else {
             <div class="edit-log-body">
               <aside class="version-timeline" aria-label="Version History">
@@ -182,6 +192,25 @@ function flattenSnapshot(
                       }
                     </div>
 
+                    @if (selectedIndex() > 0) {
+                      <div class="baseline-picker">
+                        <label for="mc-edit-log-baseline-sel" class="hash-label">Compare With:</label>
+                        <select
+                          id="mc-edit-log-baseline-sel"
+                          class="mc-select"
+                          data-testid="edit-log-compare-baseline-select"
+                          [value]="effectiveBaselineIndex()"
+                          (change)="onBaselineSelectChange($event)"
+                        >
+                          @for (bVer of baselineCandidates(); track bVer.version.versionNo) {
+                            <option [value]="bVer.index">
+                              Version {{ bVer.version.versionNo }} ({{ bVer.version.operation }})
+                            </option>
+                          }
+                        </select>
+                      </div>
+                    }
+
                     <div class="hash-cluster">
                       <span class="hash-label">SHA-256:</span>
                       <span class="mc-code hash-value" data-testid="edit-log-sha256">
@@ -192,7 +221,7 @@ function flattenSnapshot(
 
                   <div class="filter-indicator" data-testid="edit-log-filter-mode">
                     @if (showAlteredValuesOnly()) {
-                      Filter Mode: <strong>Show Altered Values Only</strong> (Default — TallyPrime 7.2 Parity)
+                      Filter Mode: <strong>Show Altered Values Only</strong> (Default — MCA Rule 3(1) Audit Trail)
                     } @else {
                       Filter Mode: <strong>Show All Snapshot Fields</strong>
                     }
@@ -522,6 +551,7 @@ export class EditLogRedlineModalComponent {
   readonly errorMessage = signal<string | null>(null);
   readonly versions = signal<readonly EditLogVersionDto[]>([]);
   readonly selectedIndex = signal<number>(0);
+  readonly compareBaselineIndex = signal<number | null>(null);
 
   /**
    * TallyPrime Release 7.2 Mandatory Parity Rule:
@@ -535,10 +565,34 @@ export class EditLogRedlineModalComponent {
     return list[idx] ?? null;
   });
 
-  readonly previousVersion = computed<EditLogVersionDto | null>(() => {
+  readonly effectiveBaselineIndex = computed<number>(() => {
+    const idx = this.selectedIndex();
+    if (idx <= 0) {
+      return -1;
+    }
+    const custom = this.compareBaselineIndex();
+    if (custom !== null && custom >= 0 && custom < idx) {
+      return custom;
+    }
+    return idx - 1;
+  });
+
+  readonly baselineCandidates = computed<
+    readonly { readonly index: number; readonly version: EditLogVersionDto }[]
+  >(() => {
     const list = this.versions();
     const idx = this.selectedIndex();
-    return idx > 0 ? (list[idx - 1] ?? null) : null;
+    const candidates: { readonly index: number; readonly version: EditLogVersionDto }[] = [];
+    for (let i = 0; i < idx && i < list.length; i++) {
+      candidates.push({ index: i, version: list[i] });
+    }
+    return candidates;
+  });
+
+  readonly previousVersion = computed<EditLogVersionDto | null>(() => {
+    const list = this.versions();
+    const baseIdx = this.effectiveBaselineIndex();
+    return baseIdx >= 0 ? (list[baseIdx] ?? null) : null;
   });
 
   readonly visibleDiffRows = computed<readonly RedlineDiffRow[]>(() => {
@@ -548,17 +602,20 @@ export class EditLogRedlineModalComponent {
     }
     const prev = this.previousVersion();
     const alteredOnly = this.showAlteredValuesOnly();
+    const isAdjacentComparison = this.effectiveBaselineIndex() === this.selectedIndex() - 1;
 
     const explicitMap = new Map<
       string,
       { readonly beforeValue: unknown; readonly afterValue: unknown }
     >();
-    for (const diff of current.changedFields) {
-      if (diff.fieldPath) {
-        explicitMap.set(diff.fieldPath, {
-          beforeValue: diff.beforeValue,
-          afterValue: diff.afterValue,
-        });
+    if (isAdjacentComparison) {
+      for (const diff of current.changedFields) {
+        if (diff.fieldPath) {
+          explicitMap.set(diff.fieldPath, {
+            beforeValue: diff.beforeValue,
+            afterValue: diff.afterValue,
+          });
+        }
       }
     }
 
@@ -624,6 +681,12 @@ export class EditLogRedlineModalComponent {
     return allRows;
   });
 
+  private modalHandle: ActiveModalContextHandle | null = null;
+
+  readonly closeHint = computed(() =>
+    this.shortcutRegistry.effectiveActionHint('message.details', 'editor.close', asciiPair('C/c')),
+  );
+
   constructor() {
     const unbindF12 = this.shortcutRegistry.bindHandler(
       'screen.configure',
@@ -633,19 +696,47 @@ export class EditLogRedlineModalComponent {
       },
       () => this.modalService.isOpen(),
     );
-    this.destroyRef.onDestroy(() => unbindF12());
+    this.destroyRef.onDestroy(() => {
+      unbindF12();
+      this.releaseModal();
+    });
 
     effect(() => {
       const session = this.modalService.activeSession();
       if (!session) {
+        this.releaseModal();
         this.versions.set([]);
         this.errorMessage.set(null);
         return;
       }
-      // Always reset to TallyPrime 7.2 default (`Show Altered Values Only = true`) on open
+      this.releaseModal();
+      this.modalHandle = this.shortcutRegistry.openModalContext(
+        [
+          {
+            contextId: 'message.details',
+            locale: 'en-GB',
+            commandId: 'editor.close',
+            label: 'Close',
+            letterPair: asciiPair('C/c'),
+            permissionRef: 'authenticated',
+            effect: 'Close MCA Edit Log Redline viewer.',
+            normalActivation: () => this.modalService.close(),
+            iconSemanticId: 'mc.icon.close',
+            stateTokenRole: 'action.secondary',
+          },
+        ],
+        'en-GB',
+      );
       this.showAlteredValuesOnly.set(true);
       void this.loadVersions(session.companyId, session.entityType, session.entityId);
     });
+  }
+
+  private releaseModal(): void {
+    if (this.modalHandle) {
+      this.modalHandle.close();
+      this.modalHandle = null;
+    }
   }
 
   toggleShowAlteredOnly(): void {
@@ -656,6 +747,28 @@ export class EditLogRedlineModalComponent {
     const list = this.versions();
     if (index >= 0 && index < list.length) {
       this.selectedIndex.set(index);
+      this.compareBaselineIndex.set(null);
+    }
+  }
+
+  selectCompareBaselineIndex(index: number | null): void {
+    if (index === null) {
+      this.compareBaselineIndex.set(null);
+      return;
+    }
+    if (index >= 0 && index < this.selectedIndex()) {
+      this.compareBaselineIndex.set(index);
+    }
+  }
+
+  onBaselineSelectChange(event: Event): void {
+    const target = event.target as HTMLSelectElement | null;
+    if (!target) {
+      return;
+    }
+    const parsed = Number.parseInt(target.value, 10);
+    if (Number.isFinite(parsed)) {
+      this.selectCompareBaselineIndex(parsed);
     }
   }
 

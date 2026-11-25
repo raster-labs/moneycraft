@@ -13,6 +13,14 @@ import { ControlValueAccessor, FormsModule, NG_VALUE_ACCESSOR } from '@angular/f
 import { ExactDecimal, RUPEE_SYMBOL } from '../../../core/money/exact-decimal';
 import { moveGridCellFocusFrom } from '../../directives/grid-cell-nav.directive';
 
+function sanitizeMonetaryInput(raw: string, currencySymbol: string): string {
+  let cleaned = raw.replaceAll(',', '').replaceAll(RUPEE_SYMBOL, '');
+  if (currencySymbol && currencySymbol !== RUPEE_SYMBOL) {
+    cleaned = cleaned.replaceAll(currencySymbol, '');
+  }
+  return cleaned.replace(/^\s*INR\s*/i, '').replace(/\s+/g, '');
+}
+
 @Component({
   selector: 'mc-amount-cell',
   standalone: true,
@@ -285,6 +293,35 @@ export class AmountCellComponent implements ControlValueAccessor {
     }
     this.rawEditingText.set(text);
     this.validationError.set(null);
+
+    const sanitized = sanitizeMonetaryInput(text, this.currencySymbol());
+    if (sanitized.length === 0) {
+      const zeroWire = ExactDecimal.zero(this.scale()).toWireString(this.scale());
+      this.wireValueSignal.set(zeroWire);
+      this.onChangeCallback(zeroWire);
+      this.valueCommitted.emit(zeroWire);
+      return;
+    }
+    if (/^-?\d+(\.\d+)?$/.test(sanitized)) {
+      const parsed = ExactDecimal.tryParse(sanitized, this.scale(), 'UNNECESSARY');
+      if (parsed) {
+        const wire = parsed.toWireString(this.scale());
+        this.wireValueSignal.set(wire);
+        this.onChangeCallback(wire);
+        this.valueCommitted.emit(wire);
+      }
+    }
+  }
+
+  /**
+   * UM-110-02: Synchronously flushes any in-progress typed or comma-formatted amount
+   * when Ctrl+A / Submit is pressed while focus is still inside the Amount input.
+   */
+  flushPendingCommit(): string {
+    if (this.rawEditingText() !== null && !this.calculatorOpen()) {
+      this.commitRawText();
+    }
+    return this.value() ?? this.wireValueSignal();
   }
 
   onKeyDown(event: KeyboardEvent): void {
@@ -390,8 +427,8 @@ export class AmountCellComponent implements ControlValueAccessor {
     if (raw === null) {
       return;
     }
-    const trimmed = raw.trim();
-    if (trimmed.length === 0) {
+    const sanitized = sanitizeMonetaryInput(raw, this.currencySymbol());
+    if (sanitized.length === 0) {
       const zeroWire = ExactDecimal.zero(this.scale()).toWireString(this.scale());
       this.wireValueSignal.set(zeroWire);
       this.rawEditingText.set(null);
@@ -402,7 +439,7 @@ export class AmountCellComponent implements ControlValueAccessor {
     }
 
     try {
-      const parsed = ExactDecimal.parse(trimmed, this.scale(), 'UNNECESSARY');
+      const parsed = ExactDecimal.parse(sanitized, this.scale(), 'UNNECESSARY');
       const wire = parsed.toWireString(this.scale());
       this.wireValueSignal.set(wire);
       this.rawEditingText.set(null);

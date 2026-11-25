@@ -6,6 +6,7 @@ import {
   ElementRef,
   OnInit,
   computed,
+  effect,
   inject,
   input,
   signal,
@@ -14,18 +15,23 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { INDIAN_GST_STATES } from '../../core/validation/gstin-validator';
 import { AmountCellComponent } from '../../shared/components/amount-cell/amount-cell.component';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import {
   TypeaheadOption,
   TypeaheadSelectComponent,
 } from '../../shared/components/typeahead-select/typeahead-select.component';
 import { GridCellNavDirective } from '../../shared/directives/grid-cell-nav.directive';
-import { CompanyContextStore } from '../../state/company-context.store';
+import { CompanyContextStore, CompanyFeaturesConfig } from '../../state/company-context.store';
 import { NavigationStackStore } from '../../state/navigation-stack.store';
 import { ChartOfAccountsStore } from '../masters/chart-of-accounts.store';
 import {
@@ -217,6 +223,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
     IndianCurrencyPipe,
     AmountCellComponent,
     CodeBadgeComponent,
+    SemanticIconComponent,
     TypeaheadSelectComponent,
     GridCellNavDirective,
     BillWisePopoverComponent,
@@ -226,7 +233,12 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="mc-vch-shell" data-testid="voucher-grid-root">
+    <div
+      class="mc-vch-shell"
+      data-testid="voucher-grid-root"
+      data-mc-accept-ctrl-a="true"
+      (keydown)="onVoucherShellKeyDown($event)"
+    >
       <!-- Top Voucher Type Ribbon & Mode / Optional Badges -->
       <header class="mc-vch-topbar">
         <div class="mc-vch-title-cluster">
@@ -261,6 +273,12 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
             <span class="mc-badge mc-badge-slate">Reversing Journal</span>
           }
 
+          @if (isPostDated()) {
+            <span class="mc-badge mc-badge-slate" data-testid="voucher-postdated-badge">
+              Post-Dated
+            </span>
+          }
+
           @if (editingVoucherId()) {
             <span class="mc-badge mc-badge-jade" data-testid="voucher-alter-badge">
               Alteration ({{ editingStatus() }} • v{{ editingVersionNo() }})
@@ -289,6 +307,14 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
               (click)="toggleOptional()"
             >
               <span class="mc-key-ctrl">L</span>: {{ postingNature() === 'OPTIONAL' ? 'Regular' : 'Optional' }}
+            </button>
+            <button
+              type="button"
+              class="mc-btn"
+              data-testid="btn-toggle-postdated"
+              (click)="togglePostDated()"
+            >
+              <span class="mc-key-ctrl">T</span>: {{ isPostDated() ? 'Current' : 'Post-Dated' }}
             </button>
             <button
               type="button"
@@ -369,11 +395,52 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
         </div>
       }
 
+      <!-- UM-110-02 Quick Master & Fiscal Period Readiness Bar -->
+      <div class="mc-vch-readiness-bar" data-testid="voucher-readiness-bar">
+        <div class="mc-vch-quick-btns">
+          <button
+            type="button"
+            class="mc-btn"
+            data-testid="vch-quick-create-ledger"
+            (click)="openQuickMaster('LEDGER')"
+          >
+            + Create Ledger (<span class="mc-key-alt">C</span>)
+          </button>
+          <button
+            type="button"
+            class="mc-btn"
+            data-testid="vch-quick-create-item"
+            (click)="openQuickMaster('STOCK_ITEM')"
+          >
+            + Create Stock Item
+          </button>
+          <button
+            type="button"
+            class="mc-btn"
+            data-testid="vch-repeat-narration-btn"
+            (click)="repeatLastNarration()"
+          >
+            <span class="mc-key-ctrl">R</span>: Repeat Narration
+          </button>
+        </div>
+
+        @if (needsFiscalYearForVoucherDate()) {
+          <button
+            type="button"
+            class="mc-btn mc-btn-primary"
+            data-testid="vch-open-fy-btn"
+            (click)="openFiscalYearForCurrentVoucherDate()"
+          >
+            Open Fiscal Year for {{ voucherDate() }}
+          </button>
+        }
+      </div>
+
       <!-- Main Voucher Canvas -->
       <section class="mc-card mc-vch-card" data-mc-nav-container>
         <!-- Conditional Header Block per Entry Mode & Voucher Category -->
         <div class="mc-vch-header-fields">
-          @if (isPurchaseOrDebitNote()) {
+          @if (isPurchaseOrDebitNote() && companyContext.f12Config().provideReferenceNoAndDate) {
             <div class="mc-vch-supplier-row" data-testid="supplier-invoice-header">
               <div>
                 <label class="mc-field-label" for="vch-supp-inv-no">Supplier Invoice No.</label>
@@ -435,16 +502,18 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
               </div>
 
               @if (selectedHeaderAccountLedger(); as acctLed) {
-                <div class="mc-vch-curbal-pill">
-                  <span>Cur Bal:</span>
-                  <strong class="mc-amount">
-                    {{ acctLed.openingBalance | mcIndianCurrency: companyContext.currencyScale() : true }}
-                    {{ acctLed.openingSide }}
-                  </strong>
-                  @if (headerBankAllocations().length > 0) {
-                    <mc-code-badge [code]="headerBankAllocations()[0].transactionType" />
-                  }
-                </div>
+                @if (companyContext.f12Config().showLedgerCurrentBalance) {
+                  <div class="mc-vch-curbal-pill">
+                    <span>Cur Bal:</span>
+                    <strong class="mc-amount">
+                      {{ acctLed.openingBalance | mcIndianCurrency: companyContext.currencyScale() : true }}
+                      {{ acctLed.openingSide }}
+                    </strong>
+                    @if (headerBankAllocations().length > 0) {
+                      <mc-code-badge [code]="headerBankAllocations()[0].transactionType" />
+                    }
+                  </div>
+                }
               }
             </div>
           }
@@ -485,6 +554,25 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                 </div>
               }
 
+              @if (showPriceLevelSelector()) {
+                <div>
+                  <label class="mc-field-label" for="vch-price-level">Price Level</label>
+                  <select
+                    id="vch-price-level"
+                    class="mc-select"
+                    data-testid="vch-price-level-select"
+                    mcGridCellNav
+                    [ngModel]="selectedPriceLevel()"
+                    (ngModelChange)="selectedPriceLevel.set($event); markDirty()"
+                  >
+                    <option value="">Not Applicable</option>
+                    @for (pl of availablePriceLevels(); track pl) {
+                      <option [value]="pl">{{ pl }}</option>
+                    }
+                  </select>
+                </div>
+              }
+
               <div>
                 <label class="mc-field-label" for="vch-pos-state">Place of Supply</label>
                 <select
@@ -506,6 +594,23 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                     <span class="mc-vch-meta-lbl">Party GSTIN</span>
                     <mc-code-badge [code]="partyGstin()!" />
                   </div>
+                }
+                @if (selectedPartyLedger()?.creditLimit; as crLim) {
+                  <div class="mc-vch-meta-line" data-testid="party-credit-limit-badge">
+                    <span class="mc-vch-meta-lbl">Credit Limit</span>
+                    <strong class="mc-amount">
+                      {{ crLim | mcIndianCurrency: companyContext.currencyScale() : true }}
+                    </strong>
+                  </div>
+                  <label class="mc-vch-rcm-toggle">
+                    <input
+                      type="checkbox"
+                      data-testid="override-credit-limit-toggle"
+                      [ngModel]="overrideCreditLimit()"
+                      (ngModelChange)="overrideCreditLimit.set($event); markDirty()"
+                    />
+                    <span>Override Credit Limit</span>
+                  </label>
                 }
                 <label class="mc-vch-rcm-toggle">
                   <input
@@ -805,11 +910,17 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
               <thead>
                 <tr>
                   <th>Name of Item</th>
-                  <th class="mc-vch-col-qty mc-amount">Actual</th>
-                  <th class="mc-vch-col-qty mc-amount">Billed</th>
+                  @if (showSeparateActualQty()) {
+                    <th class="mc-vch-col-qty mc-amount">Actual</th>
+                    <th class="mc-vch-col-qty mc-amount">Billed</th>
+                  } @else {
+                    <th class="mc-vch-col-qty mc-amount">Quantity</th>
+                  }
                   <th class="mc-vch-col-rate mc-amount">Rate</th>
                   <th class="mc-vch-col-uom">per</th>
-                  <th class="mc-vch-col-ratepct mc-amount">Disc %</th>
+                  @if (showDiscountCol()) {
+                    <th class="mc-vch-col-ratepct mc-amount">Disc %</th>
+                  }
                   @if (hasAnyTobaccoMrpItem()) {
                     <th class="mc-vch-col-rate mc-amount">MRP/Unit</th>
                   }
@@ -849,16 +960,18 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                         }
                       </div>
                     </td>
-                    <td>
-                      <input
-                        type="text"
-                        class="mc-input mc-amount"
-                        mcGridCellNav
-                        [attr.data-testid]="'item-actual-qty-' + iIdx"
-                        [ngModel]="item.actualQty ?? item.quantity"
-                        (ngModelChange)="onItemActualQtyChange(iIdx, $event)"
-                      />
-                    </td>
+                    @if (showSeparateActualQty()) {
+                      <td>
+                        <input
+                          type="text"
+                          class="mc-input mc-amount"
+                          mcGridCellNav
+                          [attr.data-testid]="'item-actual-qty-' + iIdx"
+                          [ngModel]="item.actualQty ?? item.quantity"
+                          (ngModelChange)="onItemActualQtyChange(iIdx, $event)"
+                        />
+                      </td>
+                    }
                     <td>
                       <input
                         type="text"
@@ -898,16 +1011,18 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                         </span>
                       }
                     </td>
-                    <td>
-                      <input
-                        type="text"
-                        class="mc-input mc-amount"
-                        mcGridCellNav
-                        [attr.data-testid]="'item-disc-' + iIdx"
-                        [ngModel]="item.discountPct ?? '0'"
-                        (ngModelChange)="onItemHookQtyOrRateChange(iIdx, item.quantity, item.rate, $event)"
-                      />
-                    </td>
+                    @if (showDiscountCol()) {
+                      <td>
+                        <input
+                          type="text"
+                          class="mc-input mc-amount"
+                          mcGridCellNav
+                          [attr.data-testid]="'item-disc-' + iIdx"
+                          [ngModel]="item.discountPct ?? '0'"
+                          (ngModelChange)="onItemHookQtyOrRateChange(iIdx, item.quantity, item.rate, $event)"
+                        />
+                      </td>
+                    }
                     @if (hasAnyTobaccoMrpItem()) {
                       <td>
                         @if (item.isTobaccoMrpItem) {
@@ -973,7 +1088,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
               <table class="mc-dense-table mc-vch-table" aria-label="Double-Entry Voucher Lines">
                 <thead>
                   <tr>
-                    <th class="mc-vch-col-side">Dr/Cr</th>
+                    <th class="mc-vch-col-side">{{ useCrDrFormat() ? 'Dr/Cr' : 'By/To' }}</th>
                     <th>Particulars (<span class="mc-key-alt">C</span> = Create Ledger)</th>
                     <th class="mc-vch-col-amt mc-amount">Debit</th>
                     <th class="mc-vch-col-amt mc-amount">Credit</th>
@@ -992,8 +1107,8 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                           (ngModelChange)="onLineSideChange(idx, $event)"
                           aria-label="Debit or Credit"
                         >
-                          <option value="DR">Dr</option>
-                          <option value="CR">Cr</option>
+                          <option value="DR">{{ useCrDrFormat() ? 'Dr' : 'By' }}</option>
+                          <option value="CR">{{ useCrDrFormat() ? 'Cr' : 'To' }}</option>
                         </select>
                       </td>
 
@@ -1002,7 +1117,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                           #lineLedgerSelect
                           [inputId]="'vch-ledger-' + idx"
                           listTitle="List of Ledger Accounts"
-                          [options]="allLedgerOptions()"
+                          [options]="asVoucherLedgerOptions()"
                           [selectedId]="row.ledgerId"
                           [allowInlineCreate]="true"
                           [allowEmptyOnEnter]="idx > 0 && totals().isBalancedAndPositive"
@@ -1010,6 +1125,16 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                           (emptyConfirmed)="onEmptyLineEnterJumpToNarration(idx)"
                           (createRequested)="openInlineLedgerCreate('LINE', idx, $event)"
                         />
+                        @if (showLineNarration()) {
+                          <input
+                            type="text"
+                            class="mc-input mc-vch-line-narr-input"
+                            [attr.data-testid]="'vch-line-narration-' + idx"
+                            [ngModel]="row.lineNarration"
+                            (ngModelChange)="onLineNarrationChange(idx, $event)"
+                            placeholder="Narration for this entry..."
+                          />
+                        }
                         @if (row.billAllocations.length > 0 || row.costAllocations.length > 0 || row.bankAllocations.length > 0) {
                           <div class="mc-vch-alloc-chips">
                             @for (b of row.billAllocations; track b.billName + b.allocationType) {
@@ -1125,6 +1250,16 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                         (emptyConfirmed)="onEmptyLineEnterJumpToNarration(idx)"
                         (createRequested)="openInlineLedgerCreate('LINE', idx, $event)"
                       />
+                      @if (showLineNarration()) {
+                        <input
+                          type="text"
+                          class="mc-input mc-vch-line-narr-input"
+                          [attr.data-testid]="'vch-line-narration-' + idx"
+                          [ngModel]="row.lineNarration"
+                          (ngModelChange)="onLineNarrationChange(idx, $event)"
+                          placeholder="Narration for this entry..."
+                        />
+                      }
                       @if (row.billAllocations.length > 0 || row.costAllocations.length > 0 || row.bankAllocations.length > 0) {
                         <div class="mc-vch-alloc-chips">
                           @for (b of row.billAllocations; track b.billName + b.allocationType) {
@@ -1438,7 +1573,17 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
           <div class="mc-modal-dialog mc-vch-other-modal">
             <div class="mc-modal-header">
               <span>Pending Open Orders ({{ isOutwardInvoice() ? 'Sales Orders' : 'Purchase Orders' }})</span>
-              <button type="button" class="mc-btn" (click)="openOrderModalOpen.set(false)">Esc</button>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="openOrderModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+                @if (closeHint(); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
             </div>
             <ul class="mc-vch-modal-list" role="listbox">
               @for (ord of openOrderLines(); track ord.orderNo + '_' + ord.stockItemId) {
@@ -1455,7 +1600,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                   </span>
                 </li>
               } @empty {
-                <li class="mc-vch-modal-item">No pending open orders found for selected Party.</li>
+                <li class="mc-empty-records">No matching records</li>
               }
             </ul>
           </div>
@@ -1463,7 +1608,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
       }
 
       <!-- ======================================================================= -->
-      <!-- Tally-Authentic Accept? Yes / No Confirmation Box                       -->
+      <!-- Posting Confirmation / Accept? Box (journal.postConfirm KEY-001)        -->
       <!-- ======================================================================= -->
       @if (acceptPromptOpen()) {
         <div
@@ -1475,7 +1620,7 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
           (keydown)="onAcceptPromptKeyDown($event)"
         >
           <div class="mc-vch-accept-box">
-            <div class="mc-vch-accept-title">Accept?</div>
+            <div class="mc-vch-accept-title">Accept &amp; Post Voucher?</div>
             <div class="mc-vch-accept-btns">
               <button
                 #acceptYesBtn
@@ -1484,15 +1629,23 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                 data-testid="accept-yes-btn"
                 (click)="confirmAcceptYes()"
               >
-                <strong>Y</strong>es (Enter)
+                <mc-icon name="post-ledger" [size]="16" />
+                <span>Post / <strong>Y</strong>es</span>
+                @if (postConfirmHint('journal.post', 'P/p'); as pHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ pHint }}]</span>
+                }
               </button>
               <button
                 type="button"
-                class="mc-btn"
+                class="mc-btn mc-btn-secondary"
                 data-testid="accept-no-btn"
                 (click)="dismissAcceptPrompt()"
               >
-                <strong>N</strong>o (Esc)
+                <mc-icon name="back" [size]="16" />
+                <span>Return / <strong>N</strong>o</span>
+                @if (postConfirmHint('editor.close', 'R/r'); as rHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ rHint }}]</span>
+                }
               </button>
             </div>
           </div>
@@ -1514,7 +1667,17 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
           <div class="mc-modal-dialog mc-vch-small-modal">
             <div class="mc-modal-header">
               <span>List of Modes (<span class="mc-key-ctrl">H</span>)</span>
-              <button type="button" class="mc-btn" (click)="changeModeModalOpen.set(false)">Esc</button>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="changeModeModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+                @if (closeHint(); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
             </div>
             <ul class="mc-vch-modal-list" role="listbox">
               @for (m of availableViewsForCategory(); track m; let mIdx = $index) {
@@ -1551,7 +1714,27 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
           <div class="mc-modal-dialog mc-vch-other-modal">
             <div class="mc-modal-header">
               <span>List of Voucher Types (F10 — 24 Categories)</span>
-              <button type="button" class="mc-btn" (click)="otherVouchersModalOpen.set(false)">Esc</button>
+              <div class="mc-vch-other-badges">
+                <button
+                  type="button"
+                  class="mc-btn"
+                  data-testid="other-vouchers-show-inactive-btn"
+                  (click)="otherVouchersShowInactive.set(!otherVouchersShowInactive())"
+                >
+                  {{ otherVouchersShowInactive() ? 'Hide Inactive' : 'Show Inactive' }}
+                </button>
+                <button
+                  type="button"
+                  class="mc-btn mc-btn-secondary"
+                  (click)="otherVouchersModalOpen.set(false)"
+                >
+                  <mc-icon name="close" [size]="16" />
+                  <span>Close</span>
+                  @if (closeHint(); as cHint) {
+                    <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                  }
+                </button>
+              </div>
             </div>
             <div class="mc-vch-other-search">
               <input
@@ -1573,14 +1756,141 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                 >
                   <span>{{ vt.name }}</span>
                   <div class="mc-vch-other-badges">
+                    @if (vt.isInactive) {
+                      <span class="mc-badge mc-badge-slate" data-testid="other-vch-inactive-badge">
+                        (Inactive — Enable in F11)
+                      </span>
+                    }
                     <span class="mc-badge mc-badge-slate">{{ vt.category }}</span>
                     @if (vt.shortcutKey) {
                       <mc-code-badge [code]="vt.shortcutKey" />
                     }
                   </div>
                 </li>
+              } @empty {
+                <li class="mc-empty-records">No matching records</li>
               }
             </ul>
+          </div>
+        </div>
+      }
+
+      <!-- ======================================================================= -->
+      <!-- Ctrl+Alt+U Unused Voucher Numbers Modal                                 -->
+      <!-- ======================================================================= -->
+      @if (unusedNumbersModalOpen()) {
+        <div
+          class="mc-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="unused-voucher-numbers-modal"
+          aria-label="Unused Voucher Numbers (Ctrl+Alt+U)"
+          (keydown.escape)="unusedNumbersModalOpen.set(false)"
+        >
+          <div class="mc-modal-dialog mc-vch-small-modal">
+            <div class="mc-modal-header">
+              <span>Unused Voucher Numbers — {{ activeVoucherTypeName() }} (Ctrl+Alt+U)</span>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="unusedNumbersModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+              </button>
+            </div>
+            <ul class="mc-vch-modal-list" role="listbox">
+              @if (unusedNumbersLoading()) {
+                <li class="mc-empty-records">Checking sequence gaps...</li>
+              } @else {
+                @for (uNum of unusedVoucherNumbers(); track uNum) {
+                  <li
+                    role="option"
+                    class="mc-vch-modal-item"
+                    [attr.data-testid]="'unused-vch-num-' + uNum"
+                    (click)="selectUnusedVoucherNumber(uNum)"
+                  >
+                    <mc-code-badge [code]="uNum" />
+                    <span class="mc-badge mc-badge-jade">Use Number</span>
+                  </li>
+                } @empty {
+                  <li class="mc-empty-records" data-testid="unused-vch-empty">
+                    No unused voucher numbers in sequence
+                  </li>
+                }
+              }
+            </ul>
+          </div>
+        </div>
+      }
+
+      <!-- ======================================================================= -->
+      <!-- Alt+J Stat Adjustment Modal                                             -->
+      <!-- ======================================================================= -->
+      @if (statAdjustmentModalOpen()) {
+        <div
+          class="mc-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="stat-adjustment-modal"
+          aria-label="Stat Adjustment (Alt+J)"
+          (keydown.escape)="statAdjustmentModalOpen.set(false)"
+        >
+          <div class="mc-modal-dialog mc-vch-small-modal">
+            <div class="mc-modal-header">
+              <span>Stat Adjustment Details (Alt+J)</span>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="statAdjustmentModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+              </button>
+            </div>
+            <div class="mc-vch-tax-body">
+              <div>
+                <label class="mc-field-label" for="stat-adj-nature">Nature of Adjustment</label>
+                <select
+                  id="stat-adj-nature"
+                  class="mc-select"
+                  data-testid="stat-adjustment-nature-select"
+                  [ngModel]="statAdjustmentNature()"
+                  (ngModelChange)="statAdjustmentNature.set($event)"
+                >
+                  <option value="Reversal of Input Tax Credit">Reversal of Input Tax Credit</option>
+                  <option value="Increase of Tax Liability">Increase of Tax Liability</option>
+                  <option value="Increase of Input Tax Credit">Increase of Input Tax Credit</option>
+                  <option value="RCM Tax Liability">RCM Tax Liability</option>
+                  <option value="TDS Stat Adjustment">TDS Stat Adjustment</option>
+                  <option value="TCS Stat Adjustment">TCS Stat Adjustment</option>
+                </select>
+              </div>
+              <div>
+                <label class="mc-field-label" for="stat-adj-details">Additional Details</label>
+                <input
+                  id="stat-adj-details"
+                  type="text"
+                  class="mc-input"
+                  data-testid="stat-adjustment-details-input"
+                  [ngModel]="statAdjustmentAdditionalDetails()"
+                  (ngModelChange)="statAdjustmentAdditionalDetails.set($event)"
+                />
+              </div>
+            </div>
+            <div class="mc-modal-footer">
+              <button
+                type="button"
+                class="mc-btn mc-btn-primary"
+                data-testid="stat-adjustment-apply-btn"
+                (click)="applyStatAdjustment()"
+              >
+                Apply Stat Adjustment
+              </button>
+              <button type="button" class="mc-btn" (click)="statAdjustmentModalOpen.set(false)">
+                Cancel (Esc)
+              </button>
+            </div>
           </div>
         </div>
       }
@@ -1605,8 +1915,16 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
                   &bull; {{ tx.supplyNature }} ({{ tx.companyStateCode }} &#x2192; {{ tx.placeOfSupplyState }})
                 }
               </span>
-              <button type="button" class="mc-btn" (click)="taxAnalysisModalOpen.set(false)">
-                Esc
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="taxAnalysisModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+                @if (closeHint(); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
               </button>
             </div>
 
@@ -2302,6 +2620,14 @@ function invoicePartyAndRevenueSides(category: VoucherBaseCategory): {
       border-radius: var(--mc-radius-xs);
       font-size: var(--mc-font-size-xs);
     }
+
+    .mc-vch-readiness-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--mc-space-2);
+    }
   `,
 })
 export class VoucherGridComponent implements OnInit {
@@ -2332,6 +2658,8 @@ export class VoucherGridComponent implements OnInit {
   private readonly otherVchSearchInputRef = viewChild<ElementRef<HTMLInputElement>>('otherVchSearchInput');
   private readonly lineLedgerSelectRefs = viewChildren<TypeaheadSelectComponent>('lineLedgerSelect');
   private readonly lineAmountCellRefs = viewChildren<AmountCellComponent>('lineAmountCell');
+  private readonly allTypeaheadChildren = viewChildren(TypeaheadSelectComponent);
+  private readonly allAmountCellChildren = viewChildren(AmountCellComponent);
 
   readonly gstStates = INDIAN_GST_STATES;
 
@@ -2362,6 +2690,8 @@ export class VoucherGridComponent implements OnInit {
   readonly voucherNumber = signal<string>('1');
   readonly voucherDate = signal<string>('2025-04-01');
   readonly reversingApplicableUpto = signal<string>('');
+  readonly isPostDated = signal<boolean>(false);
+  private lastSavedNarrationMemory = '';
   readonly persistedView = signal<VoucherPersistedView>('SINGLE_ENTRY');
   readonly postingNature = signal<VoucherPostingNature>('NORMAL');
 
@@ -2378,6 +2708,7 @@ export class VoucherGridComponent implements OnInit {
   readonly partyMailingName = signal<string | null>(null);
   readonly partyStateCode = signal<string | null>(null);
   readonly isReverseCharge = signal<boolean>(false);
+  readonly overrideCreditLimit = signal<boolean>(false);
   readonly narration = signal<string>('');
 
   // Grid Lines & Phase 4 Inventory / Stock Journal / BOM Signals
@@ -2405,6 +2736,14 @@ export class VoucherGridComponent implements OnInit {
   readonly otherVouchersModalOpen = signal<boolean>(false);
   readonly otherVouchersQuery = signal<string>('');
   readonly otherVouchersHighlightIdx = signal<number>(0);
+  readonly otherVouchersShowInactive = signal<boolean>(true);
+  readonly unusedNumbersModalOpen = signal<boolean>(false);
+  readonly unusedVoucherNumbers = signal<readonly string[]>([]);
+  readonly unusedNumbersLoading = signal<boolean>(false);
+  readonly statAdjustmentModalOpen = signal<boolean>(false);
+  readonly statAdjustmentNature = signal<string>('Reversal of Input Tax Credit');
+  readonly statAdjustmentAdditionalDetails = signal<string>('Under Rule 42 / 43');
+  readonly selectedPriceLevel = signal<string>('');
   readonly taxAnalysisModalOpen = signal<boolean>(false);
   readonly taxAnalysisLoading = signal<boolean>(false);
   readonly taxAnalysisResult = signal<GstComputePreviewResponse | null>(null);
@@ -2420,6 +2759,36 @@ export class VoucherGridComponent implements OnInit {
   // ---------------------------------------------------------------------------
 
   readonly isPureWarehouseVch = computed(() => isPureWarehouseCategory(this.activeCategory()));
+
+  readonly showSeparateActualQty = computed<boolean>(() =>
+    this.companyContext.isActualBilledQtySplit(),
+  );
+
+  readonly showDiscountCol = computed<boolean>(() => this.companyContext.isDiscountColEnabled());
+
+  readonly showPriceLevelSelector = computed<boolean>(
+    () => this.companyContext.isPriceLevelsEnabled() && this.persistedView() === 'ITEM_INVOICE',
+  );
+
+  readonly availablePriceLevels = computed<readonly string[]>(() => {
+    const fromStore = Array.from(
+      new Set(
+        this.inventoryStore
+          .priceLists()
+          .map((pl) => pl.priceLevelName)
+          .filter(Boolean),
+      ),
+    );
+    return fromStore.length > 0 ? fromStore : ['Retail', 'Wholesale', 'Dealer'];
+  });
+
+  readonly useCrDrFormat = computed<boolean>(
+    () => this.companyContext.f12Config().useCrDrInsteadOfToBy,
+  );
+
+  readonly showLineNarration = computed<boolean>(
+    () => this.companyContext.f12Config().provideLineNarration,
+  );
 
   readonly hasAnyTobaccoMrpItem = computed(() =>
     this.itemHookRows().some((r) => Boolean(r.isTobaccoMrpItem)),
@@ -2498,6 +2867,13 @@ export class VoucherGridComponent implements OnInit {
     return filtered.length > 0 ? this.mapLedgersToOptions(filtered) : this.allLedgerOptions();
   });
 
+  readonly asVoucherLedgerOptions = computed<readonly TypeaheadOption[]>(() => {
+    if (this.activeCategory() === 'CONTRA') {
+      return this.cashBankLedgerOptions();
+    }
+    return this.allLedgerOptions();
+  });
+
   readonly singleEntryParticularsOptions = computed<readonly TypeaheadOption[]>(() => {
     if (this.activeCategory() === 'CONTRA') {
       return this.cashBankLedgerOptions();
@@ -2543,25 +2919,91 @@ export class VoucherGridComponent implements OnInit {
     return id ? (this.coaStore.ledgers().find((l) => l.id === id) ?? null) : null;
   });
 
+  private resolveCategoryRequiredFeature(
+    category: VoucherBaseCategory,
+  ): keyof CompanyFeaturesConfig | undefined {
+    switch (category) {
+      case 'JOB_WORK_OUT_ORDER':
+      case 'JOB_WORK_IN_ORDER':
+      case 'MATERIAL_IN':
+      case 'MATERIAL_OUT':
+        return 'jobOrderProcessingEnabled';
+      case 'PAYROLL':
+      case 'ATTENDANCE':
+        return 'payrollEnabled';
+      case 'STOCK_JOURNAL':
+      case 'PHYSICAL_STOCK':
+      case 'DELIVERY_NOTE':
+      case 'RECEIPT_NOTE':
+      case 'REJECTIONS_IN':
+      case 'REJECTIONS_OUT':
+      case 'SALES_ORDER':
+      case 'PURCHASE_ORDER':
+        return 'maintainInventory';
+      default:
+        return undefined;
+    }
+  }
+
+  private isCategoryFeatureActive(req: keyof CompanyFeaturesConfig | undefined): boolean {
+    if (!req) return true;
+    const feats = this.companyContext.activeCompany()?.features;
+    if (!feats) {
+      return req === 'maintainInventory';
+    }
+    return Boolean(feats[req]);
+  }
+
   readonly filteredOtherVoucherChoices = computed(() => {
     const q = this.otherVouchersQuery().trim().toLowerCase();
+    const showInactive = this.otherVouchersShowInactive();
     const loadedVts = this.coaStore.voucherTypes();
-    const choices =
-      loadedVts.length > 0
-        ? loadedVts.map((vt) => ({
-            key: vt.id,
-            id: vt.id,
-            name: vt.name,
-            category: vt.baseCategory,
-            shortcutKey: vt.shortcutKey,
-          }))
-        : PREDEFINED_24_VOUCHER_SPECS.map((s) => ({
-            key: s.category,
-            id: null as string | null,
-            name: s.name,
-            category: s.category,
-            shortcutKey: s.shortcutKey,
-          }));
+    const seenCategories = new Set<VoucherBaseCategory>();
+    const choices: {
+      readonly key: string;
+      readonly id: string | null;
+      readonly name: string;
+      readonly category: VoucherBaseCategory;
+      readonly shortcutKey: string | null;
+      readonly requiredFeature?: keyof CompanyFeaturesConfig;
+      readonly isInactive: boolean;
+    }[] = [];
+
+    for (const vt of loadedVts) {
+      seenCategories.add(vt.baseCategory);
+      const req = this.resolveCategoryRequiredFeature(vt.baseCategory);
+      const inactive = !this.isCategoryFeatureActive(req);
+      if (inactive && !showInactive && !q) {
+        continue;
+      }
+      choices.push({
+        key: vt.id,
+        id: vt.id,
+        name: vt.name,
+        category: vt.baseCategory,
+        shortcutKey: vt.shortcutKey,
+        requiredFeature: req,
+        isInactive: inactive,
+      });
+    }
+    for (const spec of PREDEFINED_24_VOUCHER_SPECS) {
+      if (!seenCategories.has(spec.category)) {
+        const req = this.resolveCategoryRequiredFeature(spec.category);
+        const inactive = !this.isCategoryFeatureActive(req);
+        if (inactive && !showInactive && !q) {
+          continue;
+        }
+        choices.push({
+          key: spec.category,
+          id: null,
+          name: spec.name,
+          category: spec.category,
+          shortcutKey: spec.shortcutKey,
+          requiredFeature: req,
+          isInactive: inactive,
+        });
+      }
+    }
 
     if (!q) return choices;
     return choices.filter(
@@ -2785,10 +3227,49 @@ export class VoucherGridComponent implements OnInit {
       !this.acceptPromptOpen() &&
       !this.changeModeModalOpen() &&
       !this.otherVouchersModalOpen() &&
+      !this.unusedNumbersModalOpen() &&
+      !this.statAdjustmentModalOpen() &&
       !this.taxAnalysisModalOpen() &&
       (!this.navStack.hasOverlays() || this.embeddedOverlay());
 
     const disposers: (() => void)[] = [
+      this.shortcutRegistry.bindHandler(
+        'nav.escape',
+        'MODAL',
+        () => this.dismissOpenVoucherModalOnEscape(),
+        () =>
+          this.otherVouchersModalOpen() ||
+          this.unusedNumbersModalOpen() ||
+          this.statAdjustmentModalOpen() ||
+          this.changeModeModalOpen() ||
+          this.taxAnalysisModalOpen() ||
+          this.openOrderModalOpen() ||
+          this.acceptPromptOpen(),
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.unusedNumbers',
+        'SCREEN',
+        () => {
+          void this.openUnusedVoucherNumbersModal();
+        },
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.stockQuery',
+        'SCREEN',
+        () => {
+          this.openStockQueryOverlay();
+        },
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.statAdjustment',
+        'SCREEN',
+        () => {
+          this.statAdjustmentModalOpen.set(true);
+        },
+        noModalGuard,
+      ),
       this.shortcutRegistry.bindHandler(
         'voucher.contra',
         'SCREEN',
@@ -2844,6 +3325,18 @@ export class VoucherGridComponent implements OnInit {
         noModalGuard,
       ),
       this.shortcutRegistry.bindHandler(
+        'voucher.rejectionsOut',
+        'SCREEN',
+        () => this.switchToCategory('REJECTIONS_OUT'),
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.rejectionsIn',
+        'SCREEN',
+        () => this.switchToCategory('REJECTIONS_IN'),
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
         'voucher.physicalStock',
         'SCREEN',
         () => this.switchToCategory('PHYSICAL_STOCK'),
@@ -2889,6 +3382,66 @@ export class VoucherGridComponent implements OnInit {
         'voucher.toggleOptional',
         'SCREEN',
         () => this.toggleOptional(),
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.togglePostDated',
+        'SCREEN',
+        () => this.togglePostDated(),
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.repeatNarration',
+        'SCREEN',
+        () => {
+          void this.repeatLastNarration();
+        },
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.prevVoucher',
+        'SCREEN',
+        () => {
+          void this.navigateAdjacentVoucher('PREV');
+        },
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.nextVoucher',
+        'SCREEN',
+        () => {
+          void this.navigateAdjacentVoucher('NEXT');
+        },
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.deleteRow',
+        'EDITOR',
+        () => this.deleteLastActiveGridRow(),
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'voucher.autofill',
+        'SCREEN',
+        () => {
+          this.autofillVoucherLines();
+        },
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'register.duplicateVoucher',
+        'SCREEN',
+        () => {
+          this.duplicateCurrentVoucherInPlace();
+        },
+        noModalGuard,
+      ),
+      this.shortcutRegistry.bindHandler(
+        'register.deleteVoucher',
+        'SCREEN',
+        () => {
+          this.deleteOrClearVoucherDraft();
+        },
         noModalGuard,
       ),
       this.shortcutRegistry.bindHandler(
@@ -3052,6 +3605,7 @@ export class VoucherGridComponent implements OnInit {
     this.partyMailingName.set(null);
     this.partyStateCode.set(null);
     this.isReverseCharge.set(false);
+    this.overrideCreditLimit.set(false);
     this.narration.set('');
     this.errorBanner.set(null);
     this.bomManufacturingMode.set(Boolean(matchedVt?.isManufacturingJournal));
@@ -3254,6 +3808,31 @@ export class VoucherGridComponent implements OnInit {
         const spec = resolveVoucherSpecByCategory(this.activeCategory());
         this.gridLines.set([this.makeBlankLine(spec.defaultFirstSide, zeroWire)]);
       }
+    } else if (prevView === 'AS_VOUCHER' && nextView === 'SINGLE_ENTRY') {
+      const headerSide: BalanceSide = this.activeCategory() === 'PAYMENT' ? 'CR' : 'DR';
+      const lineSide: BalanceSide = headerSide === 'DR' ? 'CR' : 'DR';
+      const groups = this.coaStore.groups();
+      const ledgers = this.coaStore.ledgers();
+      const populatedRows = this.gridLines().filter((l) => l.ledgerId);
+      const headerRow =
+        populatedRows.find((r) => {
+          const led = ledgers.find((l) => l.id === r.ledgerId);
+          return r.side === headerSide && led && isCashOrBankLedger(led, groups);
+        }) ??
+        populatedRows.find((r) => {
+          const led = ledgers.find((l) => l.id === r.ledgerId);
+          return led && isCashOrBankLedger(led, groups);
+        });
+      if (headerRow) {
+        this.headerAccountLedgerId.set(headerRow.ledgerId);
+        this.headerBankAllocations.set(headerRow.bankAllocations);
+        const bodyRows = populatedRows
+          .filter((r) => r.rowId !== headerRow.rowId)
+          .map((r) => ({ ...r, side: lineSide }));
+        this.gridLines.set(
+          bodyRows.length > 0 ? bodyRows : [this.makeBlankLine(lineSide, zeroWire)],
+        );
+      }
     } else if (nextView === 'ITEM_INVOICE' && this.itemHookRows().length === 0) {
       this.itemHookRows.set([
         {
@@ -3280,9 +3859,46 @@ export class VoucherGridComponent implements OnInit {
     this.otherVouchersQuery.set('');
     this.otherVouchersHighlightIdx.set(0);
     this.otherVouchersModalOpen.set(true);
-    queueMicrotask(() => {
+    const focusSearch = (): void => {
       this.otherVchSearchInputRef()?.nativeElement.focus();
-    });
+    };
+    queueMicrotask(focusSearch);
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(focusSearch);
+    }
+    setTimeout(focusSearch, 25);
+  }
+
+  private dismissOpenVoucherModalOnEscape(): boolean {
+    if (this.otherVouchersModalOpen()) {
+      this.otherVouchersModalOpen.set(false);
+      return true;
+    }
+    if (this.unusedNumbersModalOpen()) {
+      this.unusedNumbersModalOpen.set(false);
+      return true;
+    }
+    if (this.statAdjustmentModalOpen()) {
+      this.statAdjustmentModalOpen.set(false);
+      return true;
+    }
+    if (this.changeModeModalOpen()) {
+      this.changeModeModalOpen.set(false);
+      return true;
+    }
+    if (this.taxAnalysisModalOpen()) {
+      this.taxAnalysisModalOpen.set(false);
+      return true;
+    }
+    if (this.openOrderModalOpen()) {
+      this.openOrderModalOpen.set(false);
+      return true;
+    }
+    if (this.acceptPromptOpen()) {
+      this.dismissAcceptPrompt();
+      return true;
+    }
+    return false;
   }
 
   onOtherVouchersKeyDown(event: KeyboardEvent): void {
@@ -3315,7 +3931,12 @@ export class VoucherGridComponent implements OnInit {
     readonly id: string | null;
     readonly name: string;
     readonly category: VoucherBaseCategory;
+    readonly requiredFeature?: keyof CompanyFeaturesConfig;
+    readonly isInactive?: boolean;
   }): void {
+    if (choice.isInactive && choice.requiredFeature) {
+      this.companyContext.enableCompanyFeature(choice.requiredFeature);
+    }
     this.otherVouchersModalOpen.set(false);
     this.switchToCategory(choice.category);
     if (choice.id) {
@@ -3323,6 +3944,58 @@ export class VoucherGridComponent implements OnInit {
       this.activeVoucherTypeName.set(choice.name);
       void this.refreshNextVoucherNumber();
     }
+  }
+
+  async openUnusedVoucherNumbersModal(): Promise<void> {
+    this.unusedNumbersModalOpen.set(true);
+    this.unusedNumbersLoading.set(true);
+    const cid = this.companyContext.activeCompany()?.id;
+    try {
+      if (cid) {
+        const list = await this.voucherService.listUnusedVoucherNumbers(
+          cid,
+          this.activeVoucherTypeId(),
+        );
+        this.unusedVoucherNumbers.set(list);
+      } else {
+        this.unusedVoucherNumbers.set([]);
+      }
+    } catch {
+      this.unusedVoucherNumbers.set([]);
+    } finally {
+      this.unusedNumbersLoading.set(false);
+    }
+  }
+
+  selectUnusedVoucherNumber(num: string): void {
+    this.voucherNumber.set(num);
+    this.unusedNumbersModalOpen.set(false);
+    this.markDirty();
+  }
+
+  openStockQueryOverlay(): void {
+    this.navStack.push({
+      title: 'Stock Query',
+      route: '/app/reports/stock-query',
+      params: {},
+    });
+  }
+
+  applyStatAdjustment(): void {
+    const nature = this.statAdjustmentNature().trim();
+    const details = this.statAdjustmentAdditionalDetails().trim();
+    const tag = details ? `[Stat Adj: ${nature} - ${details}]` : `[Stat Adj: ${nature}]`;
+    const cur = this.narration().trim();
+    this.narration.set(cur ? `${cur} ${tag}` : tag);
+    this.statAdjustmentModalOpen.set(false);
+    this.markDirty();
+  }
+
+  onLineNarrationChange(idx: number, nextNarr: string): void {
+    this.gridLines.set(
+      this.gridLines().map((r, i) => (i === idx ? { ...r, lineNarration: nextNarr } : r)),
+    );
+    this.markDirty();
   }
 
   onVoucherDateChange(nextDate: string): void {
@@ -3686,12 +4359,17 @@ export class VoucherGridComponent implements OnInit {
 
     for (let i = startIdx; i < order.length; i += 1) {
       const candidate = order[i];
-      if (candidate === 'BILL' && ledger.maintainBalancesBillByBill) {
+      if (
+        candidate === 'BILL' &&
+        ledger.maintainBalancesBillByBill &&
+        this.companyContext.isBillWiseEnabled()
+      ) {
         return 'BILL';
       }
       if (
         candidate === 'COST' &&
         ledger.costCentresApplicable &&
+        this.companyContext.isCostCentresEnabled() &&
         this.coaStore.costCentres().length > 0
       ) {
         return 'COST';
@@ -3803,6 +4481,7 @@ export class VoucherGridComponent implements OnInit {
     const party = this.selectedPartyLedger();
     if (
       party?.maintainBalancesBillByBill &&
+      this.companyContext.isBillWiseEnabled() &&
       this.partyBillAllocations().length === 0 &&
       this.totals().isBalancedAndPositive
     ) {
@@ -4447,23 +5126,125 @@ export class VoucherGridComponent implements OnInit {
   // Narration Accept Prompt & Payload Compilation / Save
   // ---------------------------------------------------------------------------
 
-  onNarrationEnter(event: Event): void {
-    event.preventDefault();
-    this.errorBanner.set(null);
-    this.acceptPromptOpen.set(true);
-    queueMicrotask(() => {
-      this.acceptYesBtnRef()?.nativeElement.focus();
+  private vchModalHandle: ActiveModalContextHandle | null = null;
+
+  readonly closeHint = computed(() =>
+    this.shortcutRegistry.effectiveActionHint('message.details', 'editor.close', asciiPair('C/c')),
+  );
+
+  postConfirmHint(commandId: string, pairSpec: 'P/p' | 'R/r'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'journal.postConfirm',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
+
+  constructor() {
+    effect(() => {
+      const acceptOpen = this.acceptPromptOpen();
+      const orderOpen = this.openOrderModalOpen();
+      const modeOpen = this.changeModeModalOpen();
+      const otherOpen = this.otherVouchersModalOpen();
+      const taxOpen = this.taxAnalysisModalOpen();
+
+      this.releaseVchModalHandle();
+
+      if (acceptOpen) {
+        this.vchModalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'journal.postConfirm',
+              locale: 'en-GB',
+              commandId: 'journal.post',
+              label: 'Post',
+              letterPair: asciiPair('P/p'),
+              enabledWhen: () => !this.saving() && !this.companyContext.quarantined(),
+              permissionRef: 'voucher.post',
+              effect: 'Send single idempotent posting intention for current voucher.',
+              normalActivation: () => this.confirmAcceptYes(),
+              iconSemanticId: 'mc.icon.post-ledger',
+              stateTokenRole: 'action.primary',
+              isMutation: true,
+            },
+            {
+              contextId: 'journal.postConfirm',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Return',
+              letterPair: asciiPair('R/r'),
+              permissionRef: 'authenticated',
+              effect: 'Close posting confirmation without posting.',
+              normalActivation: () => this.dismissAcceptPrompt(),
+              iconSemanticId: 'mc.icon.back',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
+      } else if (orderOpen || modeOpen || otherOpen || taxOpen) {
+        const closeFn = () => {
+          if (orderOpen) this.openOrderModalOpen.set(false);
+          else if (modeOpen) this.changeModeModalOpen.set(false);
+          else if (otherOpen) this.otherVouchersModalOpen.set(false);
+          else if (taxOpen) this.taxAnalysisModalOpen.set(false);
+        };
+        this.vchModalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'message.details',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Close',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close active voucher helper dialog.',
+              normalActivation: closeFn,
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
+      }
+    });
+
+    this.destroyRef.onDestroy(() => {
+      this.releaseVchModalHandle();
     });
   }
 
+  private releaseVchModalHandle(): void {
+    if (this.vchModalHandle) {
+      this.vchModalHandle.close();
+      this.vchModalHandle = null;
+    }
+  }
+
+  onNarrationEnter(event: Event): void {
+    event.preventDefault();
+    this.flushAllPendingCellEdits();
+    this.errorBanner.set(null);
+    this.acceptPromptOpen.set(true);
+    const focusYes = (): void => {
+      this.acceptYesBtnRef()?.nativeElement.focus();
+    };
+    queueMicrotask(focusYes);
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(focusYes);
+    }
+    setTimeout(focusYes, 25);
+  }
+
   onAcceptPromptKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'Escape' || event.key.toLowerCase() === 'n') {
+    const allowChars = this.shortcutRegistry.effectiveDispatchMode() === 'CHARACTER';
+    if (event.key === 'Escape' || (allowChars && event.key.toLowerCase() === 'n')) {
       event.preventDefault();
       event.stopPropagation();
       this.dismissAcceptPrompt();
       return;
     }
-    if (event.key === 'Enter' || event.key.toLowerCase() === 'y') {
+    if (event.key === 'Enter' || (allowChars && event.key.toLowerCase() === 'y')) {
       event.preventDefault();
       event.stopPropagation();
       this.confirmAcceptYes();
@@ -4645,6 +5426,7 @@ export class VoucherGridComponent implements OnInit {
           ledgerId: row.ledgerId!,
           side: lineSide,
           amount: ExactDecimal.parse(row.amount, scale, 'HALF_UP').toWireString(scale),
+          lineNarration: row.lineNarration || undefined,
           billAllocations: autoBills.length > 0 ? autoBills : undefined,
           costAllocations: row.costAllocations.length > 0 ? row.costAllocations : undefined,
           bankAllocations: row.bankAllocations.length > 0 ? row.bankAllocations : undefined,
@@ -4748,11 +5530,51 @@ export class VoucherGridComponent implements OnInit {
       if (compiledLines.length < 2) {
         throw new Error('A double-entry voucher requires at least two balanced ledger lines.');
       }
+      if (cat === 'CONTRA') {
+        const groups = this.coaStore.groups();
+        for (const line of compiledLines) {
+          const led = this.coaStore.ledgers().find((l) => l.id === line.ledgerId);
+          if (led && !isCashOrBankLedger(led, groups)) {
+            throw new Error(
+              `Contra voucher allows only Cash-in-Hand or Bank Account ledgers ('${led.name}' is not allowed).`,
+            );
+          }
+        }
+      }
       const tot = this.totals();
       if (!tot.isBalancedAndPositive) {
         throw new Error(
           `Voucher is out of balance (Total Dr ${tot.totalDebitWire} != Total Cr ${tot.totalCreditWire}).`,
         );
+      }
+      if (
+        action === 'POST' &&
+        this.postingNature() === 'NORMAL' &&
+        !this.overrideCreditLimit() &&
+        (cat === 'SALES' || cat === 'DEBIT_NOTE')
+      ) {
+        const netDrByLedger = new Map<string, ExactDecimal>();
+        for (const line of compiledLines) {
+          const amt = ExactDecimal.tryParse(line.amount, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
+          const prev = netDrByLedger.get(line.ledgerId) ?? ExactDecimal.zero(scale);
+          netDrByLedger.set(line.ledgerId, line.side === 'DR' ? prev.add(amt) : prev.sub(amt));
+        }
+        for (const [ledId, netDr] of netDrByLedger.entries()) {
+          if (!netDr.isPositive()) continue;
+          const led = this.coaStore.ledgers().find((l) => l.id === ledId);
+          if (!led || !led.checkCreditDaysDuringVoucher || !led.creditLimit) continue;
+          const limitDec = ExactDecimal.tryParse(led.creditLimit, scale, 'HALF_UP');
+          if (!limitDec || !limitDec.isPositive()) continue;
+          const openDec =
+            ExactDecimal.tryParse(led.openingBalance, scale, 'HALF_UP') ?? ExactDecimal.zero(scale);
+          const signedOpenDr = led.openingSide === 'CR' ? ExactDecimal.zero(scale).sub(openDec) : openDec;
+          const projectedDr = signedOpenDr.add(netDr);
+          if (projectedDr.compare(limitDec) > 0) {
+            throw new Error(
+              `Credit Limit of ${limitDec.toWireString(scale)} for '${led.name}' exceeded (Projected: ${projectedDr.toWireString(scale)} Dr).`,
+            );
+          }
+        }
       }
     } else if (action !== 'SAVE_DRAFT' && nonAccountingVch && !pureWarehouseVch) {
       if (compiledInventoryLines.length === 0) {
@@ -4805,8 +5627,207 @@ export class VoucherGridComponent implements OnInit {
     };
   }
 
+  flushAllPendingCellEdits(): void {
+    for (const ta of this.allTypeaheadChildren()) {
+      ta.flushPendingSelection(false);
+    }
+    for (const amt of this.allAmountCellChildren()) {
+      amt.flushPendingCommit();
+    }
+  }
+
+  onVoucherShellKeyDown(event: KeyboardEvent): void {
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === 't'
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.togglePostDated();
+    }
+  }
+
+  togglePostDated(): void {
+    this.isPostDated.update((v) => !v);
+    this.markDirty();
+  }
+
+  openQuickMaster(kind: 'LEDGER' | 'STOCK_ITEM'): void {
+    void this.secondaryMasterModal.open({ kind });
+  }
+
+  needsFiscalYearForVoucherDate(): boolean {
+    const vDate = this.voucherDate();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(vDate)) {
+      return false;
+    }
+    const periods = this.companyContext.periods();
+    if (periods.length > 0) {
+      const covered = periods.some((p) => vDate >= p.startDate && vDate <= p.endDate);
+      if (!covered) {
+        return true;
+      }
+    }
+    const err = (this.errorBanner() ?? '').toUpperCase();
+    return err.includes('PERIOD') || err.includes('FISCAL');
+  }
+
+  async openFiscalYearForCurrentVoucherDate(): Promise<void> {
+    const cid = this.companyContext.activeCompany()?.id;
+    const vDate = this.voucherDate();
+    if (!cid || !/^\d{4}-\d{2}-\d{2}$/.test(vDate)) return;
+
+    const year = Number.parseInt(vDate.slice(0, 4), 10);
+    const month = Number.parseInt(vDate.slice(5, 7), 10);
+    const fyStartYear = month >= 4 ? year : year - 1;
+    const fyEndYear = fyStartYear + 1;
+    const startDate = `${fyStartYear}-04-01`;
+    const endDate = `${fyEndYear}-03-31`;
+    const code = `FY${fyStartYear}-${String(fyEndYear).slice(-2)}`;
+
+    this.saving.set(true);
+    this.errorBanner.set(null);
+    try {
+      await this.companyContext.createFiscalYear(cid, {
+        code,
+        displayLabel: `FY ${fyStartYear}-${String(fyEndYear).slice(-2)}`,
+        startDate,
+        endDate,
+      });
+      this.savedBanner.set(`Opened Fiscal Year ${code} (${startDate} to ${endDate}).`);
+    } catch (err: unknown) {
+      this.errorBanner.set(err instanceof Error ? err.message : 'Unable to open fiscal year.');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  async repeatLastNarration(): Promise<void> {
+    const cid = this.companyContext.activeCompany()?.id;
+    if (cid) {
+      const serverNarr = await this.voucherService.getLastNarration(cid, {
+        voucherTypeId: this.activeVoucherTypeId(),
+        voucherCategory: this.activeCategory(),
+      });
+      if (serverNarr.trim().length > 0) {
+        this.narration.set(serverNarr);
+        this.markDirty();
+        return;
+      }
+    }
+    if (this.lastSavedNarrationMemory.trim().length > 0) {
+      this.narration.set(this.lastSavedNarrationMemory);
+      this.markDirty();
+    }
+  }
+
+  async navigateAdjacentVoucher(direction: 'PREV' | 'NEXT'): Promise<void> {
+    const cid = this.companyContext.activeCompany()?.id;
+    if (!cid) return;
+    const adj = await this.voucherService.getAdjacentVoucher(cid, {
+      currentVoucherId: this.editingVoucherId(),
+      voucherCategory: this.activeCategory(),
+      voucherDate: this.voucherDate(),
+      direction,
+    });
+    if (adj) {
+      await this.hydrateFromVoucherDetail(adj, false);
+    }
+  }
+
+  deleteLastActiveGridRow(): boolean {
+    const lines = this.gridLines();
+    if (lines.length <= 1) {
+      return false;
+    }
+    this.gridLines.set(lines.slice(0, -1));
+    this.markDirty();
+    return true;
+  }
+
+  deleteOrClearVoucherDraft(): void {
+    this.errorBanner.set(null);
+    this.savedBanner.set(null);
+    if (
+      this.editingVoucherId() &&
+      this.editingStatus() === 'POSTED' &&
+      this.companyContext.activeCompany()?.features?.mcaEditLogEnforced !== false
+    ) {
+      this.errorBanner.set(
+        'Posted vouchers cannot be deleted when MCA Edit Log is enforced; use Alt+X to Cancel.',
+      );
+      return;
+    }
+    const cat = this.activeCategory();
+    const view = this.persistedView();
+    this.initializeBlankVoucher(cat);
+    this.persistedView.set(view);
+    this.savedBanner.set('Cleared current voucher draft (Alt+D).');
+  }
+
+  duplicateCurrentVoucherInPlace(): void {
+    this.errorBanner.set(null);
+    this.editingVoucherId.set(null);
+    this.editingVersionNo.set(1);
+    this.editingStatus.set('DRAFT');
+    this.voucherNumber.set('');
+    this.supplierInvoiceNo.set('');
+    this.partyBillAllocations.set([]);
+    this.markDirty();
+    void this.refreshNextVoucherNumber();
+    this.savedBanner.set('Switched to Voucher Duplication Mode (Alt+2).');
+  }
+
+  autofillVoucherLines(): void {
+    this.errorBanner.set(null);
+    const view = this.persistedView();
+    if (view !== 'ACCOUNTING_INVOICE' && view !== 'ITEM_INVOICE') {
+      this.savedBanner.set('Autofill (Ctrl+Alt+F) is ready for Invoice GST & Statutory lines.');
+      return;
+    }
+
+    const preview = this.computeClientSideGstFallback();
+    const suggested = preview.suggestedTaxLines.filter((s) => Boolean(s.ledgerId));
+    if (suggested.length === 0) {
+      this.errorBanner.set(
+        'Enter at least one taxable item or revenue/expense line with a configured GST rate before running Autofill (Ctrl+Alt+F).',
+      );
+      return;
+    }
+
+    const { revenueExpenseSide } = invoicePartyAndRevenueSides(this.activeCategory());
+    const nonTaxLines = this.gridLines().filter((l) => l.ledgerId && l.lineRole !== 'TAX');
+    const autofilledTaxLines: EditableVoucherLine[] = suggested.map((s) => {
+      const led = this.coaStore.ledgers().find((l) => l.id === s.ledgerId);
+      return {
+        rowId: `vline-${this.rowCounter++}`,
+        side: revenueExpenseSide,
+        lineRole: 'TAX',
+        ledgerId: s.ledgerId ?? null,
+        ledgerName: led?.name ?? s.ledgerName,
+        ratePct: led?.gstRatePct ?? s.ratePct ?? '',
+        computedTaxAmount: s.amount,
+        isGstOverridden: false,
+        amount: s.amount,
+        lineNarration: '',
+        billAllocations: [],
+        costAllocations: [],
+        bankAllocations: [],
+      };
+    });
+
+    this.gridLines.set([...nonTaxLines, ...autofilledTaxLines]);
+    this.markDirty();
+    this.savedBanner.set(
+      `Autofilled ${autofilledTaxLines.length} GST tax ledger line(s) (Ctrl+Alt+F).`,
+    );
+  }
+
   async submitVoucher(overrideAction?: VoucherSubmitAction): Promise<void> {
     if (this.saving()) return;
+    this.flushAllPendingCellEdits();
     this.errorBanner.set(null);
     this.savedBanner.set(null);
 
@@ -4827,6 +5848,9 @@ export class VoucherGridComponent implements OnInit {
     this.saving.set(true);
     try {
       const existingId = this.editingVoucherId();
+      if (request.narration) {
+        this.lastSavedNarrationMemory = request.narration;
+      }
       if (existingId) {
         const updated = await this.voucherService.updateVoucher(
           cid,

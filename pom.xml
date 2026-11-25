@@ -59,6 +59,11 @@
                 <classifier>classes</classifier>
             </dependency>
             <dependency>
+                <groupId>com.raster.moneycraft</groupId>
+                <artifactId>moneycraft-desktop</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>com.google.crypto.tink</groupId>
                 <artifactId>tink</artifactId>
                 <version>${tink.version}</version>
@@ -207,11 +212,43 @@
             </properties>
         </profile>
 
-        <!-- Gate G3 (Default Reactor): Full Monorepo Build (reader + server + qa) -->
+        <!-- Gate G3 (Default Reactor): Full Monorepo Build (reader + server + desktop + qa) -->
         <profile>
             <id>full</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
+            </activation>
+            <modules>
+                <module>reader</module>
+                <module>server</module>
+                <module>desktop</module>
+                <module>qa</module>
+            </modules>
+            <properties>
+                <moneycraft.stage>full</moneycraft.stage>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+
+        <!-- Increment N: Standalone Java 25 Swing Desktop & Local Device Adapter Client -->
+        <profile>
+            <id>desktop</id>
+            <modules>
+                <module>desktop</module>
+            </modules>
+            <properties>
+                <moneycraft.stage>desktop</moneycraft.stage>
+                <skipITs>true</skipITs>
+            </properties>
+        </profile>
+
+        <!-- Container Build Context Guard: Server OCI context omits desktop/ (SWG-002 / DEP-003) -->
+        <profile>
+            <id>server-container-build</id>
+            <activation>
+                <file>
+                    <missing>desktop/pom.xml</missing>
+                </file>
             </activation>
             <modules>
                 <module>reader</module>

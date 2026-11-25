@@ -30,5 +30,5 @@ export class CodeBadgeComponent {
    * Brand Identity v0.2.0 invariant: NEVER render U+20B9 (`₹`) inside `.mc-code`
    * because JetBrains Mono 2.304 lacks the U+20B9 glyph.
    */
-  readonly safeCode = computed(() => this.code().replaceAll(RUPEE_SYMBOL, 'INR '));
+  readonly safeCode = computed(() => String(this.code() ?? '').replaceAll(RUPEE_SYMBOL, 'INR '));
 }

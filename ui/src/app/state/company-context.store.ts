@@ -18,16 +18,154 @@ export interface CompanyFeaturesConfig {
   readonly maintainAccounts: boolean;
   readonly billWiseEnabled: boolean;
   readonly costCentresEnabled: boolean;
+  readonly interestCalculationEnabled?: boolean;
   readonly maintainInventory: boolean;
   readonly inventoryIntegrated: boolean;
+  readonly multiplePriceLevelsEnabled?: boolean;
+  readonly batchesEnabled?: boolean;
+  readonly expiryDateForBatchesEnabled?: boolean;
+  readonly jobOrderProcessingEnabled?: boolean;
+  readonly costTrackingEnabled?: boolean;
+  readonly jobCostingEnabled?: boolean;
+  readonly useDiscountColumnInInvoices?: boolean;
+  readonly useSeparateActualAndBilledQty?: boolean;
   readonly gstEnabled: boolean;
   readonly multiGstinEnabled: boolean;
   readonly gstRegistrationType: 'REGULAR' | 'COMPOSITION' | 'ISD' | 'SEZ';
   readonly gstin: string;
   readonly gstr1Periodicity: 'MONTHLY' | 'QUARTERLY';
   readonly gstEffectiveFrom: string;
+  readonly eInvoiceApplicable?: boolean;
+  readonly eWayBillApplicable?: boolean;
+  readonly eWayBillThresholdLimit?: string;
   readonly tdsEnabled: boolean;
+  readonly tcsEnabled?: boolean;
+  readonly vatEnabled?: boolean;
+  readonly exciseEnabled?: boolean;
+  readonly serviceTaxEnabled?: boolean;
+  readonly payrollEnabled?: boolean;
+  readonly payrollStatutoryEnabled?: boolean;
+  readonly multipleAddressesEnabled?: boolean;
+  readonly markModifiedVouchers?: boolean;
   readonly mcaEditLogEnforced: boolean;
+}
+
+export interface CompanyF12Config {
+  readonly useCrDrInsteadOfToBy: boolean;
+  readonly provideReferenceNoAndDate: boolean;
+  readonly provideDispatchOrderExportDetails: boolean;
+  readonly warnOnNegativeCash: boolean;
+  readonly warnOnNegativeStock: boolean;
+  readonly preallocateBills: boolean;
+  readonly showBillWiseList: boolean;
+  readonly showBillFinalBalances: boolean;
+  readonly useSingleEntryForPaymentReceiptContra: boolean;
+  readonly showLedgerCurrentBalance: boolean;
+  readonly showBalancesAsOnVoucherDate: boolean;
+  readonly provideLineNarration: boolean;
+  readonly provideCommonNarration: boolean;
+  readonly consolidateStockItemsWithSameRate: boolean;
+  readonly allowGstRateOverride: boolean;
+  readonly provideAliases: boolean;
+  readonly billWiseForNonTradingAccounts: boolean;
+  readonly provideCreditLimits: boolean;
+  readonly provideLedgerAddresses: boolean;
+  readonly provideLedgerBankDetails: boolean;
+  readonly providePartNumbers: boolean;
+  readonly provideAlternateUnits: boolean;
+  readonly provideStandardRates: boolean;
+  readonly showOpeningBalances: boolean;
+  readonly showTransactions: boolean;
+  readonly showNettTransactionsOnly: boolean;
+  readonly showClosingBalances: boolean;
+  readonly showPercentages: boolean;
+  readonly reportFormat: string;
+  readonly scaleFactor: string;
+  readonly sortingMethod: string;
+}
+
+export const DEFAULT_COMPANY_F12_CONFIG: CompanyF12Config = {
+  useCrDrInsteadOfToBy: true,
+  provideReferenceNoAndDate: true,
+  provideDispatchOrderExportDetails: true,
+  warnOnNegativeCash: true,
+  warnOnNegativeStock: true,
+  preallocateBills: true,
+  showBillWiseList: true,
+  showBillFinalBalances: true,
+  useSingleEntryForPaymentReceiptContra: true,
+  showLedgerCurrentBalance: true,
+  showBalancesAsOnVoucherDate: true,
+  provideLineNarration: false,
+  provideCommonNarration: true,
+  consolidateStockItemsWithSameRate: false,
+  allowGstRateOverride: true,
+  provideAliases: true,
+  billWiseForNonTradingAccounts: false,
+  provideCreditLimits: true,
+  provideLedgerAddresses: true,
+  provideLedgerBankDetails: true,
+  providePartNumbers: true,
+  provideAlternateUnits: true,
+  provideStandardRates: true,
+  showOpeningBalances: false,
+  showTransactions: false,
+  showNettTransactionsOnly: false,
+  showClosingBalances: true,
+  showPercentages: false,
+  reportFormat: 'CONDENSED',
+  scaleFactor: 'DEFAULT',
+  sortingMethod: 'DEFAULT',
+};
+
+export const DEFAULT_F12_CONFIG = DEFAULT_COMPANY_F12_CONFIG;
+
+export function normalizeCompanyFeatures(
+  raw?: Partial<CompanyFeaturesConfig> | null,
+): CompanyFeaturesConfig {
+  const maintainAccounts = raw?.maintainAccounts ?? true;
+  const maintainInventory = raw?.maintainInventory ?? true;
+  const batchesEnabled = raw?.batchesEnabled ?? true;
+  const costCentresEnabled = raw?.costCentresEnabled ?? false;
+  const payrollEnabled = raw?.payrollEnabled ?? false;
+  return {
+    maintainAccounts,
+    billWiseEnabled: maintainAccounts ? (raw?.billWiseEnabled ?? true) : false,
+    costCentresEnabled,
+    interestCalculationEnabled: raw?.interestCalculationEnabled ?? false,
+    maintainInventory,
+    inventoryIntegrated:
+      maintainAccounts && maintainInventory ? (raw?.inventoryIntegrated ?? true) : false,
+    multiplePriceLevelsEnabled: raw?.multiplePriceLevelsEnabled ?? false,
+    batchesEnabled,
+    expiryDateForBatchesEnabled: batchesEnabled
+      ? (raw?.expiryDateForBatchesEnabled ?? true)
+      : false,
+    jobOrderProcessingEnabled: raw?.jobOrderProcessingEnabled ?? false,
+    costTrackingEnabled: raw?.costTrackingEnabled ?? false,
+    jobCostingEnabled: costCentresEnabled ? (raw?.jobCostingEnabled ?? false) : false,
+    useDiscountColumnInInvoices: raw?.useDiscountColumnInInvoices ?? true,
+    useSeparateActualAndBilledQty: raw?.useSeparateActualAndBilledQty ?? true,
+    gstEnabled: raw?.gstEnabled ?? true,
+    multiGstinEnabled: raw?.multiGstinEnabled ?? false,
+    gstRegistrationType: raw?.gstRegistrationType ?? 'REGULAR',
+    gstin: raw?.gstin ?? '',
+    gstr1Periodicity: raw?.gstr1Periodicity ?? 'MONTHLY',
+    gstEffectiveFrom: raw?.gstEffectiveFrom ?? '2025-04-01',
+    eInvoiceApplicable: raw?.eInvoiceApplicable ?? false,
+    eWayBillApplicable: raw?.eWayBillApplicable ?? true,
+    eWayBillThresholdLimit: raw?.eWayBillThresholdLimit ?? '50000.00',
+    tdsEnabled: raw?.tdsEnabled ?? true,
+    tcsEnabled: raw?.tcsEnabled ?? false,
+    vatEnabled: raw?.vatEnabled ?? false,
+    exciseEnabled: raw?.exciseEnabled ?? false,
+    serviceTaxEnabled: raw?.serviceTaxEnabled ?? false,
+    payrollEnabled,
+    payrollStatutoryEnabled: payrollEnabled ? (raw?.payrollStatutoryEnabled ?? false) : false,
+    multipleAddressesEnabled: raw?.multipleAddressesEnabled ?? false,
+    markModifiedVouchers: raw?.markModifiedVouchers ?? false,
+    mcaEditLogEnforced: raw?.mcaEditLogEnforced ?? true,
+  };
 }
 
 export interface CompanySummary {
@@ -105,6 +243,7 @@ export interface CreateOrUpdateCompanyPayload {
 const SESSION_ACTIVE_COMPANY_KEY = 'mc.activeCompanyId';
 const SESSION_PERIOD_PREFIX = 'mc.period.';
 const SESSION_WORKDATE_PREFIX = 'mc.workDate.';
+const SESSION_F12_PREFIX = 'mc.f12Config.';
 
 function isBrowserStorageAvailable(): boolean {
   if (typeof sessionStorage === 'undefined') {
@@ -156,6 +295,7 @@ export class CompanyContextStore {
   private readonly periodToSignal = signal<string>('2026-03-31');
   private readonly workingDateSignal = signal<string>('2025-04-01');
   private readonly hasUnsavedDraftSignal = signal<boolean>(false);
+  private readonly f12ConfigSignal = signal<CompanyF12Config>(DEFAULT_COMPANY_F12_CONFIG);
 
   readonly systemStatus = this.systemStatusSignal.asReadonly();
   readonly statusLoaded = this.statusLoadedSignal.asReadonly();
@@ -170,6 +310,7 @@ export class CompanyContextStore {
   readonly periodTo = this.periodToSignal.asReadonly();
   readonly workingDate = this.workingDateSignal.asReadonly();
   readonly hasUnsavedDraft = this.hasUnsavedDraftSignal.asReadonly();
+  readonly f12Config = this.f12ConfigSignal.asReadonly();
 
   readonly activeCompany = computed<CompanySummary | null>(() => {
     const id = this.activeCompanyIdSignal();
@@ -182,6 +323,42 @@ export class CompanyContextStore {
 
   readonly currencyScale = computed<number>(() => this.activeCompany()?.currencyScale ?? 2);
   readonly currencySymbol = computed<string>(() => this.activeCompany()?.currencySymbol ?? '\u20B9');
+
+  readonly isInventoryEnabled = computed<boolean>(
+    () => this.activeCompany()?.features.maintainInventory !== false,
+  );
+  readonly isBillWiseEnabled = computed<boolean>(
+    () =>
+      this.activeCompany()?.features.billWiseEnabled !== false &&
+      this.activeCompany()?.features.maintainAccounts !== false,
+  );
+  readonly isCostCentresEnabled = computed<boolean>(() =>
+    Boolean(this.activeCompany()?.features.costCentresEnabled),
+  );
+  readonly isGstEnabled = computed<boolean>(
+    () => this.activeCompany()?.features.gstEnabled !== false,
+  );
+  readonly isTdsEnabled = computed<boolean>(
+    () => this.activeCompany()?.features.tdsEnabled !== false,
+  );
+  readonly isTcsEnabled = computed<boolean>(() =>
+    Boolean(this.activeCompany()?.features.tcsEnabled),
+  );
+  readonly isPayrollEnabled = computed<boolean>(() =>
+    Boolean(this.activeCompany()?.features.payrollEnabled),
+  );
+  readonly isPriceLevelsEnabled = computed<boolean>(() =>
+    Boolean(this.activeCompany()?.features.multiplePriceLevelsEnabled),
+  );
+  readonly isBatchesEnabled = computed<boolean>(
+    () => this.activeCompany()?.features.batchesEnabled !== false,
+  );
+  readonly isDiscountColEnabled = computed<boolean>(
+    () => this.activeCompany()?.features.useDiscountColumnInInvoices !== false,
+  );
+  readonly isActualBilledQtySplit = computed<boolean>(
+    () => this.activeCompany()?.features.useSeparateActualAndBilledQty !== false,
+  );
 
   readonly quarantined = computed<boolean>(
     () =>
@@ -224,9 +401,13 @@ export class CompanyContextStore {
   }
 
   setCompanies(companies: readonly CompanySummary[], selectId?: string): void {
-    this.openCompaniesSignal.set(companies);
+    const normalized = companies.map((c) => ({
+      ...c,
+      features: normalizeCompanyFeatures(c.features),
+    }));
+    this.openCompaniesSignal.set(normalized);
     this.companiesLoadedSignal.set(true);
-    const chosenId = selectId ?? this.activeCompanyIdSignal() ?? companies[0]?.id ?? null;
+    const chosenId = selectId ?? this.activeCompanyIdSignal() ?? normalized[0]?.id ?? null;
     if (chosenId) {
       this.selectActiveCompany(chosenId, true);
     }
@@ -276,6 +457,18 @@ export class CompanyContextStore {
       this.workingDateSignal.set(savedWorkDate);
     } else {
       this.workingDateSignal.set(found.lastEntryDate ?? fyStart);
+    }
+
+    const savedF12 = readSessionValue(SESSION_F12_PREFIX + found.id);
+    if (savedF12) {
+      try {
+        const parsed = JSON.parse(savedF12) as Partial<CompanyF12Config>;
+        this.f12ConfigSignal.set({ ...DEFAULT_COMPANY_F12_CONFIG, ...parsed });
+      } catch {
+        this.f12ConfigSignal.set(DEFAULT_COMPANY_F12_CONFIG);
+      }
+    } else {
+      this.f12ConfigSignal.set(DEFAULT_COMPANY_F12_CONFIG);
     }
 
     if (forceDiscardDraft) {
@@ -359,11 +552,137 @@ export class CompanyContextStore {
         { headers, withCredentials: true },
       ),
     );
+    const normalizedUpdated: CompanySummary = {
+      ...updatedCompany,
+      features: normalizeCompanyFeatures(updatedCompany.features),
+    };
     const updatedList = this.openCompaniesSignal().map((c) =>
-      c.id === companyId ? updatedCompany : c,
+      c.id === companyId ? normalizedUpdated : c,
     );
     this.openCompaniesSignal.set(updatedList);
-    return updatedCompany;
+    return normalizedUpdated;
+  }
+
+  async loadF12Config(companyId?: string): Promise<CompanyF12Config> {
+    const cid = companyId ?? this.activeCompany()?.id;
+    if (!cid) {
+      return this.f12ConfigSignal();
+    }
+    try {
+      const remote = await firstValueFrom(
+        this.http.get<Partial<CompanyF12Config>>(
+          this.runtimeConfig.url(`/companies/${encodeURIComponent(cid)}/f12-config`),
+          { withCredentials: true },
+        ),
+      );
+      const merged: CompanyF12Config = { ...DEFAULT_COMPANY_F12_CONFIG, ...remote };
+      this.f12ConfigSignal.set(merged);
+      writeSessionValue(SESSION_F12_PREFIX + cid, JSON.stringify(merged));
+      return merged;
+    } catch {
+      return this.f12ConfigSignal();
+    }
+  }
+
+  async updateF12Config(patch: Partial<CompanyF12Config>): Promise<CompanyF12Config> {
+    const merged: CompanyF12Config = { ...this.f12ConfigSignal(), ...patch };
+    this.f12ConfigSignal.set(merged);
+    const cid = this.activeCompany()?.id;
+    if (cid) {
+      writeSessionValue(SESSION_F12_PREFIX + cid, JSON.stringify(merged));
+      if (isBrowserStorageAvailable()) {
+        try {
+          const remote = await firstValueFrom(
+            this.http.put<Partial<CompanyF12Config>>(
+              this.runtimeConfig.url(`/companies/${encodeURIComponent(cid)}/f12-config`),
+              merged,
+              { withCredentials: true },
+            ),
+          );
+          const synced: CompanyF12Config = { ...DEFAULT_COMPANY_F12_CONFIG, ...merged, ...remote };
+          this.f12ConfigSignal.set(synced);
+          writeSessionValue(SESSION_F12_PREFIX + cid, JSON.stringify(synced));
+          return synced;
+        } catch {
+          return merged;
+        }
+      }
+    }
+    return merged;
+  }
+
+  async patchFeatureToggle(patch: Partial<CompanyFeaturesConfig>): Promise<CompanySummary | null> {
+    const active = this.activeCompany();
+    if (!active) {
+      return null;
+    }
+    const mergedFeatures = normalizeCompanyFeatures({
+      ...active.features,
+      ...patch,
+      mcaEditLogEnforced: active.features.mcaEditLogEnforced
+        ? true
+        : (patch.mcaEditLogEnforced ?? active.features.mcaEditLogEnforced),
+    });
+    const optimistic: CompanySummary = {
+      ...active,
+      features: mergedFeatures,
+    };
+    this.openCompaniesSignal.set(
+      this.openCompaniesSignal().map((c) => (c.id === active.id ? optimistic : c)),
+    );
+
+    if (isBrowserStorageAvailable()) {
+      try {
+        return await this.updateCompany(active.id, {
+          code: active.code,
+          legalName: active.legalName,
+          mailingName: active.mailingName,
+          countryCode: active.countryCode,
+          stateCode: active.stateCode,
+          pinCode: active.pinCode,
+          baseCurrencyCode: active.baseCurrencyCode,
+          currencySymbol: active.currencySymbol,
+          currencyScale: active.currencyScale,
+          financialYearFrom: active.financialYearFrom,
+          booksBeginningFrom: active.booksBeginningFrom,
+          versionNo: active.versionNo,
+          features: mergedFeatures,
+        });
+      } catch {
+        return optimistic;
+      }
+    }
+    return optimistic;
+  }
+
+  async enableCompanyFeature(
+    featureKey: keyof CompanyFeaturesConfig,
+  ): Promise<CompanySummary | null> {
+    const patch: Record<string, unknown> = { [featureKey]: true };
+    if (
+      featureKey === 'multiplePriceLevelsEnabled' ||
+      featureKey === 'batchesEnabled' ||
+      featureKey === 'expiryDateForBatchesEnabled' ||
+      featureKey === 'jobOrderProcessingEnabled' ||
+      featureKey === 'costTrackingEnabled' ||
+      featureKey === 'useDiscountColumnInInvoices' ||
+      featureKey === 'useSeparateActualAndBilledQty'
+    ) {
+      patch['maintainInventory'] = true;
+    }
+    if (featureKey === 'expiryDateForBatchesEnabled') {
+      patch['batchesEnabled'] = true;
+    }
+    if (featureKey === 'jobCostingEnabled') {
+      patch['costCentresEnabled'] = true;
+    }
+    if (featureKey === 'payrollStatutoryEnabled') {
+      patch['payrollEnabled'] = true;
+    }
+    if (featureKey === 'billWiseEnabled' || featureKey === 'costCentresEnabled' || featureKey === 'interestCalculationEnabled') {
+      patch['maintainAccounts'] = true;
+    }
+    return this.patchFeatureToggle(patch as Partial<CompanyFeaturesConfig>);
   }
 
   async loadFiscalPeriods(companyId: string): Promise<readonly FiscalPeriodSummary[]> {

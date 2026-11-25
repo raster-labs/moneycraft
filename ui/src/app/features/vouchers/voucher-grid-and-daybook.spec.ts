@@ -26,6 +26,7 @@ import { BankAllocationPopoverComponent } from './bank-allocation-popover.compon
 import { BillWisePopoverComponent } from './bill-wise-popover.component';
 import { CostAllocationPopoverComponent } from './cost-allocation-popover.component';
 import { DayBookComponent } from './day-book.component';
+import { GodownBatchPopoverComponent } from './godown-batch-popover.component';
 import { VoucherGridComponent } from './voucher-grid.component';
 import { VoucherService } from './voucher.service';
 import { BillAllocationDto, CostAllocationDto, VoucherDetailDto } from './vouchers.models';
@@ -562,6 +563,13 @@ describe('Phase 3 — Flagship Mouseless VoucherGridComponent, Sub-Ledger Popove
     costComp.onRowAmountEnter(1, '10000.00');
     expect(committedCosts).toHaveLength(2);
 
+    // Duplicate Cost Centre guard (`0x1410908d0`: 'Name of Cost Centre is duplicate in Cost Allocation.')
+    committedCosts = null;
+    costComp.onCentreSelected(1, { id: 'cc-chennai', label: 'Chennai HQ' });
+    costComp.commitAllocations();
+    expect(committedCosts).toBeNull();
+    expect(costComp.validationError()).toBe('Name of Cost Centre is duplicate in Cost Allocation.');
+
     // --- C. Bank Allocation Popover ---
     const bankFixture = TestBed.createComponent(BankAllocationPopoverComponent);
     bankFixture.componentRef.setInput('isOpen', true);
@@ -961,6 +969,240 @@ describe('Phase 3 — Flagship Mouseless VoucherGridComponent, Sub-Ledger Popove
     db.restoreLastRemovedLine();
     expect(db.visibleVouchers()).toHaveLength(2);
     expect(db.footerTotals().totalDebitWire).toBe('25000.00');
+
+    httpMock.verify();
+  });
+
+  it('enforces Loop 2 Contra Cash/Bank guard, Party Credit Limit with Override toggle, Ctrl+Alt+F Autofill, Alt+D Delete Draft, Bill-Wise Due Date >= Bill Date, and Godown/Batch duplicate & expiry checks', async () => {
+    await TestBed.configureTestingModule({
+      imports: [
+        VoucherGridComponent,
+        BillWisePopoverComponent,
+        GodownBatchPopoverComponent,
+      ],
+      providers: [
+        provideRouter(APP_ROUTES),
+        provideHttpClient(withInterceptors([idempotencyInterceptor])),
+        provideHttpClientTesting(),
+      ],
+    }).compileComponents();
+
+    const httpMock = TestBed.inject(HttpTestingController);
+    const companyStore = TestBed.inject(CompanyContextStore);
+    const coaStore = TestBed.inject(ChartOfAccountsStore);
+    const shortcutRegistry = TestBed.inject(ShortcutCommandRegistry);
+
+    const company = seedPhase3Company(companyStore);
+    const { groups, ledgers } = buildGroupsAndLedgers(company.id);
+    const ledgersWithCreditCap: Ledger[] = ledgers.map((l) =>
+      l.id === 'led-debtor-1'
+        ? { ...l, checkCreditDaysDuringVoucher: true, creditLimit: '50000.00' }
+        : l,
+    );
+    coaStore.setGroupsAndLedgers(groups, ledgersWithCreditCap);
+
+    const gridFixture = TestBed.createComponent(VoucherGridComponent);
+    gridFixture.detectChanges();
+    for (const r of httpMock.match((req) => req.url.endsWith('/voucher-types'))) {
+      r.flush([]);
+    }
+    await flushAsyncTicks();
+    gridFixture.detectChanges();
+
+    const grid = gridFixture.componentInstance;
+
+    // 1. Contra (F4) in Double-Entry (AS_VOUCHER) mode restricts options to Cash/Bank and rejects non-Cash/Bank ledgers
+    shortcutRegistry.triggerCommand('voucher.contra');
+    flushNextNumberRequests(httpMock, 'CNTR-001');
+    grid.applyPersistedView('AS_VOUCHER');
+    gridFixture.detectChanges();
+
+    expect(grid.activeCategory()).toBe('CONTRA');
+    expect(grid.asVoucherLedgerOptions().map((o) => o.id)).toEqual(['led-hdfc', 'led-cash']);
+
+    grid.onLineLedgerSelected(0, { id: 'led-rent', label: 'Office Rent Expense' });
+    grid.onLineAmountEnter(0, '5000.00');
+    grid.onLineLedgerSelected(1, { id: 'led-cash', label: 'Cash' });
+    expect(() => grid.buildUpsertRequest('POST')).toThrow(/Contra voucher allows only Cash-in-Hand or Bank Account ledgers/);
+
+    // 2. Sales (F8) with Ctrl+Alt+F Autofill, Party Credit Limit guard (50,000.00), and Override Credit Limit toggle
+    grid.initializeBlankVoucher('SALES');
+    flushNextNumberRequests(httpMock, 'GST/25-26/088');
+    grid.onPartyLedgerSelected({ id: 'led-debtor-1', label: 'Apex Diagnostics Pvt Ltd' });
+    grid.onLineLedgerSelected(0, { id: 'led-sales-gst', label: 'Domestic GST Sales' });
+    grid.onInvoiceLineAmountManualChange(0, '100000.00');
+    gridFixture.detectChanges();
+
+    // Trigger Ctrl+Alt+F (`voucher.autofill`) -> auto-populates Output CGST 9% (9000.00) and Output SGST 9% (9000.00)
+    shortcutRegistry.triggerCommand('voucher.autofill');
+    gridFixture.detectChanges();
+    expect(grid.gridLines().length).toBe(3);
+    expect(grid.gridLines()[1].ledgerId).toBe('led-cgst');
+    expect(grid.gridLines()[1].amount).toBe('9000.00');
+    expect(grid.gridLines()[2].ledgerId).toBe('led-sgst');
+    expect(grid.gridLines()[2].amount).toBe('9000.00');
+    expect(grid.totals().totalDebitWire).toBe('118000.00');
+
+    // Attempt buildUpsertRequest('POST') when total Dr 118000.00 > creditLimit 50000.00 -> throws credit limit error
+    expect(() => grid.buildUpsertRequest('POST')).toThrow(
+      /Credit Limit of 50000.00 for 'Apex Diagnostics Pvt Ltd' exceeded/,
+    );
+
+    // Enable Override Credit Limit -> buildUpsertRequest('POST') succeeds!
+    grid.overrideCreditLimit.set(true);
+    const validSalesReq = grid.buildUpsertRequest('POST');
+    expect(validSalesReq.lines[0].amount).toBe('118000.00');
+
+    // 3. Alt+D (`register.deleteVoucher`) clears unsaved draft, and blocks deletion when editing a POSTED voucher under MCA Edit Log
+    shortcutRegistry.triggerCommand('register.deleteVoucher');
+    flushNextNumberRequests(httpMock, 'GST/25-26/089');
+    expect(grid.savedBanner()).toContain('Cleared current voucher draft (Alt+D)');
+    expect(grid.partyLedgerId()).toBeNull();
+
+    grid.editingVoucherId.set('vch-posted-1');
+    grid.editingStatus.set('POSTED');
+    shortcutRegistry.triggerCommand('register.deleteVoucher');
+    expect(grid.errorBanner()).toContain(
+      'Posted vouchers cannot be deleted when MCA Edit Log is enforced; use Alt+X to Cancel.',
+    );
+
+    // 3b. Alt+2 (`register.duplicateVoucher`, `0x14124adf0`) switches an open voucher into Duplication Mode
+    shortcutRegistry.triggerCommand('register.duplicateVoucher');
+    flushNextNumberRequests(httpMock, 'GST/25-26/090');
+    expect(grid.editingVoucherId()).toBeNull();
+    expect(grid.editingStatus()).toBe('DRAFT');
+    expect(grid.savedBanner()).toContain('Switched to Voucher Duplication Mode (Alt+2).');
+
+    // 3c. Bidirectional Ctrl+H conversion: AS_VOUCHER -> SINGLE_ENTRY on Payment promotes Cash/Bank line into headerAccountLedgerId
+    grid.initializeBlankVoucher('PAYMENT');
+    flushNextNumberRequests(httpMock, 'PYMT-010');
+    grid.applyPersistedView('AS_VOUCHER');
+    grid.onLineLedgerSelected(0, { id: 'led-rent', label: 'Office Rent Expense' });
+    grid.onLineAmountEnter(0, '8500.00');
+    grid.onLineLedgerSelected(1, { id: 'led-hdfc', label: 'HDFC Bank Current A/c' });
+    grid.applyPersistedView('SINGLE_ENTRY');
+    expect(grid.persistedView()).toBe('SINGLE_ENTRY');
+    expect(grid.headerAccountLedgerId()).toBe('led-hdfc');
+    expect(grid.gridLines()[0].ledgerId).toBe('led-rent');
+    expect(grid.totals().totalDebitWire).toBe('8500.00');
+
+    // 4. BillWisePopoverComponent rejects Due Date < Bill Date (`0x14108de40`) and duplicate Bill References
+    const bwFixture = TestBed.createComponent(BillWisePopoverComponent);
+    bwFixture.componentRef.setInput('isOpen', true);
+    bwFixture.componentRef.setInput('companyId', company.id);
+    bwFixture.componentRef.setInput('ledgerId', 'led-debtor-1');
+    bwFixture.componentRef.setInput('ledgerName', 'Apex Diagnostics Pvt Ltd');
+    bwFixture.componentRef.setInput('targetAmount', '10000.00');
+    bwFixture.componentRef.setInput('targetSide', 'DR');
+    bwFixture.componentRef.setInput('defaultBillRef', 'INV-10');
+    bwFixture.componentRef.setInput('defaultMethod', 'NEW_REF');
+    bwFixture.componentRef.setInput('voucherDate', '2025-05-20');
+    bwFixture.detectChanges();
+    for (const r of httpMock.match((req) => req.url.includes('/open-bills'))) {
+      r.flush([]);
+    }
+    await flushAsyncTicks();
+    bwFixture.detectChanges();
+
+    const bwComp = bwFixture.componentInstance;
+    bwComp.rows.set([
+      {
+        ...bwComp.rows()[0],
+        dueDate: '2025-05-10', // Earlier than voucherDate 2025-05-20!
+      },
+    ]);
+    bwComp.commitAllocations();
+    expect(bwComp.validationError()).toBe('Due Date is earlier than Bill Date in Bill-wise details.');
+
+    // Duplicate Bill Reference rows on the same line must also be rejected
+    bwComp.rows.set([
+      {
+        rowId: 'bw-dup-1',
+        allocationType: 'NEW_REF',
+        billName: 'INV-DUP-1',
+        creditPeriodDays: 30,
+        dueDate: '2025-06-19',
+        side: 'DR',
+        amount: '5000.00',
+        allowOverSettlement: false,
+      },
+      {
+        rowId: 'bw-dup-2',
+        allocationType: 'NEW_REF',
+        billName: 'INV-DUP-1',
+        creditPeriodDays: 30,
+        dueDate: '2025-06-19',
+        side: 'DR',
+        amount: '5000.00',
+        allowOverSettlement: false,
+      },
+    ]);
+    bwComp.commitAllocations();
+    expect(bwComp.validationError()).toBe('Duplicate Bill Reference in Bill-wise details.');
+
+    // 5. GodownBatchPopoverComponent rejects duplicate (Godown, Batch) rows (`0x14108f720`) and Expiry Date < Mfg Date (`0x14108f600`)
+    const gbFixture = TestBed.createComponent(GodownBatchPopoverComponent);
+    gbFixture.componentRef.setInput('isOpen', true);
+    gbFixture.componentRef.setInput('stockItemId', 'item-1');
+    gbFixture.componentRef.setInput('stockItemName', 'Reagent Kit');
+    gbFixture.componentRef.setInput('movementDirection', 'INWARD');
+    gbFixture.componentRef.setInput('maintainInBatches', true);
+    gbFixture.componentRef.setInput('trackDateOfMfg', true);
+    gbFixture.componentRef.setInput('useExpiryDates', true);
+    gbFixture.componentRef.setInput('targetActualQty', '10');
+    gbFixture.componentRef.setInput('targetBilledQty', '10');
+    gbFixture.componentRef.setInput('defaultRate', '100.00');
+    gbFixture.componentRef.setInput('voucherDate', '2025-05-20');
+    gbFixture.detectChanges();
+
+    const gbComp = gbFixture.componentInstance;
+    // Duplicate Godown + Batch rows
+    gbComp.rows.set([
+      {
+        rowId: 'gb-1',
+        godownId: 'gd-main',
+        godownName: 'Main Location',
+        batchName: 'LOT-A1',
+        actualQty: '5',
+        billedQty: '5',
+        rate: '100.00',
+        amount: '500.00',
+        mfgDate: '2025-05-01',
+        expiryDate: '2026-05-01',
+      },
+      {
+        rowId: 'gb-2',
+        godownId: 'gd-main',
+        godownName: 'Main Location',
+        batchName: 'LOT-A1',
+        actualQty: '5',
+        billedQty: '5',
+        rate: '100.00',
+        amount: '500.00',
+        mfgDate: '2025-05-01',
+        expiryDate: '2026-05-01',
+      },
+    ]);
+    gbComp.commitAllocations();
+    expect(gbComp.validationError()).toBe(
+      'Duplicate Godown and Batch combination is not allowed in Item Allocations.',
+    );
+
+    // Distinct batches, but Expiry Date < Mfg Date
+    gbComp.rows.set([
+      {
+        ...gbComp.rows()[0],
+        batchName: 'LOT-A1',
+        mfgDate: '2025-06-01',
+        expiryDate: '2025-05-01',
+      },
+      {
+        ...gbComp.rows()[1],
+        batchName: 'LOT-A2',
+      },
+    ]);
+    gbComp.commitAllocations();
+    expect(gbComp.validationError()).toContain('cannot be earlier than Manufacturing Date');
 
     httpMock.verify();
   });

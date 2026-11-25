@@ -11,9 +11,11 @@ public class MoneyCraftException extends RuntimeException {
     private final String code;
     private final String title;
     private final Map<String, String> fieldErrors;
+    private final Map<String, Object> extraProperties;
+    private final String responseEtag;
 
     public MoneyCraftException(HttpStatus status, String code, String title, String detail) {
-        this(status, code, title, detail, Collections.emptyMap());
+        this(status, code, title, detail, Collections.emptyMap(), Collections.emptyMap(), null);
     }
 
     public MoneyCraftException(
@@ -23,6 +25,18 @@ public class MoneyCraftException extends RuntimeException {
         String detail,
         Map<String, String> fieldErrors
     ) {
+        this(status, code, title, detail, fieldErrors, Collections.emptyMap(), null);
+    }
+
+    public MoneyCraftException(
+        HttpStatus status,
+        String code,
+        String title,
+        String detail,
+        Map<String, String> fieldErrors,
+        Map<String, Object> extraProperties,
+        String responseEtag
+    ) {
         super(detail);
         this.status = status;
         this.code = code;
@@ -30,6 +44,10 @@ public class MoneyCraftException extends RuntimeException {
         this.fieldErrors = fieldErrors == null
             ? Collections.emptyMap()
             : Collections.unmodifiableMap(new LinkedHashMap<>(fieldErrors));
+        this.extraProperties = extraProperties == null
+            ? Collections.emptyMap()
+            : Collections.unmodifiableMap(new LinkedHashMap<>(extraProperties));
+        this.responseEtag = responseEtag;
     }
 
     public HttpStatus status() {
@@ -46,5 +64,13 @@ public class MoneyCraftException extends RuntimeException {
 
     public Map<String, String> fieldErrors() {
         return fieldErrors;
+    }
+
+    public Map<String, Object> extraProperties() {
+        return extraProperties;
+    }
+
+    public String responseEtag() {
+        return responseEtag;
     }
 }

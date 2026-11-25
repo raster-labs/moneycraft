@@ -5,7 +5,22 @@
  */
 
 export type BankStatementFormat = 'CSV' | 'MT940' | 'CAMT_053';
-export type BankingWorkbenchTab = 'BRS' | 'CHEQUE_BOOKS' | 'OCR_QUEUE';
+export type BankingWorkbenchTab = 'BRS' | 'CHEQUE_BOOKS' | 'OCR_QUEUE' | 'PAYROLL';
+
+export interface PayrollHeadDto {
+  readonly id: string;
+  readonly name: string;
+  readonly headType: 'EARNINGS' | 'DEDUCTIONS' | 'EMPLOYER_CONTRIBUTION';
+  readonly ledgerId?: string | null;
+}
+
+export interface EmployeeDto {
+  readonly id: string;
+  readonly employeeCode: string;
+  readonly displayName: string;
+  readonly designation?: string | null;
+  readonly dateOfJoining?: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // 1. Cheque Books & Leaves (`GET|POST /banking/cheque-books`)

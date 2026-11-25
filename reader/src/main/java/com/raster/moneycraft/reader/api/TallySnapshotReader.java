@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Clean-room public entry point for reading and reconciling TallyPrime 7.0-7.2 .1800 binary directories
+ * Standalone entry point for reading and reconciling legacy .1800 company snapshot directories
  * and companion canonical XML snapshots.
  * Zero Spring, Hibernate/JPA, Servlet, or network dependencies (MIG-003).
  */

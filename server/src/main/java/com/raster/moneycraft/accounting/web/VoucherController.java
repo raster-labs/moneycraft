@@ -104,6 +104,60 @@ public class VoucherController {
         );
     }
 
+    @GetMapping("/vouchers/unused-numbers")
+    public List<VoucherDtos.UnusedVoucherNumberDto> listUnusedVoucherNumbers(
+        @PathVariable UUID companyId,
+        @RequestParam(name = "voucherTypeId", required = false) UUID voucherTypeId,
+        @RequestParam(name = "voucherTypeName", required = false) String voucherTypeName
+    ) {
+        MoneyCraftPrincipal principal = rbacAuthorizationService.requireAuthenticatedPrincipal();
+        return voucherService.listAvailableUnusedNumbers(
+            principal,
+            companyId,
+            voucherTypeId,
+            voucherTypeName
+        );
+    }
+
+    @GetMapping("/vouchers/adjacent")
+    public VoucherDtos.AdjacentVoucherResponse getAdjacentVoucher(
+        @PathVariable UUID companyId,
+        @RequestParam(name = "currentVoucherId", required = false) UUID currentVoucherId,
+        @RequestParam(name = "voucherTypeId", required = false) UUID voucherTypeId,
+        @RequestParam(name = "voucherCategory", required = false) String voucherCategory,
+        @RequestParam(name = "voucherDate", required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate voucherDate,
+        @RequestParam(name = "direction", defaultValue = "PREV") String direction
+    ) {
+        MoneyCraftPrincipal principal = rbacAuthorizationService.requireAuthenticatedPrincipal();
+        return voucherService.getAdjacentVoucher(
+            principal,
+            companyId,
+            currentVoucherId,
+            voucherTypeId,
+            voucherCategory,
+            voucherDate,
+            direction
+        );
+    }
+
+    @GetMapping("/vouchers/last-narration")
+    public VoucherDtos.LastNarrationResponse getLastNarration(
+        @PathVariable UUID companyId,
+        @RequestParam(name = "voucherTypeId", required = false) UUID voucherTypeId,
+        @RequestParam(name = "voucherCategory", required = false) String voucherCategory,
+        @RequestParam(name = "ledgerId", required = false) UUID ledgerId
+    ) {
+        MoneyCraftPrincipal principal = rbacAuthorizationService.requireAuthenticatedPrincipal();
+        return voucherService.getLastNarration(
+            principal,
+            companyId,
+            voucherTypeId,
+            voucherCategory,
+            ledgerId
+        );
+    }
+
     @GetMapping("/vouchers/{voucherId:[0-9a-fA-F-]{36}}")
     public ResponseEntity<VoucherDtos.VoucherDetailDto> getVoucher(
         @PathVariable UUID companyId,

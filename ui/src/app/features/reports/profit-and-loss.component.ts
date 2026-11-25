@@ -5,6 +5,7 @@ import {
   HostListener,
   OnInit,
   computed,
+  effect,
   inject,
   input,
   signal,
@@ -12,9 +13,15 @@ import {
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { isEditableTextElement } from '../../core/keyboard/collision-guard';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
+import { ReportOutputModalComponent } from '../../shared/components/report-output-modal/report-output-modal.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { CompanyContextStore } from '../../state/company-context.store';
 import { NavigationStackStore } from '../../state/navigation-stack.store';
 import { FinancialStatementLineDto, ProfitAndLossReportDto } from './reports.models';
@@ -23,7 +30,13 @@ import { ReportsService } from './reports.service';
 @Component({
   selector: 'mc-profit-and-loss',
   standalone: true,
-  imports: [FormsModule, RouterLink, IndianCurrencyPipe],
+  imports: [
+    FormsModule,
+    RouterLink,
+    IndianCurrencyPipe,
+    SemanticIconComponent,
+    ReportOutputModalComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="pnl-page">
@@ -54,8 +67,42 @@ import { ReportsService } from './reports.service';
           >
             Ctrl+B: {{ includeOptional() ? 'Postings Only' : 'Incl. Optional' }}
           </button>
-          <button type="button" class="mc-btn" (click)="openPeriodModal()">
-            F2: Period
+          <select
+            class="mc-input"
+            aria-label="Scale Factor"
+            data-testid="pnl-scale-factor-select"
+            [ngModel]="scaleFactor()"
+            (ngModelChange)="setScaleFactor($event)"
+          >
+            <option value="DEFAULT">Scale: Default</option>
+            <option value="HUNDREDS">In Hundreds</option>
+            <option value="THOUSANDS">In Thousands</option>
+            <option value="LAKHS">In Lakhs</option>
+            <option value="MILLIONS">In Millions</option>
+            <option value="CRORES">In Crores</option>
+          </select>
+          <button type="button" class="mc-btn mc-btn-secondary" (click)="openPeriodModal()">
+            <mc-icon name="calendar" [size]="16" />
+            <span>F2: Period</span>
+          </button>
+          @if (removedKeys().length > 0) {
+            <button
+              type="button"
+              class="mc-btn mc-btn-secondary"
+              data-testid="pnl-restore-line-btn"
+              (click)="restoreLastRemovedLine()"
+            >
+              Restore Hidden ({{ removedKeys().length }}) &bull; Alt+U
+            </button>
+          }
+          <button
+            type="button"
+            class="mc-btn mc-btn-secondary"
+            data-testid="pnl-output-btn"
+            (click)="outputModalOpen.set(true)"
+          >
+            <mc-icon name="export" [size]="16" />
+            <span>Output</span>
           </button>
           <button
             type="button"
@@ -63,7 +110,8 @@ import { ReportsService } from './reports.service';
             data-testid="pnl-print-pdf-btn"
             (click)="exportPdf()"
           >
-            Print PDF (Ctrl+P)
+            <mc-icon name="print" [size]="16" />
+            <span>Print PDF (Ctrl+P)</span>
           </button>
         </div>
       </header>
@@ -81,9 +129,9 @@ import { ReportsService } from './reports.service';
             <span class="kpi-label">Gross Profit / (Loss)</span>
             <span class="mc-amount kpi-val kpi-teal" data-testid="pnl-gross-profit">
               @if (isPositive(r.grossLoss)) {
-                &#x2212;{{ r.grossLoss | mcIndianCurrency }}
+                &#x2212;{{ scaleAmount(r.grossLoss) | mcIndianCurrency }}
               } @else {
-                {{ r.grossProfit | mcIndianCurrency }}
+                {{ scaleAmount(r.grossProfit) | mcIndianCurrency }}
               }
             </span>
           </article>
@@ -91,22 +139,22 @@ import { ReportsService } from './reports.service';
             <span class="kpi-label">Net Profit / (Loss)</span>
             <span class="mc-amount kpi-val kpi-teal" data-testid="pnl-net-profit">
               @if (isPositive(r.netLoss)) {
-                &#x2212;{{ r.netLoss | mcIndianCurrency }}
+                &#x2212;{{ scaleAmount(r.netLoss) | mcIndianCurrency }}
               } @else {
-                {{ r.netProfit | mcIndianCurrency }}
+                {{ scaleAmount(r.netProfit) | mcIndianCurrency }}
               }
             </span>
           </article>
           <article class="mc-card kpi-card">
             <span class="kpi-label">Sales Accounts</span>
             <span class="mc-amount kpi-val" data-testid="pnl-sales-total">
-              {{ r.salesTotal | mcIndianCurrency }}
+              {{ scaleAmount(r.salesTotal) | mcIndianCurrency }}
             </span>
           </article>
           <article class="mc-card kpi-card">
             <span class="kpi-label">Closing Stock</span>
             <span class="mc-amount kpi-val" data-testid="pnl-closing-stock">
-              {{ r.closingStockValue | mcIndianCurrency }}
+              {{ scaleAmount(r.closingStockValue) | mcIndianCurrency }}
             </span>
           </article>
         </section>
@@ -135,14 +183,19 @@ import { ReportsService } from './reports.service';
                   >
                     <div class="stmt-main">
                       <span>{{ line.name }}</span>
-                      <span class="mc-amount">{{ line.amount | mcIndianCurrency }}</span>
+                      <span class="mc-amount">{{ scaleAmount(line.amount) | mcIndianCurrency }}</span>
                     </div>
                     @if (detailedMode() && line.children.length > 0) {
                       <ul class="child-list">
                         @for (ch of line.children; track ch.id + '-' + ch.name) {
-                          <li class="child-row" (dblclick)="drillLine(ch)">
+                          <li
+                            class="child-row"
+                            [class.child-row-active]="selectedKey() === 'TDR:' + line.id + ':' + ch.id"
+                            (click)="selectLine('TDR:' + line.id + ':' + ch.id); $event.stopPropagation()"
+                            (dblclick)="drillLine(ch); $event.stopPropagation()"
+                          >
                             <span>{{ ch.name }}</span>
-                            <span class="mc-amount">{{ ch.amount | mcIndianCurrency }}</span>
+                            <span class="mc-amount">{{ scaleAmount(ch.amount) | mcIndianCurrency }}</span>
                           </li>
                         }
                       </ul>
@@ -153,7 +206,7 @@ import { ReportsService } from './reports.service';
               <div class="pane-total">
                 <strong>Total</strong>
                 <strong class="mc-amount" data-testid="pnl-trading-total-dr">
-                  {{ r.tradingTotal | mcIndianCurrency }}
+                  {{ scaleAmount(r.tradingTotal) | mcIndianCurrency }}
                 </strong>
               </div>
             </div>
@@ -175,14 +228,19 @@ import { ReportsService } from './reports.service';
                   >
                     <div class="stmt-main">
                       <span>{{ line.name }}</span>
-                      <span class="mc-amount">{{ line.amount | mcIndianCurrency }}</span>
+                      <span class="mc-amount">{{ scaleAmount(line.amount) | mcIndianCurrency }}</span>
                     </div>
                     @if (detailedMode() && line.children.length > 0) {
                       <ul class="child-list">
                         @for (ch of line.children; track ch.id + '-' + ch.name) {
-                          <li class="child-row" (dblclick)="drillLine(ch)">
+                          <li
+                            class="child-row"
+                            [class.child-row-active]="selectedKey() === 'TCR:' + line.id + ':' + ch.id"
+                            (click)="selectLine('TCR:' + line.id + ':' + ch.id); $event.stopPropagation()"
+                            (dblclick)="drillLine(ch); $event.stopPropagation()"
+                          >
                             <span>{{ ch.name }}</span>
-                            <span class="mc-amount">{{ ch.amount | mcIndianCurrency }}</span>
+                            <span class="mc-amount">{{ scaleAmount(ch.amount) | mcIndianCurrency }}</span>
                           </li>
                         }
                       </ul>
@@ -193,7 +251,7 @@ import { ReportsService } from './reports.service';
               <div class="pane-total">
                 <strong>Total</strong>
                 <strong class="mc-amount" data-testid="pnl-trading-total-cr">
-                  {{ r.tradingTotal | mcIndianCurrency }}
+                  {{ scaleAmount(r.tradingTotal) | mcIndianCurrency }}
                 </strong>
               </div>
             </div>
@@ -223,14 +281,19 @@ import { ReportsService } from './reports.service';
                   >
                     <div class="stmt-main">
                       <span>{{ line.name }}</span>
-                      <span class="mc-amount">{{ line.amount | mcIndianCurrency }}</span>
+                      <span class="mc-amount">{{ scaleAmount(line.amount) | mcIndianCurrency }}</span>
                     </div>
                     @if (detailedMode() && line.children.length > 0) {
                       <ul class="child-list">
                         @for (ch of line.children; track ch.id + '-' + ch.name) {
-                          <li class="child-row" (dblclick)="drillLine(ch)">
+                          <li
+                            class="child-row"
+                            [class.child-row-active]="selectedKey() === 'PDR:' + line.id + ':' + ch.id"
+                            (click)="selectLine('PDR:' + line.id + ':' + ch.id); $event.stopPropagation()"
+                            (dblclick)="drillLine(ch); $event.stopPropagation()"
+                          >
                             <span>{{ ch.name }}</span>
-                            <span class="mc-amount">{{ ch.amount | mcIndianCurrency }}</span>
+                            <span class="mc-amount">{{ scaleAmount(ch.amount) | mcIndianCurrency }}</span>
                           </li>
                         }
                       </ul>
@@ -241,7 +304,7 @@ import { ReportsService } from './reports.service';
               <div class="pane-total">
                 <strong>Total</strong>
                 <strong class="mc-amount" data-testid="pnl-total-dr">
-                  {{ r.pnlTotal | mcIndianCurrency }}
+                  {{ scaleAmount(r.pnlTotal) | mcIndianCurrency }}
                 </strong>
               </div>
             </div>
@@ -262,14 +325,19 @@ import { ReportsService } from './reports.service';
                   >
                     <div class="stmt-main">
                       <span>{{ line.name }}</span>
-                      <span class="mc-amount">{{ line.amount | mcIndianCurrency }}</span>
+                      <span class="mc-amount">{{ scaleAmount(line.amount) | mcIndianCurrency }}</span>
                     </div>
                     @if (detailedMode() && line.children.length > 0) {
                       <ul class="child-list">
                         @for (ch of line.children; track ch.id + '-' + ch.name) {
-                          <li class="child-row" (dblclick)="drillLine(ch)">
+                          <li
+                            class="child-row"
+                            [class.child-row-active]="selectedKey() === 'PCR:' + line.id + ':' + ch.id"
+                            (click)="selectLine('PCR:' + line.id + ':' + ch.id); $event.stopPropagation()"
+                            (dblclick)="drillLine(ch); $event.stopPropagation()"
+                          >
                             <span>{{ ch.name }}</span>
-                            <span class="mc-amount">{{ ch.amount | mcIndianCurrency }}</span>
+                            <span class="mc-amount">{{ scaleAmount(ch.amount) | mcIndianCurrency }}</span>
                           </li>
                         }
                       </ul>
@@ -280,7 +348,7 @@ import { ReportsService } from './reports.service';
               <div class="pane-total">
                 <strong>Total</strong>
                 <strong class="mc-amount" data-testid="pnl-total-cr">
-                  {{ r.pnlTotal | mcIndianCurrency }}
+                  {{ scaleAmount(r.pnlTotal) | mcIndianCurrency }}
                 </strong>
               </div>
             </div>
@@ -321,11 +389,37 @@ import { ReportsService } from './reports.service';
               </label>
             </div>
             <div class="mc-modal-footer">
-              <button type="submit" class="mc-btn mc-btn-primary">Apply (Enter)</button>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="periodModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+                @if (dateDialogHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
+              <button type="submit" class="mc-btn mc-btn-primary">
+                <mc-icon name="calendar" [size]="16" />
+                <span>Apply</span>
+                @if (dateDialogHint('context.applyDate', 'A/a'); as aHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ aHint }}]</span>
+                }
+              </button>
             </div>
           </form>
         </div>
       }
+
+      <mc-report-output-modal
+        [open]="outputModalOpen()"
+        reportTitle="Profit & Loss A/c"
+        [boundsLabel]="fromDate() + ' to ' + toDate()"
+        (printRequested)="exportPdf()"
+        (exportRequested)="exportPdf()"
+        (closed)="outputModalOpen.set(false)"
+      />
     </div>
   `,
   styles: `
@@ -519,12 +613,19 @@ import { ReportsService } from './reports.service';
     }
 
     .child-row {
-      padding: 0.2rem 0;
+      padding: 0.2rem 0.35rem;
       display: flex;
       justify-content: space-between;
       font-size: 0.78rem;
       color: #475569;
       font-weight: 500;
+      border-radius: 3px;
+    }
+
+    .child-row-active {
+      background: #006d68;
+      color: #ffffff;
+      font-weight: 600;
     }
 
     .pane-total {
@@ -590,20 +691,77 @@ export class ProfitAndLossComponent implements OnInit {
   readonly toDate = signal<string>(this.companyContext.periodTo());
   readonly includeOptional = signal<boolean>(false);
   readonly detailedMode = signal<boolean>(false);
+  readonly scaleFactor = signal<
+    'DEFAULT' | 'HUNDREDS' | 'THOUSANDS' | 'LAKHS' | 'MILLIONS' | 'CRORES'
+  >('DEFAULT');
 
   readonly loading = signal<boolean>(false);
   readonly report = signal<ProfitAndLossReportDto | null>(null);
   readonly selectedKey = signal<string>('');
   readonly statusMessage = signal<string | null>(null);
   readonly periodModalOpen = signal<boolean>(false);
+  readonly outputModalOpen = signal<boolean>(false);
+  readonly removedKeys = signal<readonly string[]>([]);
 
   draftFrom = '';
   draftTo = '';
+  private periodModalHandle: ActiveModalContextHandle | null = null;
+
+  dateDialogHint(commandId: string, pairSpec: 'A/a' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'context.dateDialog',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
+
+  constructor() {
+    effect(() => {
+      const open = this.periodModalOpen();
+      if (this.periodModalHandle) {
+        this.periodModalHandle.close();
+        this.periodModalHandle = null;
+      }
+      if (open) {
+        this.periodModalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'context.dateDialog',
+              locale: 'en-GB',
+              commandId: 'context.applyDate',
+              label: 'Apply',
+              letterPair: asciiPair('A/a'),
+              permissionRef: 'report.read',
+              effect: 'Apply selected Profit & Loss period.',
+              normalActivation: () => this.applyPeriod(),
+              iconSemanticId: 'mc.icon.calendar',
+              stateTokenRole: 'action.primary',
+            },
+            {
+              contextId: 'context.dateDialog',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Close',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close Profit & Loss period dialog.',
+              normalActivation: () => this.periodModalOpen.set(false),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
+      }
+    });
+  }
 
   readonly tradingDrRows = computed<readonly FinancialStatementLineDto[]>(() => {
     const r = this.report();
     if (!r) return [];
-    if (r.tradingDebitLines.length > 0) return r.tradingDebitLines;
+    if (r.tradingDebitLines.length > 0) {
+      return r.tradingDebitLines.filter((l) => !this.removedKeys().includes('TDR:' + l.id));
+    }
     const synthesized: FinancialStatementLineDto[] = [
       { id: 'opening-stock', lineType: 'STOCK', name: 'Opening Stock', amount: r.openingStockValue, children: [] },
       { id: 'purchase-accounts', lineType: 'GROUP', name: 'Purchase Accounts', amount: r.purchaseTotal, children: [] },
@@ -626,13 +784,16 @@ export class ProfitAndLossComponent implements OnInit {
         children: [],
       });
     }
-    return synthesized;
+    return synthesized.filter((l) => !this.removedKeys().includes('TDR:' + l.id));
   });
 
   readonly tradingCrRows = computed<readonly FinancialStatementLineDto[]>(() => {
     const r = this.report();
     if (!r) return [];
-    if (r.tradingCreditLines.length > 0) return r.tradingCreditLines;
+    const hidden = this.removedKeys();
+    if (r.tradingCreditLines.length > 0) {
+      return r.tradingCreditLines.filter((l) => !hidden.includes('TCR:' + l.id));
+    }
     const synthesized: FinancialStatementLineDto[] = [
       { id: 'sales-accounts', lineType: 'GROUP', name: 'Sales Accounts', amount: r.salesTotal, children: [] },
     ];
@@ -661,13 +822,15 @@ export class ProfitAndLossComponent implements OnInit {
         children: [],
       });
     }
-    return synthesized;
+    return synthesized.filter((l) => !this.removedKeys().includes('TCR:' + l.id));
   });
 
   readonly pnlDrRows = computed<readonly FinancialStatementLineDto[]>(() => {
     const r = this.report();
     if (!r) return [];
-    if (r.pnlDebitLines.length > 0) return r.pnlDebitLines;
+    if (r.pnlDebitLines.length > 0) {
+      return r.pnlDebitLines.filter((l) => !this.removedKeys().includes('PDR:' + l.id));
+    }
     const synthesized: FinancialStatementLineDto[] = [];
     if (this.isPositive(r.grossLoss)) {
       synthesized.push({
@@ -694,13 +857,15 @@ export class ProfitAndLossComponent implements OnInit {
         children: [],
       });
     }
-    return synthesized;
+    return synthesized.filter((l) => !this.removedKeys().includes('PDR:' + l.id));
   });
 
   readonly pnlCrRows = computed<readonly FinancialStatementLineDto[]>(() => {
     const r = this.report();
     if (!r) return [];
-    if (r.pnlCreditLines.length > 0) return r.pnlCreditLines;
+    if (r.pnlCreditLines.length > 0) {
+      return r.pnlCreditLines.filter((l) => !this.removedKeys().includes('PCR:' + l.id));
+    }
     const synthesized: FinancialStatementLineDto[] = [];
     if (this.isPositive(r.grossProfit)) {
       synthesized.push({
@@ -729,16 +894,29 @@ export class ProfitAndLossComponent implements OnInit {
         children: [],
       });
     }
-    return synthesized;
+    return synthesized.filter((l) => !this.removedKeys().includes('PCR:' + l.id));
   });
 
   readonly navigableLines = computed<readonly { readonly key: string; readonly line: FinancialStatementLineDto }[]>(
-    () => [
-      ...this.tradingDrRows().map((line) => ({ key: 'TDR:' + line.id, line })),
-      ...this.tradingCrRows().map((line) => ({ key: 'TCR:' + line.id, line })),
-      ...this.pnlDrRows().map((line) => ({ key: 'PDR:' + line.id, line })),
-      ...this.pnlCrRows().map((line) => ({ key: 'PCR:' + line.id, line })),
-    ],
+    () => {
+      const detailed = this.detailedMode();
+      const out: { readonly key: string; readonly line: FinancialStatementLineDto }[] = [];
+      const appendRows = (prefix: string, rows: readonly FinancialStatementLineDto[]): void => {
+        for (const line of rows) {
+          out.push({ key: `${prefix}:${line.id}`, line });
+          if (detailed && line.children?.length) {
+            for (const ch of line.children) {
+              out.push({ key: `${prefix}:${line.id}:${ch.id}`, line: ch });
+            }
+          }
+        }
+      };
+      appendRows('TDR', this.tradingDrRows());
+      appendRows('TCR', this.tradingCrRows());
+      appendRows('PDR', this.pnlDrRows());
+      appendRows('PCR', this.pnlCrRows());
+      return out;
+    },
   );
 
   ngOnInit(): void {
@@ -755,11 +933,63 @@ export class ProfitAndLossComponent implements OnInit {
       this.shortcutRegistry.bindHandler('menu.print', 'SCREEN', () => {
         void this.exportPdf();
       }),
+      this.shortcutRegistry.bindHandler('register.removeLine', 'SCREEN', () => {
+        this.removeSelectedLine();
+      }),
+      this.shortcutRegistry.bindHandler('register.restoreLine', 'SCREEN', () => {
+        this.restoreLastRemovedLine();
+      }),
+      this.shortcutRegistry.bindHandler('register.restoreAllLines', 'SCREEN', () => {
+        this.removedKeys.set([]);
+      }),
+      this.shortcutRegistry.bindHandler('report.explodeRow', 'SCREEN', () => {
+        this.detailedMode.set(!this.detailedMode());
+      }),
+      this.shortcutRegistry.bindHandler('report.addColumn', 'SCREEN', () => {
+        this.detailedMode.set(!this.detailedMode());
+      }),
+      this.shortcutRegistry.bindHandler(
+        'nav.escape',
+        'MODAL',
+        () => {
+          if (this.outputModalOpen()) {
+            this.outputModalOpen.set(false);
+            return true;
+          }
+          if (this.periodModalOpen()) {
+            this.periodModalOpen.set(false);
+            return true;
+          }
+          return false;
+        },
+        () => this.periodModalOpen() || this.outputModalOpen(),
+      ),
     ];
     this.destroyRef.onDestroy(() => {
       for (const d of disposers) d();
+      if (this.periodModalHandle) {
+        this.periodModalHandle.close();
+        this.periodModalHandle = null;
+      }
     });
     void this.reload();
+  }
+
+  removeSelectedLine(): void {
+    const items = this.navigableLines();
+    if (items.length === 0) return;
+    const currentKey = this.selectedKey() || items[0].key;
+    if (!this.removedKeys().includes(currentKey)) {
+      this.removedKeys.set([...this.removedKeys(), currentKey]);
+      const next = this.navigableLines()[0];
+      this.selectedKey.set(next ? next.key : '');
+    }
+  }
+
+  restoreLastRemovedLine(): void {
+    const stack = this.removedKeys();
+    if (stack.length === 0) return;
+    this.removedKeys.set(stack.slice(0, -1));
   }
 
   async reload(): Promise<void> {
@@ -785,6 +1015,31 @@ export class ProfitAndLossComponent implements OnInit {
   toggleOptional(): void {
     this.includeOptional.set(!this.includeOptional());
     void this.reload();
+  }
+
+  setScaleFactor(
+    factor: 'DEFAULT' | 'HUNDREDS' | 'THOUSANDS' | 'LAKHS' | 'MILLIONS' | 'CRORES',
+  ): void {
+    this.scaleFactor.set(factor);
+  }
+
+  scaleAmount(wire: string): string {
+    const factor = this.scaleFactor();
+    if (factor === 'DEFAULT') return wire;
+    const scale = this.companyContext.currencyScale();
+    const dec = ExactDecimal.tryParse(wire, scale, 'HALF_UP');
+    if (!dec) return wire;
+    const divisorInt =
+      factor === 'HUNDREDS'
+        ? 100
+        : factor === 'THOUSANDS'
+          ? 1000
+          : factor === 'LAKHS'
+            ? 100000
+            : factor === 'MILLIONS'
+              ? 1000000
+              : 10000000;
+    return dec.divHalfUp(ExactDecimal.fromInt(divisorInt, 0), scale).toWireString(scale);
   }
 
   openPeriodModal(): void {

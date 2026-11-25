@@ -21,6 +21,7 @@ export interface FunctionBarButtonItem {
           <button
             type="button"
             class="mc-fbar-btn"
+            [attr.data-testid]="'fn-btn-' + item.commandId"
             [class.mc-fbar-btn-active]="item.active"
             [disabled]="item.disabled"
             (click)="commandTriggered.emit(item.commandId)"
@@ -99,7 +100,10 @@ export interface FunctionBarButtonItem {
       }
 
       &:disabled {
-        opacity: 0.45;
+        background: var(--mc-color-cool-alabaster);
+        color: var(--mc-color-deep-ledger-slate);
+        border: 1px dashed #142F42;
+        opacity: 1;
         cursor: not-allowed;
       }
     }
@@ -162,7 +166,8 @@ export interface FunctionBarButtonItem {
       }
 
       &:disabled {
-        opacity: 0.4;
+        border: 1px dashed rgba(255, 255, 255, 0.65);
+        opacity: 1;
         cursor: not-allowed;
       }
     }

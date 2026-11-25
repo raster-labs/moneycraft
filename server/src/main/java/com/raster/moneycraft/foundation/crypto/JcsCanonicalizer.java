@@ -66,6 +66,13 @@ public class JcsCanonicalizer {
         return canonicalizeJson(rawJson).getBytes(StandardCharsets.UTF_8);
     }
 
+    public byte[] canonicalize(byte[] rawJsonUtf8) {
+        if (rawJsonUtf8 == null || rawJsonUtf8.length == 0) {
+            return "{}".getBytes(StandardCharsets.UTF_8);
+        }
+        return canonicalizeUtf8(new String(rawJsonUtf8, StandardCharsets.UTF_8));
+    }
+
     public String canonicalizeNode(JsonNode node) {
         StringBuilder sb = new StringBuilder(128);
         appendNode(node, sb);

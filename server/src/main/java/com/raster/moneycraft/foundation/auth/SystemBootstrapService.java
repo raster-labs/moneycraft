@@ -31,6 +31,7 @@ public class SystemBootstrapService {
 
     private final MoneyCraftProperties properties;
     private final AuthorityGuard authorityGuard;
+    private final SuperAdminService superAdminService;
     private final TinkCryptoService tinkCryptoService;
     private final AdminReceiptService adminReceiptService;
     private final AuditChainService auditChainService;
@@ -44,6 +45,7 @@ public class SystemBootstrapService {
     public SystemBootstrapService(
         MoneyCraftProperties properties,
         AuthorityGuard authorityGuard,
+        SuperAdminService superAdminService,
         TinkCryptoService tinkCryptoService,
         AdminReceiptService adminReceiptService,
         AuditChainService auditChainService,
@@ -56,6 +58,7 @@ public class SystemBootstrapService {
     ) {
         this.properties = properties;
         this.authorityGuard = authorityGuard;
+        this.superAdminService = superAdminService;
         this.tinkCryptoService = tinkCryptoService;
         this.adminReceiptService = adminReceiptService;
         this.auditChainService = auditChainService;
@@ -111,6 +114,7 @@ public class SystemBootstrapService {
         String argon2idHash = passwordEncoder.encode(request.password());
         MoneyCraftProperties.Argon2 argonCfg = properties.getSecurity().getArgon2();
 
+        boolean[] designatedSuperAdmin = new boolean[] {false};
         authorityTxTemplate.executeWithoutResult(status -> {
             authorityJdbcTemplate.update(
                 """
@@ -176,6 +180,12 @@ public class SystemBootstrapService {
                 ownerPrincipalId,
                 recoveryVerifierHash
             );
+
+            designatedSuperAdmin[0] = superAdminService.applyDuringBootstrapIfConfigured(
+                installationId,
+                ownerPrincipalId,
+                username
+            );
         });
 
         byte[] authorityDigest = jcsCanonicalizer.sha256(
@@ -238,6 +248,23 @@ public class SystemBootstrapService {
                     )
                 );
 
+                if (designatedSuperAdmin[0]) {
+                    adminReceiptService.recordAndMirrorAdminReceipt(
+                        installationId,
+                        ownerPrincipalId,
+                        null,
+                        "super_admin.designate",
+                        "PERSON",
+                        ownerPrincipalId.toString(),
+                        null,
+                        null,
+                        Map.of(
+                            "ceremonySource", "BOOTSTRAP_CONFIG_CEREMONY",
+                            "principalId", ownerPrincipalId.toString()
+                        )
+                    );
+                }
+
                 auditChainService.appendInstallationEvent(
                     installationId,
                     ownerPrincipalId,
@@ -269,7 +296,7 @@ public class SystemBootstrapService {
             null,
             List.of(),
             List.of()
-        );
+        ).withSuperAdmin(designatedSuperAdmin[0]);
         return new BootstrapResult(installationId, ownerPrincipal, recoveryReceiptCode);
     }
 

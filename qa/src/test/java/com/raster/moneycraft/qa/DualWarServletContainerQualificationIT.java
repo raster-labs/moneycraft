@@ -18,12 +18,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
@@ -247,6 +256,41 @@ class DualWarServletContainerQualificationIT {
         Assertions.assertThat(tomcatQualification.totalClosingCredit())
             .isEqualTo(wildflyQualification.totalClosingCredit())
             .isEqualTo("118000.00");
+    }
+
+    @Test
+    @Order(4)
+    void warArtifactContainsZeroSwingAwtPrintOrDesktopModuleClasses() throws Exception {
+        try (ZipFile zip = new ZipFile(warArtifactPath.toFile())) {
+            List<String> entryNames = zip.stream()
+                .map(ZipEntry::getName)
+                .toList();
+
+            Assertions.assertThat(entryNames)
+                .as("SWG-002 / DEP-003: moneycraft.war must never package desktop module JARs or classes")
+                .noneMatch(name -> name.contains("moneycraft-desktop"))
+                .noneMatch(name -> name.startsWith("WEB-INF/classes/com/raster/moneycraft/desktop/"))
+                .noneMatch(name -> name.startsWith("javax/swing/"))
+                .noneMatch(name -> name.startsWith("java/awt/print/"));
+
+            int scannedServerClasses = 0;
+            for (ZipEntry entry : zip.stream().toList()) {
+                String name = entry.getName();
+                if (!name.startsWith("WEB-INF/classes/com/raster/moneycraft/") || !name.endsWith(".class")) {
+                    continue;
+                }
+                scannedServerClasses++;
+                try (InputStream in = zip.getInputStream(entry)) {
+                    String constantPoolAscii = new String(in.readAllBytes(), StandardCharsets.ISO_8859_1);
+                    Assertions.assertThat(constantPoolAscii)
+                        .as("Server class %s must not reference javax.swing, java.awt.print, or desktop package", name)
+                        .doesNotContain("javax/swing/")
+                        .doesNotContain("java/awt/print/")
+                        .doesNotContain("com/raster/moneycraft/desktop/");
+                }
+            }
+            Assertions.assertThat(scannedServerClasses).isGreaterThan(50);
+        }
     }
 
     private static ContainerQualificationResult runFullErpQualificationWorkflow(
@@ -507,7 +551,28 @@ class DualWarServletContainerQualificationIT {
         Assertions.assertThat(totalClosingDebit).isEqualTo("118000.00");
         Assertions.assertThat(totalClosingCredit).isEqualTo("118000.00");
 
-        // 10. Verify unbroken MC-AUDIT-2 hash chain on external servlet container
+        // 10. Verify deterministic PDFBox 3 embedded fonts (Manrope + JetBrainsMono) & glyphs on external WAR
+        HttpResponse<byte[]> voucherPdfRes = sendPostPdfBytes(
+            client,
+            cookieManager,
+            baseUrl + "/api/v1/companies/" + companyId + "/vouchers/" + salesVoucherId + "/print-pdf",
+            "{}",
+            "war-vch-pdf-" + companyCode + "-001"
+        );
+        Assertions.assertThat(voucherPdfRes.statusCode()).isEqualTo(200);
+        verifyPdfBoxBrandInvariants(voucherPdfRes.body(), "INV-WAR-001", "SHA256:", "\u20B9");
+
+        HttpResponse<byte[]> tbPdfRes = sendPostPdfBytes(
+            client,
+            cookieManager,
+            baseUrl + "/api/v1/companies/" + companyId + "/reports/trial-balance/pdf",
+            "{}",
+            "war-tb-pdf-" + companyCode + "-001"
+        );
+        Assertions.assertThat(tbPdfRes.statusCode()).isEqualTo(200);
+        verifyPdfBoxBrandInvariants(tbPdfRes.body(), "TRIAL BALANCE", "SHA256:", "\u20B9");
+
+        // 11. Verify unbroken MC-AUDIT-2 hash chain on external servlet container
         HttpResponse<String> auditRes = sendGet(client, baseUrl + "/api/v1/admin/audit/verify");
         Assertions.assertThat(auditRes.statusCode()).isEqualTo(200);
         JsonNode auditJson = objectMapper.readTree(auditRes.body());
@@ -699,6 +764,53 @@ class DualWarServletContainerQualificationIT {
             .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
             .build();
         return client.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    }
+
+    private static HttpResponse<byte[]> sendPostPdfBytes(
+        HttpClient client,
+        CookieManager cookieManager,
+        String url,
+        String jsonBody,
+        String idempotencyKey
+    ) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .timeout(Duration.ofSeconds(30))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/pdf")
+            .header("X-XSRF-TOKEN", extractXsrfToken(cookieManager))
+            .header("Idempotency-Key", idempotencyKey)
+            .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+            .build();
+        return client.send(req, HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    private static void verifyPdfBoxBrandInvariants(
+        byte[] pdfBytes,
+        String expectedToken1,
+        String expectedToken2,
+        String expectedToken3
+    ) throws Exception {
+        Assertions.assertThat(pdfBytes).isNotEmpty();
+        try (PDDocument doc = Loader.loadPDF(pdfBytes)) {
+            Assertions.assertThat(doc.getNumberOfPages()).isGreaterThanOrEqualTo(1);
+            Set<String> embeddedFonts = new HashSet<>();
+            for (PDPage page : doc.getPages()) {
+                PDResources resources = page.getResources();
+                for (COSName fontName : resources.getFontNames()) {
+                    PDFont font = resources.getFont(fontName);
+                    Assertions.assertThat(font.isEmbedded()).isTrue();
+                    embeddedFonts.add(font.getName());
+                }
+            }
+            Assertions.assertThat(embeddedFonts.stream().anyMatch(n -> n.contains("Manrope"))).isTrue();
+            Assertions.assertThat(embeddedFonts.stream().anyMatch(n -> n.contains("JetBrainsMono"))).isTrue();
+            String extracted = new PDFTextStripper().getText(doc);
+            Assertions.assertThat(extracted)
+                .contains(expectedToken1)
+                .contains(expectedToken2)
+                .contains(expectedToken3);
+        }
     }
 
     private static String extractXsrfToken(CookieManager cookieManager) {

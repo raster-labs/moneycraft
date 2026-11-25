@@ -1,7 +1,7 @@
 package com.raster.moneycraft.reader.model;
 
 /**
- * TallyPrime binary store format release version detected from Sector-0 header magic and version stamps.
+ * Legacy .1800 binary store format release version detected from Sector-0 header magic and version stamps.
  */
 public enum TallyReleaseVersion {
     REL_7_0("1.1.7.0"),

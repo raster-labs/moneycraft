@@ -5,12 +5,18 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Clean-room TallyPrime .1800 native staging, reconciliation proof, and promotion wire contracts.
+ * Legacy .1800 company snapshot staging, reconciliation proof, and promotion wire contracts.
  * All monetary amounts and variances are serialized as exact fixed-point strings.
  */
 public final class MigrationDtos {
 
     private MigrationDtos() {
+    }
+
+    public record StageLegacy1800Request(
+        String snapshotDirectoryPath,
+        String companionXmlDirectoryPath
+    ) {
     }
 
     public record StageTally1800Request(

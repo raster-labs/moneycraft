@@ -66,6 +66,7 @@ moneycraft:
       - http://localhost:8080
   security:
     cookie-secure: true
+    initial-super-admin-username: ${MONEYCRAFT_INITIAL_SUPER_ADMIN_USERNAME:}
     argon2:
       salt-length: 16
       hash-length: 32

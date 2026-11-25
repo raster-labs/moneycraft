@@ -5,6 +5,7 @@ import {
   HostListener,
   OnInit,
   computed,
+  effect,
   inject,
   input,
   signal,
@@ -12,10 +13,16 @@ import {
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { isEditableTextElement } from '../../core/keyboard/collision-guard';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { ReportOutputModalComponent } from '../../shared/components/report-output-modal/report-output-modal.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { CompanyContextStore } from '../../state/company-context.store';
 import { NavigationStackStore } from '../../state/navigation-stack.store';
 import {
@@ -23,6 +30,8 @@ import {
   GodownSummaryReportDto,
   MovementAnalysisReportDto,
   MovementAnalysisVoucherRowDto,
+  OpenOrderLineDto,
+  OrderVoucherKind,
   STOCK_COSTING_METHOD_OPTIONS,
   StockCostingMethod,
   StockSummaryGroupNodeDto,
@@ -36,7 +45,8 @@ export type InventoryReportTab =
   | 'STOCK_SUMMARY'
   | 'GODOWN_SUMMARY'
   | 'BATCH_AGEING'
-  | 'MOVEMENT_ANALYSIS';
+  | 'MOVEMENT_ANALYSIS'
+  | 'OPEN_ORDERS';
 
 export interface GroupedStockSummarySection {
   readonly group: StockSummaryGroupNodeDto | null;
@@ -47,7 +57,14 @@ export interface GroupedStockSummarySection {
 @Component({
   selector: 'mc-stock-summary',
   standalone: true,
-  imports: [FormsModule, RouterLink, CodeBadgeComponent, IndianCurrencyPipe],
+  imports: [
+    FormsModule,
+    RouterLink,
+    CodeBadgeComponent,
+    IndianCurrencyPipe,
+    SemanticIconComponent,
+    ReportOutputModalComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mc-stocksumm-shell" [class.mc-stocksumm-embedded]="embeddedOverlay()">
@@ -85,6 +102,9 @@ export interface GroupedStockSummarySection {
               }
               @case ('BATCH_AGEING') {
                 Batch / Lot manufacturing, expiry horizon, and expired-lot quarantine status.
+              }
+              @case ('OPEN_ORDERS') {
+                Pending Sales Orders and Purchase Orders awaiting challan / invoice fulfilment.
               }
             }
           </p>
@@ -125,6 +145,17 @@ export interface GroupedStockSummarySection {
             >
               Batch Ageing
             </button>
+            <button
+              type="button"
+              role="tab"
+              class="mc-btn"
+              [class.mc-btn-primary]="activeTab() === 'OPEN_ORDERS'"
+              [attr.aria-selected]="activeTab() === 'OPEN_ORDERS'"
+              data-testid="tab-open-orders"
+              (click)="switchTab('OPEN_ORDERS')"
+            >
+              Open Orders
+            </button>
           </div>
 
           <div class="mc-stocksumm-actions">
@@ -157,14 +188,23 @@ export interface GroupedStockSummarySection {
               </button>
               <button
                 type="button"
-                class="mc-btn"
+                class="mc-btn mc-btn-secondary"
                 data-testid="stock-summary-detailed-btn"
                 (click)="toggleDetailedMode()"
               >
                 {{ detailedMode() ? 'Condensed' : 'Detailed' }} (<span class="mc-key-alt">F1</span>)
               </button>
             }
-            <a routerLink="/app/inventory/stock-items" class="mc-btn">Stock Items</a>
+            <button
+              type="button"
+              class="mc-btn mc-btn-secondary"
+              data-testid="stock-summary-output-btn"
+              (click)="outputModalOpen.set(true)"
+            >
+              <mc-icon name="export" [size]="16" />
+              <span>Output</span>
+            </button>
+            <a routerLink="/app/inventory/stock-items" class="mc-btn mc-btn-secondary">Stock Items</a>
           </div>
         </div>
       </header>
@@ -345,8 +385,8 @@ export interface GroupedStockSummarySection {
                     }
                   } @empty {
                     <tr>
-                      <td [attr.colspan]="detailedMode() ? 11 : 5" class="mc-stocksumm-empty">
-                        No stock movements or opening balances recorded for the selected period.
+                      <td [attr.colspan]="detailedMode() ? 11 : 5" class="mc-empty-records">
+                        No matching records
                       </td>
                     </tr>
                   }
@@ -605,19 +645,106 @@ export interface GroupedStockSummarySection {
                         {{ b.closingValue | mcIndianCurrency: companyContext.currencyScale() }}
                       </td>
                     </tr>
-                  } @empty {
-                    <tr>
-                      <td colspan="9" class="mc-stocksumm-empty">
-                        No batch-tracked stock lots on hand as of {{ toDate() }}.
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
+                    } @empty {
+                      <tr>
+                        <td colspan="9" class="mc-empty-records">No matching records</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </section>
+        }
+
+        <!-- 5. OPEN SALES & PURCHASE ORDERS -->
+        @if (activeTab() === 'OPEN_ORDERS') {
+          <section class="mc-card mc-stocksumm-table-card" aria-label="Open Sales and Purchase Orders">
+            <div class="mc-movement-summary-strip">
+              <div class="mc-movement-kpi">
+                <span class="mc-movement-kpi-label">Order Kind</span>
+                <select
+                  class="mc-select"
+                  aria-label="Open Order Kind Filter"
+                  data-testid="open-orders-kind-select"
+                  [ngModel]="openOrderFilterKind()"
+                  (ngModelChange)="onOpenOrderKindChange($event)"
+                >
+                  <option value="ALL">All Open Orders (Sales + Purchase)</option>
+                  <option value="SALES_ORDER">Sales Orders (Ctrl+F8)</option>
+                  <option value="PURCHASE_ORDER">Purchase Orders (Ctrl+F9)</option>
+                </select>
+              </div>
+              <div class="mc-movement-kpi">
+                <span class="mc-movement-kpi-label">Open Order Lines</span>
+                <strong class="mc-amount">{{ openOrders().length }}</strong>
+              </div>
+              <div class="mc-movement-kpi">
+                <span class="mc-movement-kpi-label">Total Pending Value</span>
+                <strong class="mc-amount" data-testid="open-orders-total-pending-val">
+                  {{ openOrdersPendingTotalWire() | mcIndianCurrency: companyContext.currencyScale() }}
+                </strong>
+              </div>
             </div>
-          }
-        </section>
-      }
+
+            @if (loading()) {
+              <div class="mc-stocksumm-loading">Loading Open Sales &amp; Purchase Orders...</div>
+            } @else {
+              <div class="mc-stocksumm-table-wrap">
+                <table class="mc-stocksumm-table" role="grid" aria-label="Open Order Lines">
+                  <thead>
+                    <tr>
+                      <th scope="col">Order Date</th>
+                      <th scope="col">Order No.</th>
+                      <th scope="col">Type</th>
+                      <th scope="col">Party Ledger</th>
+                      <th scope="col">Stock Item</th>
+                      <th scope="col">Due On</th>
+                      <th scope="col" class="mc-col-qty">Ordered Qty</th>
+                      <th scope="col" class="mc-col-qty">Pending Qty</th>
+                      <th scope="col" class="mc-col-rate">Rate</th>
+                      <th scope="col" class="mc-col-val">Pending Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (ord of openOrders(); track ord.orderNo + '_' + ord.stockItemId + '_' + $index) {
+                      <tr class="mc-stocksumm-item-row" [attr.data-testid]="'open-order-row-' + ord.orderNo">
+                        <td class="mc-code">{{ ord.orderDate }}</td>
+                        <td><mc-code-badge [code]="ord.orderNo" /></td>
+                        <td>
+                          @if (ord.orderType === 'SALES_ORDER') {
+                            <span class="mc-badge mc-badge-jade">Sales Order</span>
+                          } @else {
+                            <span class="mc-badge mc-badge-slate">Purchase Order</span>
+                          }
+                        </td>
+                        <td>{{ ord.partyLedgerName ?? ord.partyLedgerId }}</td>
+                        <td><strong>{{ ord.stockItemName }}</strong></td>
+                        <td class="mc-code">{{ ord.dueDate ?? '—' }}</td>
+                        <td class="mc-amount mc-col-qty">
+                          {{ ord.orderedQty }} {{ ord.uomSymbol ?? 'NOS' }}
+                        </td>
+                        <td class="mc-amount mc-col-qty">
+                          <strong>{{ ord.pendingQty }}</strong> {{ ord.uomSymbol ?? 'NOS' }}
+                        </td>
+                        <td class="mc-amount mc-col-rate">
+                          {{ ord.rate | mcIndianCurrency: companyContext.currencyScale() : true }}
+                        </td>
+                        <td class="mc-amount mc-col-val">
+                          {{ computeOrderPendingValue(ord) | mcIndianCurrency: companyContext.currencyScale() }}
+                        </td>
+                      </tr>
+                    } @empty {
+                      <tr>
+                        <td colspan="10" class="mc-empty-records">No matching records</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </section>
+        }
 
       <!-- Ctrl+B: Basis of Values (Dynamic Re-Valuation Override) Modal -->
       @if (basisModalOpen()) {
@@ -712,12 +839,37 @@ export interface GroupedStockSummarySection {
             </div>
 
             <div class="mc-modal-footer">
-              <span>Enter to Refresh</span>
-              <button type="submit" class="mc-btn mc-btn-primary">Accept</button>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="periodModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Close</span>
+                @if (dateDialogHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
+              <button type="submit" class="mc-btn mc-btn-primary">
+                <mc-icon name="calendar" [size]="16" />
+                <span>Apply</span>
+                @if (dateDialogHint('context.applyDate', 'A/a'); as aHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ aHint }}]</span>
+                }
+              </button>
             </div>
           </form>
         </div>
       }
+
+      <mc-report-output-modal
+        [open]="outputModalOpen()"
+        [reportTitle]="activeHeaderTitle()"
+        [boundsLabel]="periodBadgeText()"
+        (printRequested)="printStockSummaryPdf()"
+        (exportRequested)="printStockSummaryPdf()"
+        (closed)="outputModalOpen.set(false)"
+      />
     </div>
   `,
   styles: `
@@ -994,16 +1146,98 @@ export class StockSummaryComponent implements OnInit {
   readonly godownReport = signal<GodownSummaryReportDto | null>(null);
   readonly batchAgeingReport = signal<BatchAgeingReportDto | null>(null);
   readonly movementReport = signal<MovementAnalysisReportDto | null>(null);
+  readonly openOrders = signal<readonly OpenOrderLineDto[]>([]);
+  readonly openOrderFilterKind = signal<'ALL' | OrderVoucherKind>('ALL');
 
   readonly selectedStockItemId = signal<string | null>(null);
   readonly selectedMovementIndex = signal<number>(0);
 
   readonly basisModalOpen = signal<boolean>(false);
   readonly periodModalOpen = signal<boolean>(false);
+  readonly outputModalOpen = signal<boolean>(false);
 
   draftValuationOverride: StockCostingMethod | '' = '';
   draftFromDate = '2025-04-01';
   draftToDate = '2026-03-31';
+  private periodModalHandle: ActiveModalContextHandle | null = null;
+
+  dateDialogHint(commandId: string, pairSpec: 'A/a' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'context.dateDialog',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
+
+  constructor() {
+    effect(() => {
+      const open = this.periodModalOpen();
+      if (this.periodModalHandle) {
+        this.periodModalHandle.close();
+        this.periodModalHandle = null;
+      }
+      if (open) {
+        this.periodModalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'context.dateDialog',
+              locale: 'en-GB',
+              commandId: 'context.applyDate',
+              label: 'Apply',
+              letterPair: asciiPair('A/a'),
+              permissionRef: 'report.read',
+              effect: 'Apply selected Inventory report period.',
+              normalActivation: () => this.applyPeriodChange(),
+              iconSemanticId: 'mc.icon.calendar',
+              stateTokenRole: 'action.primary',
+            },
+            {
+              contextId: 'context.dateDialog',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Close',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close Inventory report period dialog.',
+              normalActivation: () => this.periodModalOpen.set(false),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
+      }
+    });
+  }
+
+  computeOrderPendingValue(ord: OpenOrderLineDto): string {
+    const scale = this.companyContext.currencyScale();
+    const qty = ExactDecimal.tryParse(ord.pendingQty, 4, 'HALF_UP') ?? ExactDecimal.zero(4);
+    const rate = ExactDecimal.tryParse(ord.rate, 4, 'HALF_UP') ?? ExactDecimal.zero(4);
+    let gross = qty.mulScaled(rate, scale, 'HALF_UP');
+    if (ord.discountPct) {
+      const discPct = ExactDecimal.tryParse(ord.discountPct, 4, 'HALF_UP');
+      if (discPct && discPct.isPositive()) {
+        const discAmt = gross
+          .mulScaled(discPct, scale + 2, 'HALF_UP')
+          .divHalfUp(ExactDecimal.fromInt(100, 0), scale);
+        gross = gross.sub(discAmt, scale);
+      }
+    }
+    return gross.toWireString(scale);
+  }
+
+  readonly openOrdersPendingTotalWire = computed<string>(() => {
+    const scale = this.companyContext.currencyScale();
+    let total = ExactDecimal.zero(scale);
+    for (const ord of this.openOrders()) {
+      const val =
+        ExactDecimal.tryParse(this.computeOrderPendingValue(ord), scale, 'HALF_UP') ??
+        ExactDecimal.zero(scale);
+      total = total.add(val);
+    }
+    return total.toWireString(scale);
+  });
 
   readonly activeHeaderTitle = computed(() => {
     switch (this.activeTab()) {
@@ -1017,6 +1251,8 @@ export class StockSummaryComponent implements OnInit {
         return 'Godown / Location Summary';
       case 'BATCH_AGEING':
         return 'Batch / Expiry Ageing';
+      case 'OPEN_ORDERS':
+        return 'Open Sales & Purchase Orders';
     }
   });
 
@@ -1150,6 +1386,8 @@ export class StockSummaryComponent implements OnInit {
       this.activeTab.set('GODOWN_SUMMARY');
     } else if (queryTab === 'batch-ageing') {
       this.activeTab.set('BATCH_AGEING');
+    } else if (queryTab === 'open-orders') {
+      this.activeTab.set('OPEN_ORDERS');
     } else if (routeDataTab) {
       this.activeTab.set(routeDataTab);
     } else {
@@ -1189,11 +1427,39 @@ export class StockSummaryComponent implements OnInit {
         },
         () => !this.anyModalOpen(),
       ),
+      this.shortcutRegistry.bindHandler(
+        'nav.escape',
+        'MODAL',
+        () => {
+          if (this.outputModalOpen()) {
+            this.outputModalOpen.set(false);
+            return true;
+          }
+          if (this.basisModalOpen()) {
+            this.basisModalOpen.set(false);
+            return true;
+          }
+          if (this.periodModalOpen()) {
+            this.periodModalOpen.set(false);
+            return true;
+          }
+          if (this.activeTab() === 'MOVEMENT_ANALYSIS') {
+            this.backToStockSummary();
+            return true;
+          }
+          return false;
+        },
+        () => this.anyModalOpen() || this.activeTab() === 'MOVEMENT_ANALYSIS',
+      ),
     ];
 
     this.destroyRef.onDestroy(() => {
       for (const dispose of disposers) {
         dispose();
+      }
+      if (this.periodModalHandle) {
+        this.periodModalHandle.close();
+        this.periodModalHandle = null;
       }
     });
 
@@ -1201,7 +1467,12 @@ export class StockSummaryComponent implements OnInit {
   }
 
   private anyModalOpen(): boolean {
-    return this.basisModalOpen() || this.periodModalOpen();
+    return this.basisModalOpen() || this.periodModalOpen() || this.outputModalOpen();
+  }
+
+  onOpenOrderKindChange(kind: 'ALL' | OrderVoucherKind): void {
+    this.openOrderFilterKind.set(kind);
+    void this.refreshActiveReport();
   }
 
   formatCostingMethod(method: StockCostingMethod): string {
@@ -1269,6 +1540,18 @@ export class StockSummaryComponent implements OnInit {
           asOfDate: this.toDate(),
         });
         this.batchAgeingReport.set(ba);
+      } else if (tab === 'OPEN_ORDERS') {
+        const filter = this.openOrderFilterKind();
+        if (filter === 'ALL') {
+          const [salesOrders, purchaseOrders] = await Promise.all([
+            this.inventoryService.listOpenOrders(cid, 'SALES_ORDER'),
+            this.inventoryService.listOpenOrders(cid, 'PURCHASE_ORDER'),
+          ]);
+          this.openOrders.set([...salesOrders, ...purchaseOrders]);
+        } else {
+          const orders = await this.inventoryService.listOpenOrders(cid, filter);
+          this.openOrders.set(orders);
+        }
       } else if (tab === 'MOVEMENT_ANALYSIS') {
         const itemId = this.selectedStockItemId();
         if (itemId) {

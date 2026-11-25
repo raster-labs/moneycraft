@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST endpoints for clean-room TallyPrime .1800 staging, reconciliation proof inspection, and promotion.
+ * REST endpoints for legacy .1800 company snapshot staging, reconciliation proof inspection, and promotion.
  */
 @RestController
 @RequestMapping("/api/v1/companies/{companyId}/imports")
@@ -36,13 +36,13 @@ public class MigrationController {
         return ResponseEntity.ok(migrationService.listImportJobs(principal, companyId));
     }
 
-    @PostMapping("/tally-1800/stage")
-    public ResponseEntity<MigrationDtos.ImportJobProofDto> stageTally1800(
+    @PostMapping({"/legacy-1800/stage", "/tally-1800/stage"})
+    public ResponseEntity<MigrationDtos.ImportJobProofDto> stageLegacy1800(
         @AuthenticationPrincipal MoneyCraftPrincipal principal,
         @PathVariable UUID companyId,
         @RequestBody MigrationDtos.StageTally1800Request request
     ) {
-        MigrationDtos.ImportJobProofDto proof = migrationService.stageTally1800(principal, companyId, request);
+        MigrationDtos.ImportJobProofDto proof = migrationService.stageLegacy1800(principal, companyId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(proof);
     }
 

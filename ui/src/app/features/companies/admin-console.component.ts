@@ -1,10 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { CompanyRole, SystemRole } from '../../core/auth/auth.store';
+import { AuthStore, CompanyRole, OidcIssuerInfo, SystemRole } from '../../core/auth/auth.store';
 import { RuntimeConfigService } from '../../core/http/runtime-config.service';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { CompanyContextStore } from '../../state/company-context.store';
 
 export interface AdminPrincipalRecord {
@@ -33,26 +35,46 @@ export interface AuditChainVerifyResponse {
 @Component({
   selector: 'mc-admin-console',
   standalone: true,
-  imports: [FormsModule, CodeBadgeComponent],
+  imports: [FormsModule, RouterLink, CodeBadgeComponent, SemanticIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mc-admin-layout">
       <div class="mc-admin-header">
         <div>
-          <h1>Administration, RBAC, Service Keys &amp; Security Chain</h1>
+          <h1>Administration, RBAC, OIDC Federation, Service Keys &amp; Security Chain</h1>
           <p class="mc-admin-sub">
             Manage Protected Authority DB principals, company role grants (<strong>MC-OBJECT-1</strong>),
-            machine-to-machine API keys, <strong>MC-AUDIT-2</strong> SHA-256 chain integrity, and
-            Quarantine DR controls.
+            Enterprise OIDC federation status (<strong>MC-FED-01</strong>), machine-to-machine API keys,
+            <strong>MC-AUDIT-2</strong> SHA-256 chain integrity, and Quarantine DR controls.
           </p>
         </div>
+        @if (authStore.isSuperAdmin()) {
+          <a
+            routerLink="/app/admin/government-integrations"
+            class="mc-btn mc-btn-primary"
+            data-testid="admin-gov-integrations-link"
+          >
+            <mc-icon name="approve-shield" [size]="16" />
+            <span>Government &amp; Connected Banking Vault (SUPER_ADMIN)</span>
+          </a>
+        } @else {
+          <span class="mc-badge mc-badge-slate" data-testid="admin-gov-superadmin-notice">
+            Govt / Banking Vault: SUPER_ADMIN Only
+          </span>
+        }
       </div>
 
       @if (statusMessage(); as msg) {
-        <div class="mc-admin-status" role="status">{{ msg }}</div>
+        <div class="mc-status-banner mc-status-confirmed" role="status">
+          <mc-icon name="confirmed" [size]="20" />
+          <span>{{ msg }}</span>
+        </div>
       }
       @if (errorMessage(); as err) {
-        <div class="mc-field-error" role="alert">{{ err }}</div>
+        <div class="mc-status-banner mc-status-error" role="alert">
+          <mc-icon name="error" [size]="20" />
+          <span>{{ err }}</span>
+        </div>
       }
 
       <div class="mc-admin-grid">
@@ -122,16 +144,39 @@ export interface AuditChainVerifyResponse {
           <form (ngSubmit)="assignCompanyGrant()" class="mc-stack-form">
             <div class="mc-two-col">
               <div>
+                <label class="mc-field-label" for="grant-sec-preset">
+                  TallyPrime Gold Security Level Preset
+                </label>
+                <select
+                  id="grant-sec-preset"
+                  name="securityLevelPreset"
+                  class="mc-select"
+                  data-testid="grant-security-preset-select"
+                  [ngModel]="securityLevelPreset"
+                  (ngModelChange)="applySecurityLevelPreset($event)"
+                >
+                  <option value="CUSTOM">Custom Security Level</option>
+                  <option value="OWNER">Owner (Full Access)</option>
+                  <option value="DATA_ENTRY">Data Entry (Restricted Back-Dated &amp; No Export)</option>
+                  <option value="TALLY_NET_USER">Tally.NET User (Standard Remote Access)</option>
+                  <option value="TALLY_NET_AUDITOR">Tally.NET Auditor (Audit &amp; Journal Access)</option>
+                </select>
+              </div>
+              <div>
                 <label class="mc-field-label" for="grant-principal-id">Principal ID / Username</label>
                 <input
                   id="grant-principal-id"
                   type="text"
                   name="grantPrincipalId"
                   class="mc-input mc-code"
+                  data-testid="grant-principal-input"
                   [(ngModel)]="grantPrincipalId"
                   required
                 />
               </div>
+            </div>
+
+            <div class="mc-two-col">
               <div>
                 <label class="mc-field-label" for="grant-company">Target Company</label>
                 <select
@@ -145,15 +190,13 @@ export interface AuditChainVerifyResponse {
                   }
                 </select>
               </div>
-            </div>
-
-            <div class="mc-two-col">
               <div>
                 <label class="mc-field-label" for="grant-role">Company Role</label>
                 <select
                   id="grant-role"
                   name="grantRole"
                   class="mc-select"
+                  data-testid="grant-role-select"
                   [(ngModel)]="grantRole"
                 >
                   @for (r of companyRoles; track r) {
@@ -161,6 +204,9 @@ export interface AuditChainVerifyResponse {
                   }
                 </select>
               </div>
+            </div>
+
+            <div class="mc-two-col">
               <div>
                 <label class="mc-field-label" for="grant-backdate">Back-Dated Days Limit</label>
                 <input
@@ -169,13 +215,102 @@ export interface AuditChainVerifyResponse {
                   min="0"
                   name="grantBackdatedDays"
                   class="mc-input"
+                  data-testid="grant-backdated-days-input"
                   [(ngModel)]="grantBackdatedDays"
+                />
+              </div>
+              <div>
+                <label class="mc-field-label" for="grant-vtypes">
+                  Allowed Voucher Types (Comma-Separated, Blank = All)
+                </label>
+                <input
+                  id="grant-vtypes"
+                  type="text"
+                  name="grantVoucherTypeAllowlistInput"
+                  class="mc-input"
+                  data-testid="grant-voucher-types-input"
+                  [(ngModel)]="grantVoucherTypeAllowlistInput"
+                  placeholder="e.g. Sales, Receipt"
                 />
               </div>
             </div>
 
-            <button type="submit" class="mc-btn">Save Company Role Grant</button>
+            <div>
+              <label class="mc-field-label" for="grant-export-perm">
+                <input
+                  id="grant-export-perm"
+                  type="checkbox"
+                  name="grantExportPermitted"
+                  data-testid="grant-export-permitted-checkbox"
+                  [(ngModel)]="grantExportPermitted"
+                />
+                <span>Allow Print / Export / Share (exportPermitted)</span>
+              </label>
+            </div>
+
+            <button
+              type="submit"
+              class="mc-btn mc-btn-secondary"
+              data-testid="grant-save-btn"
+            >
+              Save Company Role Grant
+            </button>
           </form>
+
+          <hr class="mc-divider" />
+
+          <!-- 5. Enterprise OIDC Federation Status (MC-FED-01) -->
+          <div aria-label="Enterprise OIDC Federation Status" data-testid="admin-oidc-federation-card">
+            <div class="mc-oidc-header-row">
+              <h3>5. Enterprise OIDC Federation Status (MC-FED-01)</h3>
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                data-testid="admin-refresh-oidc-btn"
+                (click)="loadOidcFederationStatus()"
+              >
+                <mc-icon name="refresh" [size]="16" />
+                <span>Refresh</span>
+              </button>
+            </div>
+            <p class="mc-card-note">
+              Authentication-only external IdP federation; Protected Authority DB controls all MoneyCraft
+              roles. Local break-glass Argon2id principals remain active if external IdP is unreachable.
+            </p>
+
+            @if (oidcIssuers().length === 0) {
+              <div class="mc-empty-records">No matching records</div>
+            } @else {
+              <table class="mc-table mc-table-dense" aria-label="Configured OIDC Issuers">
+                <thead>
+                  <tr>
+                    <th>Issuer ID</th>
+                    <th>Display Name</th>
+                    <th>PKCE</th>
+                    <th>Lifecycle</th>
+                    <th>State</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (iss of oidcIssuers(); track iss.issuerId) {
+                    <tr>
+                      <td class="mc-code">{{ iss.issuerId }}</td>
+                      <td>{{ iss.displayName }}</td>
+                      <td>{{ iss.pkceRequired !== false ? 'S256' : 'Standard' }}</td>
+                      <td>{{ iss.lifecycleProfile ?? 'MANUAL_GRANT' }}</td>
+                      <td>
+                        @if (iss.enabled !== false) {
+                          <span class="mc-badge mc-badge-jade">ENABLED</span>
+                        } @else {
+                          <span class="mc-badge mc-badge-slate">DISABLED</span>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            }
+          </div>
         </section>
 
         <!-- 2. Service API Keys, MC-AUDIT-2 Verifier & Quarantine DR -->
@@ -207,7 +342,7 @@ export interface AuditChainVerifyResponse {
                   />
                 </div>
               </div>
-              <button type="submit" class="mc-btn">Issue Scoped Service Key</button>
+              <button type="submit" class="mc-btn mc-btn-secondary">Issue Scoped Service Key</button>
             </form>
 
             @if (issuedServiceKey(); as issued) {
@@ -227,7 +362,8 @@ export interface AuditChainVerifyResponse {
               across installation and company audit streams.
             </p>
             <button type="button" class="mc-btn mc-btn-primary" (click)="verifyAuditChain()">
-              Verify MC-AUDIT-2 Chain Now
+              <mc-icon name="approve-shield" [size]="16" />
+              <span>Verify MC-AUDIT-2 Chain Now</span>
             </button>
 
             @if (auditVerification(); as res) {
@@ -271,8 +407,9 @@ export interface AuditChainVerifyResponse {
                 <button type="button" class="mc-btn mc-btn-danger" (click)="enterQuarantine()">
                   Enter Quarantine
                 </button>
-                <button type="button" class="mc-btn" (click)="recoverFromQuarantine()">
-                  Recover
+                <button type="button" class="mc-btn mc-btn-secondary" (click)="recoverFromQuarantine()">
+                  <mc-icon name="refresh" [size]="16" />
+                  <span>Recover</span>
                 </button>
               </div>
             </div>
@@ -292,14 +429,6 @@ export interface AuditChainVerifyResponse {
       margin: 4px 0 0;
       color: var(--mc-color-slate-600);
       font-size: var(--mc-font-size-sm);
-    }
-
-    .mc-admin-status {
-      padding: var(--mc-space-2) var(--mc-space-3);
-      background: var(--mc-color-success-50);
-      border-left: 3px solid var(--mc-color-success-700);
-      color: var(--mc-color-success-700);
-      font-weight: 600;
     }
 
     .mc-admin-grid {
@@ -332,6 +461,18 @@ export interface AuditChainVerifyResponse {
       h3 {
         font-size: var(--mc-font-size-sm);
         margin-bottom: var(--mc-space-2);
+      }
+    }
+
+    .mc-oidc-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--mc-space-2);
+      margin-bottom: var(--mc-space-1);
+
+      h3 {
+        margin-bottom: 0;
       }
     }
 
@@ -406,6 +547,7 @@ export interface AuditChainVerifyResponse {
 })
 export class AdminConsoleComponent implements OnInit {
   readonly companyContext = inject(CompanyContextStore);
+  private readonly authStore = inject(AuthStore);
   private readonly http = inject(HttpClient);
   private readonly runtimeConfig = inject(RuntimeConfigService);
 
@@ -423,10 +565,14 @@ export class AdminConsoleComponent implements OnInit {
   newPassword = '';
   newSystemRole = '';
 
+  securityLevelPreset: 'CUSTOM' | 'OWNER' | 'DATA_ENTRY' | 'TALLY_NET_USER' | 'TALLY_NET_AUDITOR' =
+    'CUSTOM';
   grantPrincipalId = '';
   grantCompanyId = '';
   grantRole: CompanyRole = 'SENIOR_ACCOUNTANT';
   grantBackdatedDays = 7;
+  grantVoucherTypeAllowlistInput = '';
+  grantExportPermitted = true;
 
   serviceKeyLabel = '';
   serviceKeyExpiry = '';
@@ -435,6 +581,7 @@ export class AdminConsoleComponent implements OnInit {
   readonly statusMessage = signal<string | null>(null);
   readonly errorMessage = signal<string | null>(null);
   readonly principals = signal<readonly AdminPrincipalRecord[]>([]);
+  readonly oidcIssuers = signal<readonly OidcIssuerInfo[]>([]);
   readonly issuedServiceKey = signal<CreatedServiceKeyResponse | null>(null);
   readonly auditVerification = signal<AuditChainVerifyResponse | null>(null);
 
@@ -444,6 +591,7 @@ export class AdminConsoleComponent implements OnInit {
       this.grantCompanyId = active.id;
     }
     void this.loadPrincipals();
+    void this.loadOidcFederationStatus();
   }
 
   async loadPrincipals(): Promise<void> {
@@ -461,6 +609,41 @@ export class AdminConsoleComponent implements OnInit {
     } catch {
       // Non-fatal if principal directory is unavailable
     }
+  }
+
+  async loadOidcFederationStatus(): Promise<void> {
+    try {
+      const adminList = await firstValueFrom(
+        this.http.get<readonly Record<string, unknown>[]>(
+          this.runtimeConfig.url('/admin/oidc-issuers'),
+          { withCredentials: true },
+        ),
+      );
+      if (Array.isArray(adminList)) {
+        this.oidcIssuers.set(
+          adminList.map((raw) => {
+            const idVal = String(raw['issuerId'] ?? raw['id'] ?? raw['registrationId'] ?? '');
+            return {
+              id: idVal,
+              issuerId: idVal,
+              registrationId: raw['registrationId'] ? String(raw['registrationId']) : idVal,
+              displayName: String(raw['displayName'] ?? idVal),
+              issuerUri: raw['issuerUri'] ? String(raw['issuerUri']) : undefined,
+              clientId: raw['clientId'] ? String(raw['clientId']) : undefined,
+              pkceRequired: raw['pkceRequired'] !== undefined ? Boolean(raw['pkceRequired']) : true,
+              enabled: raw['enabled'] !== undefined ? Boolean(raw['enabled']) : true,
+              lifecycleProfile: raw['lifecycleProfile'] ? String(raw['lifecycleProfile']) : null,
+              checkedAt: raw['checkedAt'] ? String(raw['checkedAt']) : null,
+            };
+          }),
+        );
+        return;
+      }
+    } catch {
+      // Fallback to public OIDC issuer directory (`GET /api/v1/auth/oidc/issuers`)
+    }
+    const pubList = await this.authStore.loadPublicOidcIssuers();
+    this.oidcIssuers.set(pubList);
   }
 
   async createPrincipal(): Promise<void> {
@@ -488,6 +671,33 @@ export class AdminConsoleComponent implements OnInit {
     }
   }
 
+  applySecurityLevelPreset(
+    preset: 'CUSTOM' | 'OWNER' | 'DATA_ENTRY' | 'TALLY_NET_USER' | 'TALLY_NET_AUDITOR',
+  ): void {
+    this.securityLevelPreset = preset;
+    if (preset === 'OWNER') {
+      this.grantRole = 'COMPANY_ADMIN';
+      this.grantBackdatedDays = 365;
+      this.grantVoucherTypeAllowlistInput = '';
+      this.grantExportPermitted = true;
+    } else if (preset === 'DATA_ENTRY') {
+      this.grantRole = 'DATA_ENTRY_OPERATOR';
+      this.grantBackdatedDays = 7;
+      this.grantVoucherTypeAllowlistInput = 'Sales, Purchase, Receipt, Payment';
+      this.grantExportPermitted = false;
+    } else if (preset === 'TALLY_NET_USER') {
+      this.grantRole = 'SENIOR_ACCOUNTANT';
+      this.grantBackdatedDays = 30;
+      this.grantVoucherTypeAllowlistInput = '';
+      this.grantExportPermitted = true;
+    } else if (preset === 'TALLY_NET_AUDITOR') {
+      this.grantRole = 'AUDITOR_APPROVER';
+      this.grantBackdatedDays = 0;
+      this.grantVoucherTypeAllowlistInput = 'Journal';
+      this.grantExportPermitted = true;
+    }
+  }
+
   async assignCompanyGrant(): Promise<void> {
     if (!this.grantPrincipalId.trim() || !this.grantCompanyId) {
       this.errorMessage.set('Specify both Principal ID and Target Company.');
@@ -495,6 +705,10 @@ export class AdminConsoleComponent implements OnInit {
     }
     this.errorMessage.set(null);
     this.statusMessage.set(null);
+    const parsedAllowlist = this.grantVoucherTypeAllowlistInput
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
     try {
       await firstValueFrom(
         this.http.put<void>(
@@ -504,9 +718,9 @@ export class AdminConsoleComponent implements OnInit {
           {
             companyId: this.grantCompanyId,
             roleCode: this.grantRole,
-            voucherTypeAllowlist: [],
+            voucherTypeAllowlist: parsedAllowlist,
             backdatedDaysLimit: this.grantBackdatedDays,
-            exportPermitted: true,
+            exportPermitted: this.grantExportPermitted,
           },
           { withCredentials: true },
         ),

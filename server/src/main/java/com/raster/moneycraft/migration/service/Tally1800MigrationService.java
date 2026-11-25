@@ -15,8 +15,8 @@ import com.raster.moneycraft.foundation.security.RbacAuthorizationService;
 import com.raster.moneycraft.inventory.dto.InventoryMasterDtos;
 import com.raster.moneycraft.inventory.service.InventoryMasterService;
 import com.raster.moneycraft.migration.dto.MigrationDtos;
+import com.raster.moneycraft.reader.api.Legacy1800SnapshotReader;
 import com.raster.moneycraft.reader.api.ReaderOptions;
-import com.raster.moneycraft.reader.api.TallySnapshotReader;
 import com.raster.moneycraft.reader.model.ExtractedCompanySnapshot;
 import com.raster.moneycraft.reader.model.RawBillAllocation;
 import com.raster.moneycraft.reader.model.RawCompanyProfile;
@@ -66,7 +66,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Clean-room TallyPrime .1800 native staging, pre-commit reconciliation proof, and atomic promotion
+ * Legacy .1800 company snapshot staging, pre-commit reconciliation proof, and atomic promotion
  * into MoneyCraft PostgreSQL 18 accounting books with MCA Edit Log MIGRATE_IN v1 baselines.
  */
 @Service
@@ -116,6 +116,14 @@ public class Tally1800MigrationService {
         this.businessTxTemplate = new TransactionTemplate(businessTransactionManager);
     }
 
+    public MigrationDtos.ImportJobProofDto stageLegacy1800(
+        MoneyCraftPrincipal actor,
+        UUID companyId,
+        MigrationDtos.StageTally1800Request request
+    ) {
+        return stageTally1800(actor, companyId, request);
+    }
+
     public MigrationDtos.ImportJobProofDto stageTally1800(
         MoneyCraftPrincipal actor,
         UUID companyId,
@@ -129,7 +137,7 @@ public class Tally1800MigrationService {
                 HttpStatus.BAD_REQUEST,
                 "MC-MIG-PATH-REQUIRED",
                 "Snapshot Directory Path Required",
-                "Specify snapshotDirectoryPath pointing to a TallyPrime .1800 or oracle snapshot directory."
+                "Specify snapshotDirectoryPath pointing to a legacy .1800 company snapshot or companion XML directory."
             );
         }
 
@@ -164,7 +172,7 @@ public class Tally1800MigrationService {
 
         ExtractedCompanySnapshot snapshot;
         try {
-            TallySnapshotReader reader = new TallySnapshotReader();
+            Legacy1800SnapshotReader reader = new Legacy1800SnapshotReader();
             ReaderOptions options = companionDir == null
                 ? ReaderOptions.strict(snapshotDir)
                 : ReaderOptions.strictWithCompanion(snapshotDir, companionDir);
@@ -173,8 +181,8 @@ public class Tally1800MigrationService {
             throw new MoneyCraftException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "MC-MIG-SNAPSHOT-INVALID",
-                "Tally .1800 Snapshot Verification Failed",
-                "Clean-room reader rejected snapshot: " + ex.getMessage()
+                "Legacy .1800 Snapshot Verification Failed",
+                "Snapshot reader rejected legacy .1800 company snapshot: " + ex.getMessage()
             );
         }
 
@@ -219,6 +227,8 @@ public class Tally1800MigrationService {
             boolean sector0Ok = !snapshot.storeFiles().isEmpty() || rec.trialBalanceReconciled();
             boolean cmpSaveOk = rec.shadowCommitVerified() || snapshot.storeFiles().isEmpty();
 
+            String resolvedJobType = supportsNeutralLegacy1800JobType() ? "LEGACY_1800" : "TALLY_1800";
+
             businessJdbcTemplate.update(
                 """
                 INSERT INTO mc_import_job (
@@ -227,10 +237,11 @@ public class Tally1800MigrationService {
                     cmp_save_parity_verified, sector0_checksum_verified,
                     total_records_read, valid_records_count, error_records_count,
                     diagnostics_json, initiated_by
-                ) VALUES (?, ?, 'TALLY_1800', 'READY_TO_COMMIT', ?, '7.2', ?, ?, ?, ?, ?, 0, ?::jsonb, ?)
+                ) VALUES (?, ?, ?, 'READY_TO_COMMIT', ?, '7.2', ?, ?, ?, ?, ?, 0, ?::jsonb, ?)
                 """,
                 jobId,
                 companyId,
+                resolvedJobType,
                 truncate(snapshot.companyProfile().companyNumber(), 32),
                 snapshotSha256,
                 cmpSaveOk,
@@ -593,7 +604,7 @@ public class Tally1800MigrationService {
                 defaultPurchaseLedger
             );
 
-            // 5. Relax duplicate voucher number check if Tally voucher type had prevent_duplicates = false
+            // 5. Relax duplicate voucher number check if source voucher type had prevent_duplicates = false
             relaxDuplicateNumberingForMigratedTypes(companyId, rawVoucherTypes);
 
             // 6. Promote Vouchers chronologically (NEW_REF before AGST_REF on same date)
@@ -1472,7 +1483,7 @@ public class Tally1800MigrationService {
                 companyId,
                 created.id(),
                 "v" + created.versionNo(),
-                new VoucherDtos.CancelVoucherRequest("Migrated cancelled Tally voucher")
+                new VoucherDtos.CancelVoucherRequest("Migrated cancelled source voucher")
             );
         }
     }
@@ -1823,7 +1834,7 @@ public class Tally1800MigrationService {
     private MigrationDtos.ImportJobSummaryDto mapJobSummaryRow(ResultSet rs, int scale) throws SQLException {
         UUID id = rs.getObject("id", UUID.class);
         JsonNode diag = parseDiagObject(rs.getString("diagnostics_json"));
-        String srcName = textField(diag, "sourceCompanyName", "Migrated Tally Company");
+        String srcName = textField(diag, "sourceCompanyName", "Migrated Legacy Company");
         String snapPath = textField(diag, "snapshotDirectoryPath", "");
         BigDecimal varDr = rs.getBigDecimal("variance_debit");
         BigDecimal varCr = rs.getBigDecimal("variance_credit");
@@ -1988,6 +1999,25 @@ public class Tally1800MigrationService {
             return BigDecimal.ZERO.setScale(scale, RoundingMode.UNNECESSARY);
         }
         return val.setScale(scale, RoundingMode.HALF_UP);
+    }
+
+    private boolean supportsNeutralLegacy1800JobType() {
+        List<String> defs = businessJdbcTemplate.query(
+            """
+            SELECT pg_get_constraintdef(c.oid)
+              FROM pg_constraint c
+              JOIN pg_class t ON t.oid = c.conrelid
+             WHERE t.relname = 'mc_import_job'
+               AND c.contype = 'c'
+            """,
+            (rs, rowNum) -> rs.getString(1)
+        );
+        for (String def : defs) {
+            if (def != null && def.contains("'LEGACY_1800'")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String truncate(String val, int maxLen) {

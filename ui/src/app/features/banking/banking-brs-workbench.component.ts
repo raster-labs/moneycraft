@@ -4,16 +4,22 @@ import {
   DestroyRef,
   OnInit,
   computed,
+  effect,
   inject,
   input,
   signal,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { CompanyContextStore } from '../../state/company-context.store';
 import { AccountingMastersService } from '../masters/accounting-masters.service';
 import { LedgerTypeaheadItem } from '../masters/masters.models';
@@ -24,24 +30,26 @@ import {
   BrsSummaryDto,
   ChequeBookDto,
   ChequeLeafDto,
+  EmployeeDto,
   OcrStagedDocumentDto,
+  PayrollHeadDto,
 } from './banking.models';
 import { BankingService } from './banking.service';
 
 @Component({
   selector: 'mc-banking-brs-workbench',
   standalone: true,
-  imports: [FormsModule, RouterLink, CodeBadgeComponent, IndianCurrencyPipe],
+  imports: [FormsModule, RouterLink, CodeBadgeComponent, IndianCurrencyPipe, SemanticIconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="bnk-page">
       <header class="mc-card bnk-header">
         <div>
-          <span class="bnk-pill">Treasury, Auto-BRS, Cheque Control &amp; Docs-by-Ira OCR</span>
-          <h1>Banking &amp; Auto-BRS Workbench</h1>
+          <span class="bnk-pill">Treasury, Auto-BRS, Cheque Control, OCR Staging &amp; Payroll</span>
+          <h1>Banking, Auto-BRS &amp; Document Staging Workbench</h1>
           <p class="bnk-sub">
-            Exact Instrument + Amount + Date-Window Auto-BRS (Alt+M), Cheque Leaf Register &amp;
-            Human-Verified OCR Staging
+            Exact Instrument + Amount + Date-Window Auto-BRS (Alt+M), Cheque Leaf Register,
+            Human-Verified OCR Staging &amp; Payroll Masters
           </p>
         </div>
 
@@ -71,7 +79,16 @@ import { BankingService } from './banking.service';
             data-testid="bnk-tab-ocr"
             (click)="switchTab('OCR_QUEUE')"
           >
-            Docs by Ira — OCR Queue
+            OCR Staging Queue
+          </button>
+          <button
+            type="button"
+            class="mc-btn"
+            [class.mc-btn-primary]="activeTab() === 'PAYROLL'"
+            data-testid="bnk-tab-payroll"
+            (click)="switchTab('PAYROLL')"
+          >
+            Payroll Masters
           </button>
         </div>
       </header>
@@ -437,19 +454,20 @@ import { BankingService } from './banking.service';
       }
 
       <!-- ================================================================= -->
-      <!-- TAB 3: DOCS BY IRA — OCR STAGING QUEUE                            -->
+      <!-- TAB 3: HUMAN-VERIFIED OCR DOCUMENT STAGING QUEUE                  -->
       <!-- ================================================================= -->
       @if (activeTab() === 'OCR_QUEUE') {
         <section class="mc-card panel-card">
           <header class="panel-head">
-            <h2>Docs by Ira — Human-Verified OCR Invoice Staging Queue</h2>
+            <h2>Human-Verified OCR Invoice Staging Queue (ImportedDocStaging)</h2>
             <button
               type="button"
-              class="mc-btn"
+              class="mc-btn mc-btn-secondary"
               data-testid="ocr-stage-sample-btn"
               (click)="stageNewOcrDocModal.set(true)"
             >
-              + Stage Extracted Document
+              <mc-icon name="import" [size]="16" />
+              <span>+ Stage Extracted Document</span>
             </button>
           </header>
 
@@ -498,19 +516,136 @@ import { BankingService } from './banking.service';
                         [attr.data-testid]="'ocr-approve-btn-' + doc.id"
                         (click)="approveAndConvertOcr(doc)"
                       >
-                        Approve &amp; Convert to Draft
+                        <mc-icon name="approve-shield" [size]="16" />
+                        <span>Approve &amp; Convert to Draft</span>
                       </button>
                     }
                   </td>
                 </tr>
               } @empty {
                 <tr>
-                  <td colspan="6" class="empty-cell">No staged OCR documents pending human review.</td>
+                  <td colspan="6" class="mc-empty-records">No matching records</td>
                 </tr>
               }
             </tbody>
           </table>
         </section>
+      }
+
+      <!-- ================================================================= -->
+      <!-- TAB 4: PAYROLL HEADS & EMPLOYEE MASTERS                           -->
+      <!-- ================================================================= -->
+      @if (activeTab() === 'PAYROLL') {
+        <div class="brs-split">
+          <section class="mc-card panel-card">
+            <header class="panel-head">
+              <h2>Payroll Pay Heads ({{ payrollHeads().length }})</h2>
+            </header>
+            <form class="form-pad" (ngSubmit)="createPayHead()">
+              <div class="two-inline">
+                <label class="ctrl-grp">
+                  <span>Pay Head Name</span>
+                  <input
+                    type="text"
+                    name="payHeadName"
+                    class="mc-input"
+                    [(ngModel)]="payHeadName"
+                    placeholder="Basic Salary"
+                    required
+                  />
+                </label>
+                <label class="ctrl-grp">
+                  <span>Pay Head Type</span>
+                  <select name="payHeadType" class="mc-select" [(ngModel)]="payHeadType">
+                    <option value="EARNINGS">Earnings for Employees</option>
+                    <option value="DEDUCTIONS">Deductions from Employees</option>
+                    <option value="EMPLOYER_CONTRIBUTION">Employer Statutory Contributions</option>
+                  </select>
+                </label>
+              </div>
+              <button type="submit" class="mc-btn mc-btn-primary">
+                <mc-icon name="save-document" [size]="16" />
+                <span>Save Pay Head</span>
+              </button>
+            </form>
+            <table class="mc-table">
+              <thead>
+                <tr>
+                  <th>Pay Head</th>
+                  <th>Category</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (ph of payrollHeads(); track ph.id) {
+                  <tr>
+                    <td><strong>{{ ph.name }}</strong></td>
+                    <td><span class="mc-badge mc-badge-slate">{{ ph.headType }}</span></td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="2" class="mc-empty-records">No matching records</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </section>
+
+          <section class="mc-card panel-card">
+            <header class="panel-head">
+              <h2>Employee Directory ({{ employees().length }})</h2>
+            </header>
+            <form class="form-pad" (ngSubmit)="createEmployeeRecord()">
+              <div class="two-inline">
+                <label class="ctrl-grp">
+                  <span>Employee Code</span>
+                  <input
+                    type="text"
+                    name="empCode"
+                    class="mc-input mc-code"
+                    [(ngModel)]="empCode"
+                    placeholder="EMP-001"
+                    required
+                  />
+                </label>
+                <label class="ctrl-grp">
+                  <span>Employee Name</span>
+                  <input
+                    type="text"
+                    name="empName"
+                    class="mc-input"
+                    [(ngModel)]="empName"
+                    placeholder="Ananya Sharma"
+                    required
+                  />
+                </label>
+              </div>
+              <button type="submit" class="mc-btn mc-btn-primary">
+                <mc-icon name="save-document" [size]="16" />
+                <span>Save Employee</span>
+              </button>
+            </form>
+            <table class="mc-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Employee Name</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (emp of employees(); track emp.id) {
+                  <tr>
+                    <td><mc-code-badge [code]="emp.employeeCode" /></td>
+                    <td>{{ emp.displayName }}</td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="2" class="mc-empty-records">No matching records</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </section>
+        </div>
       }
 
       <!-- Statement Import Modal -->
@@ -568,11 +703,26 @@ import { BankingService } from './banking.service';
             </div>
             <div class="mc-modal-footer">
               <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="importModalOpen.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Cancel</span>
+                @if (modalActionHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
+              <button
                 type="submit"
                 class="mc-btn mc-btn-primary"
                 data-testid="stmt-import-submit-btn"
               >
-                Import Statement
+                <mc-icon name="save-document" [size]="16" />
+                <span>Import Statement</span>
+                @if (modalActionHint('ledger.save', 'S/s'); as sHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ sHint }}]</span>
+                }
               </button>
             </div>
           </form>
@@ -620,8 +770,23 @@ import { BankingService } from './banking.service';
               </div>
             </div>
             <div class="mc-modal-footer">
+              <button
+                type="button"
+                class="mc-btn mc-btn-secondary"
+                (click)="stageNewOcrDocModal.set(false)"
+              >
+                <mc-icon name="close" [size]="16" />
+                <span>Cancel</span>
+                @if (modalActionHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
+              </button>
               <button type="submit" class="mc-btn mc-btn-primary" data-testid="ocr-stage-submit-btn">
-                Stage Document
+                <mc-icon name="save-document" [size]="16" />
+                <span>Stage Document</span>
+                @if (modalActionHint('ledger.save', 'S/s'); as sHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ sHint }}]</span>
+                }
               </button>
             </div>
           </form>
@@ -850,10 +1015,73 @@ export class BankingBrsWorkbenchComponent implements OnInit {
   readonly chequeBooks = signal<readonly ChequeBookDto[]>([]);
   readonly selectedLeaves = signal<readonly ChequeLeafDto[]>([]);
   readonly ocrDocs = signal<readonly OcrStagedDocumentDto[]>([]);
+  readonly payrollHeads = signal<readonly PayrollHeadDto[]>([]);
+  readonly employees = signal<readonly EmployeeDto[]>([]);
 
   readonly bannerMessage = signal<string | null>(null);
   readonly importModalOpen = signal<boolean>(false);
   readonly stageNewOcrDocModal = signal<boolean>(false);
+
+  payHeadName = '';
+  payHeadType = 'EARNINGS';
+  empCode = '';
+  empName = '';
+  private bnkModalHandle: ActiveModalContextHandle | null = null;
+
+  modalActionHint(commandId: string, pairSpec: 'S/s' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'ledger.create',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
+
+  constructor() {
+    effect(() => {
+      const impOpen = this.importModalOpen();
+      const ocrOpen = this.stageNewOcrDocModal();
+      if (this.bnkModalHandle) {
+        this.bnkModalHandle.close();
+        this.bnkModalHandle = null;
+      }
+      if (impOpen || ocrOpen) {
+        this.bnkModalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'ledger.save',
+              label: 'Save',
+              letterPair: asciiPair('S/s'),
+              permissionRef: 'voucher.create',
+              effect: 'Submit banking statement or OCR staging dialog.',
+              normalActivation: () =>
+                impOpen ? this.submitStatementImport() : this.submitNewOcrDoc(),
+              iconSemanticId: 'mc.icon.save-document',
+              stateTokenRole: 'action.primary',
+              isMutation: true,
+            },
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Cancel',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Close banking dialog.',
+              normalActivation: () => {
+                this.importModalOpen.set(false);
+                this.stageNewOcrDocModal.set(false);
+              },
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
+      }
+    });
+  }
 
   stmtFormat: BankStatementFormat = 'CSV';
   stmtFileName = 'hdfc_april_2025.csv';
@@ -898,7 +1126,13 @@ export class BankingBrsWorkbenchComponent implements OnInit {
         void this.runAutoMatch();
       }
     });
-    this.destroyRef.onDestroy(() => disposeAutoMatch());
+    this.destroyRef.onDestroy(() => {
+      disposeAutoMatch();
+      if (this.bnkModalHandle) {
+        this.bnkModalHandle.close();
+        this.bnkModalHandle = null;
+      }
+    });
 
     void this.initializeTab();
   }
@@ -931,7 +1165,50 @@ export class BankingBrsWorkbenchComponent implements OnInit {
       await this.loadChequeBooks();
     } else if (this.activeTab() === 'OCR_QUEUE') {
       await this.loadOcrDocs();
+    } else if (this.activeTab() === 'PAYROLL') {
+      await this.loadPayrollMasters();
     }
+  }
+
+  async loadPayrollMasters(): Promise<void> {
+    const companyId = this.companyContext.activeCompany()?.id;
+    if (!companyId) return;
+    try {
+      const [heads, emps] = await Promise.all([
+        this.bankingService.listPayrollHeads(companyId),
+        this.bankingService.listEmployees(companyId),
+      ]);
+      this.payrollHeads.set(heads);
+      this.employees.set(emps);
+    } catch {
+      this.payrollHeads.set([]);
+      this.employees.set([]);
+    }
+  }
+
+  async createPayHead(): Promise<void> {
+    const companyId = this.companyContext.activeCompany()?.id;
+    if (!companyId || !this.payHeadName.trim()) return;
+    const created = await this.bankingService.createPayrollHead(companyId, {
+      name: this.payHeadName.trim(),
+      headType: this.payHeadType,
+    });
+    this.payrollHeads.set([...this.payrollHeads(), created]);
+    this.payHeadName = '';
+    this.bannerMessage.set(`Created Pay Head "${created.name}".`);
+  }
+
+  async createEmployeeRecord(): Promise<void> {
+    const companyId = this.companyContext.activeCompany()?.id;
+    if (!companyId || !this.empCode.trim() || !this.empName.trim()) return;
+    const created = await this.bankingService.createEmployee(companyId, {
+      employeeCode: this.empCode.trim(),
+      displayName: this.empName.trim(),
+    });
+    this.employees.set([...this.employees(), created]);
+    this.empCode = '';
+    this.empName = '';
+    this.bannerMessage.set(`Created Employee "${created.displayName}" (${created.employeeCode}).`);
   }
 
   switchTab(next: BankingWorkbenchTab): void {

@@ -10,10 +10,15 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
+import {
+  ActiveModalContextHandle,
+  ShortcutCommandRegistry,
+  asciiPair,
+} from '../../core/keyboard/shortcut-command.registry';
 import { INDIAN_GST_STATES, validateGstin } from '../../core/validation/gstin-validator';
 import { AmountCellComponent } from '../../shared/components/amount-cell/amount-cell.component';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import {
   TypeaheadOption,
   TypeaheadSelectComponent,
@@ -48,6 +53,7 @@ import { SecondaryMasterKind, SecondaryMasterModalService } from './secondary-ma
     FormsModule,
     AmountCellComponent,
     CodeBadgeComponent,
+    SemanticIconComponent,
     TypeaheadSelectComponent,
     GridCellNavDirective,
   ],
@@ -835,10 +841,15 @@ import { SecondaryMasterKind, SecondaryMasterModalService } from './secondary-ma
             <div class="mc-sec-footer-btns">
               <button
                 type="button"
-                class="mc-btn"
+                class="mc-btn mc-btn-secondary"
+                data-testid="sec-master-cancel-btn"
                 (click)="modalService.cancelActiveSession()"
               >
-                Quit (Esc)
+                <mc-icon name="close" [size]="16" />
+                <span>Cancel</span>
+                @if (actionHint('editor.close', 'C/c'); as cHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ cHint }}]</span>
+                }
               </button>
               <button
                 id="sec-master-accept"
@@ -847,7 +858,11 @@ import { SecondaryMasterKind, SecondaryMasterModalService } from './secondary-ma
                 [disabled]="saving() || companyContext.quarantined()"
                 (click)="saveActiveSecondaryMaster()"
               >
-                Accept (<span class="mc-key-ctrl">A</span>)
+                <mc-icon name="save-document" [size]="16" />
+                <span>Save (<span class="mc-key-ctrl">A</span>)</span>
+                @if (actionHint('ledger.save', 'S/s'); as sHint) {
+                  <span class="mc-action-key-badge" aria-hidden="true">[{{ sHint }}]</span>
+                }
               </button>
             </div>
           </div>
@@ -1058,6 +1073,8 @@ export class SecondaryMasterModalComponent {
   stockItemBatches = false;
 
   private readonly hydratedSessionIds = new Set<string>();
+  private modalHandle: ActiveModalContextHandle | null = null;
+  private activeModalSessionId: string | null = null;
 
   readonly ledgerLineage = computed(() =>
     resolveGroupLineageFlags(this.ledgerGroupId(), this.coaStore.groups()),
@@ -1066,6 +1083,14 @@ export class SecondaryMasterModalComponent {
   readonly secGstinCheck = computed(() =>
     validateGstin(this.ledgerGstin(), this.ledgerStateCode()),
   );
+
+  actionHint(commandId: string, pairSpec: 'S/s' | 'C/c'): string | null {
+    return this.shortcutRegistry.effectiveActionHint(
+      'ledger.create',
+      commandId,
+      asciiPair(pairSpec),
+    );
+  }
 
   constructor() {
     const disposeAccept = this.shortcutRegistry.bindHandler(
@@ -1076,13 +1101,52 @@ export class SecondaryMasterModalComponent {
       },
       () => this.modalService.isOpen(),
     );
-    this.destroyRef.onDestroy(disposeAccept);
+    this.destroyRef.onDestroy(() => {
+      disposeAccept();
+      this.releaseModalContext();
+    });
 
     effect(() => {
       const session = this.modalService.activeSession();
       if (!session) {
         this.hydratedSessionIds.clear();
+        this.releaseModalContext();
         return;
+      }
+      if (this.activeModalSessionId !== session.sessionId) {
+        this.releaseModalContext();
+        this.activeModalSessionId = session.sessionId;
+        this.modalHandle = this.shortcutRegistry.openModalContext(
+          [
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'ledger.save',
+              label: 'Save',
+              letterPair: asciiPair('S/s'),
+              enabledWhen: () => !this.saving() && !this.companyContext.quarantined(),
+              permissionRef: 'master.create',
+              effect: 'Persist valid secondary master and return permitted selection to originating cell.',
+              normalActivation: () => this.saveActiveSecondaryMaster(),
+              iconSemanticId: 'mc.icon.save-document',
+              stateTokenRole: 'action.primary',
+              isMutation: true,
+            },
+            {
+              contextId: 'ledger.create',
+              locale: 'en-GB',
+              commandId: 'editor.close',
+              label: 'Cancel',
+              letterPair: asciiPair('C/c'),
+              permissionRef: 'authenticated',
+              effect: 'Discard unsaved secondary master form and return to originating cell.',
+              normalActivation: () => this.modalService.cancelActiveSession(),
+              iconSemanticId: 'mc.icon.close',
+              stateTokenRole: 'action.secondary',
+            },
+          ],
+          'en-GB',
+        );
       }
       if (!this.hydratedSessionIds.has(session.sessionId)) {
         this.hydratedSessionIds.add(session.sessionId);
@@ -1098,6 +1162,14 @@ export class SecondaryMasterModalComponent {
         }
       });
     });
+  }
+
+  private releaseModalContext(): void {
+    if (this.modalHandle) {
+      this.modalHandle.close();
+      this.modalHandle = null;
+    }
+    this.activeModalSessionId = null;
   }
 
   onSecGroupParentSelected(opt: TypeaheadOption): void {

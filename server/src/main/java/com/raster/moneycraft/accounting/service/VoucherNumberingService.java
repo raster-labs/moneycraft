@@ -379,6 +379,43 @@ public class VoucherNumberingService {
         assertUniqueVoucherNumber(companyId, voucherTypeId, fiscalYearId, voucherNumber, excludeJournalId);
     }
 
+    public List<VoucherDtos.UnusedVoucherNumberDto> listAvailableUnusedNumbers(
+        UUID companyId,
+        UUID voucherTypeId,
+        String voucherTypeName
+    ) {
+        String trimmedName = voucherTypeName == null ? null : voucherTypeName.trim();
+        if (trimmedName != null && trimmedName.isEmpty()) {
+            trimmedName = null;
+        }
+        return businessJdbcTemplate.query(
+            """
+            SELECT u.id, u.voucher_type_id, u.voucher_number, u.numeric_seq, u.status, u.released_reason
+              FROM mc_unused_voucher_number u
+              JOIN mc_voucher_type vt
+                ON vt.company_id = u.company_id AND vt.id = u.voucher_type_id
+             WHERE u.company_id = ?
+               AND u.status IN ('AVAILABLE', 'CANCELLED_FOR_GSTR1')
+               AND (?::uuid IS NULL OR u.voucher_type_id = ?::uuid)
+               AND (?::text IS NULL OR lower(vt.name) = lower(?::text))
+             ORDER BY u.numeric_seq ASC NULLS LAST, u.released_at ASC, u.id ASC
+            """,
+            (rs, rowNum) -> new VoucherDtos.UnusedVoucherNumberDto(
+                rs.getObject("id", UUID.class),
+                rs.getObject("voucher_type_id", UUID.class),
+                rs.getString("voucher_number"),
+                rs.getObject("numeric_seq", Long.class),
+                rs.getString("status"),
+                rs.getString("released_reason")
+            ),
+            companyId,
+            voucherTypeId,
+            voucherTypeId,
+            trimmedName,
+            trimmedName
+        );
+    }
+
     private LockedSeriesRow ensureAndLockDefaultSeries(
         UUID companyId,
         UUID voucherTypeId,

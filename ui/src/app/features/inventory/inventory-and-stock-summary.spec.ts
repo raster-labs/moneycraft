@@ -29,6 +29,8 @@ import {
   UomMaster,
 } from './inventory.models';
 import { InventoryStore } from './inventory.store';
+import { GodownWorkbenchComponent } from './godown-workbench.component';
+import { StockGroupWorkbenchComponent } from './stock-group-workbench.component';
 import { StockItemWorkbenchComponent } from './stock-item-workbench.component';
 import { StockSummaryComponent } from './stock-summary.component';
 import { UomWorkbenchComponent } from './uom-workbench.component';
@@ -1225,6 +1227,104 @@ describe('Phase 4 Supply Chain Masters, ITEM_INVOICE & Stock Journal Grid, Batch
     ).toContain('EXPIRED');
 
     fixture.destroy();
+    httpMock.verify();
+  });
+
+  it('Loop 1 Parity: StockItemWorkbenchComponent validates Alternate Units conversion factor (0x14108ea30 / 0x14108eac0), plus StockGroupWorkbenchComponent and GodownWorkbenchComponent master creation', async () => {
+    const fixture = TestBed.createComponent(StockItemWorkbenchComponent);
+    fixture.detectChanges();
+    await flushAsyncTicks();
+    fixture.detectChanges();
+
+    const comp = fixture.componentInstance;
+    comp.name = 'Dual Unit Surgical Pack';
+    comp.baseUomId.set('uom-nos');
+    comp.onAlternateUomSelected({ id: 'uom-box', label: 'BOX' });
+
+    // 1. Missing conversion factor (0x14108eac0)
+    comp.conversionNumerator = '';
+    comp.conversionDenominator = '1';
+    await comp.saveStockItem();
+    expect(comp.errorMsg()).toBe('Conversion factor for Alternate units is missing.');
+
+    // 2. Invalid/zero conversion factor (0x14108ea30)
+    comp.conversionNumerator = '0';
+    comp.conversionDenominator = '1';
+    await comp.saveStockItem();
+    expect(comp.errorMsg()).toBe('Conversion factor for Alternate units is invalid.');
+
+    // 3. StockGroupWorkbenchComponent: creates Stock Group with inherited HSN/GST and Stock Category
+    const sgFixture = TestBed.createComponent(StockGroupWorkbenchComponent);
+    sgFixture.detectChanges();
+    const sgComp = sgFixture.componentInstance;
+    sgComp.groupName = 'Surgical Consumables';
+    sgComp.hsnSacCode = '90189099';
+    sgComp.gstRatePct = '12';
+    const sgPromise = sgComp.saveActiveForm();
+    const sgReq = httpMock.expectOne(`/api/v1/companies/${TEST_COMPANY_ID}/stock-groups`);
+    expect(sgReq.request.body.name).toBe('Surgical Consumables');
+    expect(sgReq.request.body.hsnSacCode).toBe('90189099');
+    sgReq.flush({
+      id: 'sg-surg',
+      companyId: TEST_COMPANY_ID,
+      name: 'Surgical Consumables',
+      aliasCode: null,
+      parentStockGroupId: null,
+      shouldQuantitiesOfItemsBeAdded: true,
+      hsnSacCode: '90189099',
+      gstRatePct: '12',
+      cessRatePct: null,
+      versionNo: 1,
+    });
+    await sgPromise;
+    expect(sgComp.savedMsg()).toContain('Surgical Consumables');
+
+    // Switch to Categories tab and create a Stock Category
+    sgComp.switchTab('CATEGORIES');
+    sgComp.categoryName = 'Sterile Grade A';
+    const scPromise = sgComp.saveActiveForm();
+    const scReq = httpMock.expectOne(`/api/v1/companies/${TEST_COMPANY_ID}/stock-categories`);
+    expect(scReq.request.body.name).toBe('Sterile Grade A');
+    scReq.flush({
+      id: 'sc-sterile',
+      companyId: TEST_COMPANY_ID,
+      name: 'Sterile Grade A',
+      aliasCode: null,
+      parentStockCategoryId: null,
+      versionNo: 1,
+    });
+    await scPromise;
+    expect(sgComp.savedMsg()).toContain('Sterile Grade A');
+
+    // 4. GodownWorkbenchComponent: creates custom Godown and guards Main Location from deletion
+    const gdFixture = TestBed.createComponent(GodownWorkbenchComponent);
+    gdFixture.detectChanges();
+    const gdComp = gdFixture.componentInstance;
+    gdComp.name = 'Cold Chain Annex B';
+    gdComp.allowStorageOfMaterials = true;
+    const gdPromise = gdComp.saveGodown();
+    const gdReq = httpMock.expectOne(`/api/v1/companies/${TEST_COMPANY_ID}/godowns`);
+    expect(gdReq.request.body.name).toBe('Cold Chain Annex B');
+    expect(gdReq.request.body.allowStorageOfMaterials).toBe(true);
+    gdReq.flush({
+      id: 'gd-cold-b',
+      companyId: TEST_COMPANY_ID,
+      name: 'Cold Chain Annex B',
+      aliasCode: null,
+      parentGodownId: null,
+      address: null,
+      allowStorageOfMaterials: true,
+      ourStockWithThirdParty: false,
+      thirdPartyStockWithUs: false,
+      isSystemGodown: false,
+      versionNo: 1,
+    });
+    await gdPromise;
+    expect(gdComp.savedMsg()).toContain('Cold Chain Annex B');
+
+    fixture.destroy();
+    sgFixture.destroy();
+    gdFixture.destroy();
     httpMock.verify();
   });
 });

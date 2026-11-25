@@ -5,6 +5,10 @@ import { firstValueFrom } from 'rxjs';
 import { RuntimeConfigService } from '../../core/http/runtime-config.service';
 import { ExactDecimal } from '../../core/money/exact-decimal';
 import {
+  AccountBookMonthlySummaryDto,
+  AccountBookReportDto,
+  AccountBookRowDto,
+  AccountBookType,
   AgeingBillRowDto,
   AgeingBucketTotalsDto,
   BalanceSheetFormat,
@@ -14,6 +18,9 @@ import {
   CashFlowActivityRowDto,
   CashFlowMonthRowDto,
   CashFlowReportDto,
+  ExceptionReportDto,
+  ExceptionReportRowDto,
+  ExceptionReportType,
   FinancialStatementLineDto,
   PrintableReportType,
   ProfitAndLossReportDto,
@@ -24,6 +31,11 @@ import {
   ScheduleIiiReportDto,
   ScheduleIiiRoundingScale,
   StatementLineKind,
+  StatisticsMasterRowDto,
+  StatisticsReportDto,
+  StatisticsVoucherTypeRowDto,
+  StockQueryGodownRowDto,
+  StockQueryReportDto,
   TrialBalanceReportDto,
   TrialBalanceRowDto,
 } from './reports.models';
@@ -661,5 +673,301 @@ export class ReportsService {
     );
     this.triggerPdfDownload(blob, filename ?? `Voucher_${voucherId}.pdf`);
     return blob;
+  }
+
+  async getAccountBook(
+    companyId: string,
+    query: {
+      readonly bookType: AccountBookType;
+      readonly fromDate: string;
+      readonly toDate: string;
+      readonly groupId?: string | null;
+      readonly ledgerId?: string | null;
+    },
+  ): Promise<AccountBookReportDto> {
+    let params = new HttpParams()
+      .set('bookType', query.bookType)
+      .set('fromDate', query.fromDate)
+      .set('toDate', query.toDate);
+    if (query.groupId) {
+      params = params.set('groupId', query.groupId);
+    }
+    if (query.ledgerId) {
+      params = params.set('ledgerId', query.ledgerId);
+    }
+
+    const raw = await firstValueFrom(
+      this.http.get<Record<string, unknown>>(this.companyUrl(companyId, '/reports/account-books'), {
+        params,
+        withCredentials: true,
+      }),
+    );
+
+    const rawMonthly = Array.isArray(raw['monthlySummary'])
+      ? (raw['monthlySummary'] as Record<string, unknown>[])
+      : Array.isArray(raw['months'])
+        ? (raw['months'] as Record<string, unknown>[])
+        : [];
+    const monthlySummary: AccountBookMonthlySummaryDto[] = rawMonthly.map((m) => ({
+      monthLabel: String(m['monthLabel'] ?? m['monthKey'] ?? m['month'] ?? m['periodLabel'] ?? ''),
+      fromDate: String(m['fromDate'] ?? ''),
+      toDate: String(m['toDate'] ?? ''),
+      voucherCount: Number(m['voucherCount'] ?? m['count'] ?? 0),
+      debitAmount: safeWire(
+        m['debitTotal'] ?? m['debitAmount'] ?? m['totalDebit'] ?? m['periodDebit'],
+      ),
+      creditAmount: safeWire(
+        m['creditTotal'] ?? m['creditAmount'] ?? m['totalCredit'] ?? m['periodCredit'],
+      ),
+      closingBalance: safeWire(m['closingBalance'] ?? m['netAmount'] ?? m['netBalance']),
+    }));
+
+    const rawVoucherRows = Array.isArray(raw['voucherRows'])
+      ? (raw['voucherRows'] as Record<string, unknown>[])
+      : [];
+    const rawSummaryRows = Array.isArray(raw['summaryRows'])
+      ? (raw['summaryRows'] as Record<string, unknown>[])
+      : [];
+    const rawFallbackRows = Array.isArray(raw['rows'])
+      ? (raw['rows'] as Record<string, unknown>[])
+      : Array.isArray(raw['vouchers'])
+        ? (raw['vouchers'] as Record<string, unknown>[])
+        : Array.isArray(raw['items'])
+          ? (raw['items'] as Record<string, unknown>[])
+          : [];
+
+    const sourceRows =
+      rawVoucherRows.length > 0
+        ? rawVoucherRows
+        : rawSummaryRows.length > 0
+          ? rawSummaryRows
+          : rawFallbackRows;
+
+    const rows: AccountBookRowDto[] = sourceRows.map((r, idx) => ({
+      id: String(
+        r['id'] ?? r['voucherId'] ?? r['entityId'] ?? r['groupId'] ?? r['ledgerId'] ?? `ab-row-${idx}`,
+      ),
+      voucherId: r['voucherId'] ? String(r['voucherId']) : null,
+      rowDate: String(r['rowDate'] ?? r['voucherDate'] ?? r['date'] ?? ''),
+      particulars: String(
+        r['particulars'] ?? r['name'] ?? r['partyLedgerName'] ?? r['ledgerName'] ?? r['groupName'] ?? 'Entry',
+      ),
+      voucherTypeName: String(
+        r['voucherTypeName'] ?? r['rowType'] ?? r['parentGroupName'] ?? query.bookType,
+      ),
+      voucherNumber: String(r['voucherNumber'] ?? r['code'] ?? ''),
+      debitAmount: safeWire(
+        r['debitAmount'] ?? r['closingDebit'] ?? r['periodDebit'] ?? r['totalDebit'],
+      ),
+      creditAmount: safeWire(
+        r['creditAmount'] ?? r['closingCredit'] ?? r['periodCredit'] ?? r['totalCredit'],
+      ),
+      closingBalance: safeWire(
+        r['runningBalance'] ?? r['closingBalance'] ?? r['closingDebit'] ?? r['balance'],
+      ),
+    }));
+
+    return {
+      bookType: (raw['bookType'] as AccountBookType | undefined) ?? query.bookType,
+      fromDate: String(raw['fromDate'] ?? query.fromDate),
+      toDate: String(raw['toDate'] ?? query.toDate),
+      monthlySummary,
+      rows,
+      totalDebit: safeWire(raw['totalDebit'] ?? raw['closingDebit'] ?? raw['totalClosingDebit']),
+      totalCredit: safeWire(raw['totalCredit'] ?? raw['closingCredit'] ?? raw['totalClosingCredit']),
+      closingBalance: safeWire(
+        raw['closingBalance'] ?? raw['closingDebit'] ?? raw['netBalance'],
+      ),
+    };
+  }
+
+  async getExceptionReport(
+    companyId: string,
+    query: {
+      readonly type: ExceptionReportType;
+      readonly fromDate: string;
+      readonly toDate: string;
+      readonly asOfDate?: string;
+    },
+  ): Promise<ExceptionReportDto> {
+    let params = new HttpParams()
+      .set('type', query.type)
+      .set('fromDate', query.fromDate)
+      .set('toDate', query.toDate);
+    if (query.asOfDate) {
+      params = params.set('asOfDate', query.asOfDate);
+    }
+
+    const raw = await firstValueFrom(
+      this.http.get<Record<string, unknown>>(this.companyUrl(companyId, '/reports/exceptions'), {
+        params,
+        withCredentials: true,
+      }),
+    );
+
+    const rawRows = Array.isArray(raw['rows'])
+      ? (raw['rows'] as Record<string, unknown>[])
+      : Array.isArray(raw['items'])
+        ? (raw['items'] as Record<string, unknown>[])
+        : [];
+    const rows: ExceptionReportRowDto[] = rawRows.map((r, idx) => {
+      const entityType = String(r['entityType'] ?? '').toUpperCase();
+      const entityId = String(r['entityId'] ?? r['id'] ?? '');
+      const resolvedVoucherId = r['voucherId']
+        ? String(r['voucherId'])
+        : entityType === 'VOUCHER' && entityId
+          ? entityId
+          : null;
+      return {
+        id: String(r['id'] ?? r['voucherId'] ?? r['entityId'] ?? `exc-${idx}`),
+        entityId,
+        voucherId: resolvedVoucherId,
+        code: String(
+          r['referenceNumber'] ?? r['code'] ?? r['voucherNumber'] ?? r['billName'] ?? '',
+        ),
+        name: String(
+          r['particulars'] ?? r['name'] ?? r['stockItemName'] ?? r['ledgerName'] ?? r['partyName'] ?? '',
+        ),
+        secondaryLabel: String(
+          r['groupOrCategory'] ?? r['secondaryLabel'] ?? r['voucherTypeName'] ?? r['groupName'] ?? r['uomSymbol'] ?? '',
+        ),
+        rowDate: String(r['date'] ?? r['rowDate'] ?? r['voucherDate'] ?? r['dueDate'] ?? ''),
+        quantity: safeWire(r['quantity'] ?? r['closingQty'], 4),
+        amount: safeWire(
+          r['balanceOrAmount'] ?? r['amount'] ?? r['closingBalance'] ?? r['pendingAmount'] ?? r['debitAmount'],
+        ),
+        status: String(r['status'] ?? r['postingNature'] ?? query.type),
+      };
+    });
+
+    return {
+      exceptionType: (raw['type'] as ExceptionReportType | undefined) ?? query.type,
+      fromDate: String(raw['fromDate'] ?? query.fromDate),
+      toDate: String(raw['toDate'] ?? query.toDate),
+      rows,
+      totalCount: Number(raw['rowCount'] ?? raw['totalCount'] ?? raw['count'] ?? rows.length),
+      totalAmount: safeWire(raw['totalAmount'] ?? raw['totalDebit'] ?? raw['totalPendingAmount']),
+    };
+  }
+
+  async getStatistics(
+    companyId: string,
+    query: { readonly fromDate: string; readonly toDate: string },
+  ): Promise<StatisticsReportDto> {
+    const params = new HttpParams()
+      .set('fromDate', query.fromDate)
+      .set('toDate', query.toDate);
+
+    const raw = await firstValueFrom(
+      this.http.get<Record<string, unknown>>(this.companyUrl(companyId, '/reports/statistics'), {
+        params,
+        withCredentials: true,
+      }),
+    );
+
+    const rawVch = Array.isArray(raw['voucherTypeCounts'])
+      ? (raw['voucherTypeCounts'] as Record<string, unknown>[])
+      : [];
+    const voucherTypeCounts: StatisticsVoucherTypeRowDto[] = rawVch.map((v) => {
+      const posted = Number(v['postedCount'] ?? v['activeCount'] ?? v['count'] ?? 0);
+      const optional = Number(v['optionalCount'] ?? 0);
+      const cancelled = Number(v['cancelledCount'] ?? 0);
+      const total = Number(v['totalCount'] ?? posted + optional + cancelled);
+      return {
+        voucherTypeName: String(v['voucherTypeName'] ?? v['name'] ?? 'Voucher'),
+        category: String(v['category'] ?? v['baseCategory'] ?? ''),
+        postedCount: posted,
+        optionalCount: optional,
+        cancelledCount: cancelled,
+        totalCount: total,
+      };
+    });
+
+    const masterCounts: StatisticsMasterRowDto[] = [];
+    const rawMasters = raw['masterCounts'];
+    if (Array.isArray(rawMasters)) {
+      for (const m of rawMasters as Record<string, unknown>[]) {
+        masterCounts.push({
+          masterType: String(m['masterType'] ?? m['label'] ?? m['name'] ?? ''),
+          count: Number(m['count'] ?? 0),
+        });
+      }
+    } else if (rawMasters && typeof rawMasters === 'object') {
+      for (const [k, v] of Object.entries(rawMasters as Record<string, unknown>)) {
+        masterCounts.push({
+          masterType: k,
+          count: Number(v ?? 0),
+        });
+      }
+    }
+
+    const totalVouchers = voucherTypeCounts.reduce((acc, r) => acc + r.totalCount, 0);
+    const totalMasters = masterCounts.reduce((acc, r) => acc + r.count, 0);
+
+    return {
+      fromDate: String(raw['fromDate'] ?? query.fromDate),
+      toDate: String(raw['toDate'] ?? query.toDate),
+      voucherTypeCounts,
+      masterCounts,
+      totalVouchers: Number(raw['totalVouchers'] ?? totalVouchers),
+      totalMasters: Number(raw['totalMasters'] ?? totalMasters),
+    };
+  }
+
+  async getStockQuery(
+    companyId: string,
+    query: {
+      readonly stockItemId?: string | null;
+      readonly fromDate: string;
+      readonly toDate: string;
+    },
+  ): Promise<StockQueryReportDto> {
+    let params = new HttpParams()
+      .set('fromDate', query.fromDate)
+      .set('toDate', query.toDate);
+    if (query.stockItemId) {
+      params = params.set('stockItemId', query.stockItemId);
+    }
+
+    const raw = await firstValueFrom(
+      this.http.get<Record<string, unknown>>(this.companyUrl(companyId, '/reports/stock-query'), {
+        params,
+        withCredentials: true,
+      }),
+    );
+
+    const rawGodowns = Array.isArray(raw['godownBatchBreakup'])
+      ? (raw['godownBatchBreakup'] as Record<string, unknown>[])
+      : Array.isArray(raw['godownBreakup'])
+        ? (raw['godownBreakup'] as Record<string, unknown>[])
+        : Array.isArray(raw['godowns'])
+          ? (raw['godowns'] as Record<string, unknown>[])
+          : [];
+    const godownBreakup: StockQueryGodownRowDto[] = rawGodowns.map((g) => ({
+      godownName: String(g['godownName'] ?? g['name'] ?? 'Main Location'),
+      batchName: String(g['batchName'] ?? 'Primary Batch'),
+      closingQty: safeWire(g['closingQty'] ?? g['quantity'], 4),
+      closingValue: safeWire(g['closingValue'] ?? g['value'], 2),
+    }));
+
+    return {
+      stockItemId: String(raw['stockItemId'] ?? query.stockItemId ?? ''),
+      stockItemName: String(raw['stockItemName'] ?? raw['name'] ?? ''),
+      uomSymbol: String(raw['uomSymbol'] ?? raw['baseUomSymbol'] ?? 'NOS'),
+      costingMethod: String(raw['costingMethod'] ?? 'AVG_COST'),
+      openingQty: safeWire(raw['openingQty'], 4),
+      openingValue: safeWire(raw['openingValue'], 2),
+      inwardQty: safeWire(raw['inwardQty'], 4),
+      inwardValue: safeWire(raw['inwardValue'], 2),
+      outwardQty: safeWire(raw['outwardQty'], 4),
+      outwardValue: safeWire(raw['outwardValue'], 2),
+      closingQty: safeWire(raw['closingQty'], 4),
+      closingValue: safeWire(raw['closingValue'], 2),
+      lastPurchaseParty: String(raw['lastPurchaseParty'] ?? '—'),
+      lastPurchaseRate: safeWire(raw['lastPurchaseRate'], 2),
+      lastSalesParty: String(raw['lastSalesParty'] ?? '—'),
+      lastSalesRate: safeWire(raw['lastSalesRate'], 2),
+      godownBreakup,
+    };
   }
 }

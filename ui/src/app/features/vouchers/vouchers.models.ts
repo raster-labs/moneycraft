@@ -243,6 +243,13 @@ export interface VoucherDetailDto {
   readonly versionNo: number;
 }
 
+export interface DayBookLineBreakupDto {
+  readonly lineNo?: number;
+  readonly ledgerName: string;
+  readonly side: BalanceSide;
+  readonly amount: string;
+}
+
 export interface VoucherSummaryDto {
   readonly id: string;
   readonly companyId?: string;
@@ -262,6 +269,7 @@ export interface VoucherSummaryDto {
   readonly approvedBy?: string | null;
   readonly approvalPolicy?: 'SINGLE_STEP' | 'FOUR_EYES';
   readonly versionNo: number;
+  readonly lineBreakups?: readonly DayBookLineBreakupDto[];
 }
 
 export interface OpenBillDto {

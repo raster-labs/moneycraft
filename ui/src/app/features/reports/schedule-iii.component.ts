@@ -3,6 +3,7 @@ import {
   Component,
   DestroyRef,
   OnInit,
+  computed,
   inject,
   input,
   signal,
@@ -12,6 +13,8 @@ import { RouterLink } from '@angular/router';
 import { ShortcutCommandRegistry } from '../../core/keyboard/shortcut-command.registry';
 import { IndianCurrencyPipe } from '../../core/money/indian-currency.pipe';
 import { CodeBadgeComponent } from '../../shared/components/code-badge/code-badge.component';
+import { ReportOutputModalComponent } from '../../shared/components/report-output-modal/report-output-modal.component';
+import { SemanticIconComponent } from '../../shared/components/semantic-icon/semantic-icon.component';
 import { CompanyContextStore } from '../../state/company-context.store';
 import {
   ScheduleIiiEntityFormat,
@@ -23,7 +26,14 @@ import { ReportsService } from './reports.service';
 @Component({
   selector: 'mc-schedule-iii',
   standalone: true,
-  imports: [FormsModule, RouterLink, CodeBadgeComponent, IndianCurrencyPipe],
+  imports: [
+    FormsModule,
+    RouterLink,
+    CodeBadgeComponent,
+    IndianCurrencyPipe,
+    SemanticIconComponent,
+    ReportOutputModalComponent,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="s3-page">
@@ -101,14 +111,37 @@ import { ReportsService } from './reports.service';
             />
           </label>
 
-          <button type="button" class="mc-btn" (click)="reload()">Refresh</button>
+          <button type="button" class="mc-btn mc-btn-secondary" (click)="reload()">
+            <mc-icon name="refresh" [size]="16" />
+            <span>Refresh</span>
+          </button>
+          @if (removedLineCodes().length > 0) {
+            <button
+              type="button"
+              class="mc-btn mc-btn-secondary"
+              data-testid="s3-restore-line-btn"
+              (click)="restoreLastRemovedLine()"
+            >
+              Restore Hidden ({{ removedLineCodes().length }}) &bull; Alt+U
+            </button>
+          }
+          <button
+            type="button"
+            class="mc-btn mc-btn-secondary"
+            data-testid="s3-output-btn"
+            (click)="outputModalOpen.set(true)"
+          >
+            <mc-icon name="export" [size]="16" />
+            <span>Output</span>
+          </button>
           <button
             type="button"
             class="mc-btn mc-btn-primary"
             data-testid="s3-print-pdf-btn"
             (click)="exportPdf()"
           >
-            Schedule III PDF (Ctrl+P)
+            <mc-icon name="print" [size]="16" />
+            <span>Schedule III PDF (Ctrl+P)</span>
           </button>
         </div>
       </header>
@@ -141,8 +174,12 @@ import { ReportsService } from './reports.service';
               </tr>
             </thead>
             <tbody>
-              @for (line of r.balanceSheetLines; track line.lineCode + '-' + line.particulars) {
-                <tr [class.subtotal-row]="line.isSubtotal">
+              @for (line of visibleBsLines(); track line.lineCode + '-' + line.particulars) {
+                <tr
+                  [class.subtotal-row]="line.isSubtotal"
+                  [class.s3-selected-row]="selectedLineCode() === 'BS:' + line.lineCode"
+                  (click)="selectedLineCode.set('BS:' + line.lineCode)"
+                >
                   <td><mc-code-badge [code]="line.lineCode" /></td>
                   <td>
                     <span [class.indent-1]="line.indentLevel === 1" [class.indent-2]="line.indentLevel >= 2">
@@ -205,8 +242,12 @@ import { ReportsService } from './reports.service';
               </tr>
             </thead>
             <tbody>
-              @for (line of r.statementOfPnlLines; track line.lineCode + '-' + line.particulars) {
-                <tr [class.subtotal-row]="line.isSubtotal">
+              @for (line of visiblePnlLines(); track line.lineCode + '-' + line.particulars) {
+                <tr
+                  [class.subtotal-row]="line.isSubtotal"
+                  [class.s3-selected-row]="selectedLineCode() === 'PNL:' + line.lineCode"
+                  (click)="selectedLineCode.set('PNL:' + line.lineCode)"
+                >
                   <td><mc-code-badge [code]="line.lineCode" /></td>
                   <td>
                     @if (line.isSubtotal) {
@@ -293,17 +334,26 @@ import { ReportsService } from './reports.service';
                 }
               </article>
             } @empty {
-              <div class="empty-notes">No separate Schedule III notes required for empty balances.</div>
+              <div class="mc-empty-records">No matching records</div>
             }
           </div>
 
           <footer class="s3-footer">
-            <a routerLink="/app/reports/balance-sheet" class="mc-btn">Tally Balance Sheet</a>
-            <a routerLink="/app/reports/pnl" class="mc-btn">Profit &amp; Loss A/c</a>
-            <a routerLink="/app/reports/trial-balance" class="mc-btn">Trial Balance</a>
+            <a routerLink="/app/reports/balance-sheet" class="mc-btn mc-btn-secondary">Balance Sheet</a>
+            <a routerLink="/app/reports/pnl" class="mc-btn mc-btn-secondary">Profit &amp; Loss A/c</a>
+            <a routerLink="/app/reports/trial-balance" class="mc-btn mc-btn-secondary">Trial Balance</a>
           </footer>
         </section>
       }
+
+      <mc-report-output-modal
+        [open]="outputModalOpen()"
+        reportTitle="MCA Schedule III"
+        [boundsLabel]="'As at ' + asOfDate()"
+        (printRequested)="exportPdf()"
+        (exportRequested)="exportPdf()"
+        (closed)="outputModalOpen.set(false)"
+      />
     </div>
   `,
   styles: `
@@ -505,6 +555,10 @@ import { ReportsService } from './reports.service';
       display: flex;
       gap: 0.45rem;
     }
+
+    .s3-selected-row td {
+      background: #e6f7f5;
+    }
   `,
 })
 export class ScheduleIiiComponent implements OnInit {
@@ -524,6 +578,23 @@ export class ScheduleIiiComponent implements OnInit {
   readonly report = signal<ScheduleIiiReportDto | null>(null);
   readonly expandedNotes = signal<ReadonlySet<string>>(new Set());
   readonly statusMessage = signal<string | null>(null);
+  readonly outputModalOpen = signal<boolean>(false);
+  readonly selectedLineCode = signal<string>('');
+  readonly removedLineCodes = signal<readonly string[]>([]);
+
+  readonly visibleBsLines = computed(() => {
+    const r = this.report();
+    if (!r) return [];
+    const hidden = this.removedLineCodes();
+    return r.balanceSheetLines.filter((l) => !hidden.includes('BS:' + l.lineCode));
+  });
+
+  readonly visiblePnlLines = computed(() => {
+    const r = this.report();
+    if (!r) return [];
+    const hidden = this.removedLineCodes();
+    return r.statementOfPnlLines.filter((l) => !hidden.includes('PNL:' + l.lineCode));
+  });
 
   ngOnInit(): void {
     const fyStart = this.companyContext.activeCompany()?.financialYearFrom ?? '2025-04-01';
@@ -532,12 +603,45 @@ export class ScheduleIiiComponent implements OnInit {
       this.comparativeAsOfDate.set(`${yr}-03-31`);
     }
 
-    const disposePrint = this.shortcutRegistry.bindHandler('menu.print', 'SCREEN', () => {
-      void this.exportPdf();
+    const disposers = [
+      this.shortcutRegistry.bindHandler('menu.print', 'SCREEN', () => {
+        void this.exportPdf();
+      }),
+      this.shortcutRegistry.bindHandler('register.removeLine', 'SCREEN', () => {
+        this.removeSelectedLine();
+      }),
+      this.shortcutRegistry.bindHandler('register.restoreLine', 'SCREEN', () => {
+        this.restoreLastRemovedLine();
+      }),
+    ];
+    this.destroyRef.onDestroy(() => {
+      for (const d of disposers) d();
     });
-    this.destroyRef.onDestroy(() => disposePrint());
 
     void this.reload();
+  }
+
+  removeSelectedLine(): void {
+    const allCodes = [
+      ...this.visibleBsLines().map((l) => 'BS:' + l.lineCode),
+      ...this.visiblePnlLines().map((l) => 'PNL:' + l.lineCode),
+    ];
+    if (allCodes.length === 0) return;
+    const target = this.selectedLineCode() && allCodes.includes(this.selectedLineCode())
+      ? this.selectedLineCode()
+      : allCodes[0];
+    this.removedLineCodes.set([...this.removedLineCodes(), target]);
+    const next = [
+      ...this.visibleBsLines().map((l) => 'BS:' + l.lineCode),
+      ...this.visiblePnlLines().map((l) => 'PNL:' + l.lineCode),
+    ][0];
+    this.selectedLineCode.set(next ?? '');
+  }
+
+  restoreLastRemovedLine(): void {
+    const stack = this.removedLineCodes();
+    if (stack.length === 0) return;
+    this.removedLineCodes.set(stack.slice(0, -1));
   }
 
   roundingUnitLabel(): string {

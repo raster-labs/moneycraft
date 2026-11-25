@@ -1,5 +1,6 @@
 import { DestroyRef, Injectable, inject, signal } from '@angular/core';
 import { Subject } from 'rxjs';
+import { AuthStore } from '../auth/auth.store';
 import { RuntimeConfigService } from './runtime-config.service';
 
 export type McOperationalEventType =
@@ -21,6 +22,7 @@ export interface McOperationalEvent {
 @Injectable({ providedIn: 'root' })
 export class SseStreamService {
   private readonly runtimeConfig = inject(RuntimeConfigService);
+  private readonly authStore = inject(AuthStore);
   private readonly destroyRef = inject(DestroyRef);
 
   private eventSource: EventSource | null = null;
@@ -39,7 +41,11 @@ export class SseStreamService {
   }
 
   connect(): void {
-    if (this.eventSource || typeof EventSource === 'undefined') {
+    if (
+      this.eventSource ||
+      typeof EventSource === 'undefined' ||
+      !this.authStore.isAuthenticated()
+    ) {
       return;
     }
 

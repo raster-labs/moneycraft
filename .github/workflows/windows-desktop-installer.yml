@@ -1,4 +1,4 @@
-name: Windows Native Swing Desktop Installer (.msi & .exe)
+name: Cross-Platform Swing Desktop Installers & JAR Verification (Windows, macOS, Linux)
 
 on:
   pull_request:
@@ -6,12 +6,16 @@ on:
     paths:
       - "desktop/**"
       - "deploy/windows/**"
+      - "deploy/macos/**"
+      - "deploy/linux/**"
       - ".github/workflows/windows-desktop-installer.yml"
   push:
     branches: [develop, main, "release/**", "hotfix/**"]
     paths:
       - "desktop/**"
       - "deploy/windows/**"
+      - "deploy/macos/**"
+      - "deploy/linux/**"
       - ".github/workflows/windows-desktop-installer.yml"
   workflow_dispatch:
 
@@ -19,10 +23,133 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-desktop-installer-${{ github.workflow }}-${{ github.ref }}
+  group: cross-platform-desktop-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  package-linux-desktop:
+    name: "Build & Verify Linux x64 Swing Desktop (.deb + .rpm + .tar.gz + .jar)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Install Linux Packaging Tools (fakeroot, rpm)
+        run: sudo apt-get update && sudo apt-get install -y fakeroot rpm
+
+      - name: Run Manifest & Zero-Licensing Gates
+        run: |
+          python3 tools/verify_manifest.py
+          python3 tools/check_zero_licensing.py
+
+      - name: Verify Zero JDBC / Spring / JPA / Servlet Contamination in desktop
+        run: |
+          mvn -B dependency:tree -pl desktop > /tmp/desktop-deps.txt
+          cat /tmp/desktop-deps.txt
+          if grep -E "org\.postgresql|org\.springframework|org\.hibernate|jakarta\.persistence|jakarta\.servlet" /tmp/desktop-deps.txt; then
+            echo "SWG-001/SWG-002 violation: forbidden server or database dependency in desktop client" >&2
+            exit 1
+          fi
+
+      - name: Run Desktop Checkstyle & JUnit 5 Suite
+        run: mvn -B test -pl desktop
+
+      - name: Build Stripped Java 25 jlink Runtime & Linux .deb/.rpm/.tar.gz Installers
+        run: |
+          chmod +x deploy/linux/build-linux-installer.sh
+          ./deploy/linux/build-linux-installer.sh --app-version 1.1.0 --arch x64 --skip-maven-tests
+
+      - name: Smoke-Verify Standalone Self-Contained JAR & Linux Installers
+        run: |
+          cp desktop/target/moneycraft-desktop.jar /tmp/MoneyCraft-Desktop-1.1.0.jar
+          OUT="$(java -jar /tmp/MoneyCraft-Desktop-1.1.0.jar --api-ip 192.168.1.100 --api-port 8443 --verify-theme)"
+          echo "${OUT}"
+          if [[ "${OUT}" != *"MoneyCraft Desktop 1.0.0 ready [host=https://192.168.1.100:8443"* ]]; then
+            echo "Standalone JAR smoke verification failed outside target directory: ${OUT}" >&2
+            exit 1
+          fi
+          test -f desktop/target/installer/MoneyCraft-Desktop-1.1.0-linux-x64.deb
+          test -f desktop/target/installer/MoneyCraft-Desktop-1.1.0-linux-x64.rpm
+          test -f desktop/target/installer/MoneyCraft-Desktop-1.1.0-linux-x64.tar.gz
+          test -f desktop/target/installer/SHA256SUMS-linux.txt
+
+      - name: Upload Linux Desktop & Standalone JAR Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: moneycraft-desktop-linux-x64-and-jar
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            desktop/target/moneycraft-desktop.jar
+            desktop/target/installer/MoneyCraft-Desktop-1.1.0-linux-x64.deb
+            desktop/target/installer/MoneyCraft-Desktop-1.1.0-linux-x64.rpm
+            desktop/target/installer/MoneyCraft-Desktop-1.1.0-linux-x64.tar.gz
+            desktop/target/installer/SHA256SUMS-linux.txt
+
+  package-macos-desktop:
+    name: "Build & Verify macOS arm64 Swing Desktop (.dmg + .pkg + .app.zip)"
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Run Manifest & Zero-Licensing Gates
+        run: |
+          python3 tools/verify_manifest.py
+          python3 tools/check_zero_licensing.py
+
+      - name: Run Desktop Checkstyle & JUnit 5 Suite on macOS
+        run: mvn -B test -pl desktop
+
+      - name: Build Stripped Java 25 jlink Runtime & macOS .dmg/.pkg/.app.zip Installers
+        run: |
+          chmod +x deploy/macos/build-macos-installer.sh
+          ./deploy/macos/build-macos-installer.sh --app-version 1.1.0 --arch arm64 --skip-maven-tests
+
+      - name: Smoke-Verify Standalone Self-Contained JAR & macOS Installers
+        run: |
+          cp desktop/target/moneycraft-desktop.jar /tmp/MoneyCraft-Desktop-1.1.0.jar
+          OUT="$(java -jar /tmp/MoneyCraft-Desktop-1.1.0.jar --api-ip 192.168.1.100 --api-port 8443 --verify-theme)"
+          echo "${OUT}"
+          if [[ "${OUT}" != *"MoneyCraft Desktop 1.0.0 ready [host=https://192.168.1.100:8443"* ]]; then
+            echo "macOS standalone JAR smoke verification failed: ${OUT}" >&2
+            exit 1
+          fi
+          test -f desktop/target/installer/MoneyCraft-Desktop-1.1.0-macos-arm64.dmg
+          test -f desktop/target/installer/MoneyCraft-Desktop-1.1.0-macos-arm64.pkg
+          test -f desktop/target/installer/MoneyCraft-Desktop-1.1.0-macos-arm64-app.zip
+          test -f desktop/target/installer/SHA256SUMS-macos.txt
+
+      - name: Upload macOS Desktop Installer Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: moneycraft-desktop-macos-arm64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            desktop/target/installer/MoneyCraft-Desktop-1.1.0-macos-arm64.dmg
+            desktop/target/installer/MoneyCraft-Desktop-1.1.0-macos-arm64.pkg
+            desktop/target/installer/MoneyCraft-Desktop-1.1.0-macos-arm64-app.zip
+            desktop/target/installer/SHA256SUMS-macos.txt
+
   package-windows-desktop:
     name: "Build & Verify Windows x64 Swing Desktop (.msi + .exe)"
     runs-on: windows-latest
@@ -61,19 +188,20 @@ jobs:
 
       - name: Build Stripped Java 25 jlink Runtime & Windows .msi/.exe Installers
         shell: pwsh
-        run: ./deploy/windows/build-windows-installer.ps1 -AppVersion 1.0.0 -Architecture x64 -SkipMavenTests
+        run: ./deploy/windows/build-windows-installer.ps1 -AppVersion 1.1.0 -Architecture x64 -SkipMavenTests
 
       - name: Smoke-Verify Standalone Launcher & Installer Hashes
         shell: pwsh
         run: |
-          $Output = & "$env:JAVA_HOME/bin/java.exe" -jar desktop/target/moneycraft-desktop.jar --api-ip 192.168.1.100 --api-port 8443 --verify-theme
+          Copy-Item desktop/target/moneycraft-desktop.jar "$env:RUNNER_TEMP/MoneyCraft-Desktop-1.1.0.jar"
+          $Output = & "$env:JAVA_HOME/bin/java.exe" -jar "$env:RUNNER_TEMP/MoneyCraft-Desktop-1.1.0.jar" --api-ip 192.168.1.100 --api-port 8443 --verify-theme
           Write-Host $Output
           if ($Output -notmatch "MoneyCraft Desktop 1\.0\.0 ready \[host=https://192\.168\.1\.100:8443") {
             throw "Desktop launcher smoke verification failed: $Output"
           }
-          $MsiPath = "desktop/target/installer/MoneyCraft-Desktop-1.0.0-x64.msi"
-          $ExePath = "desktop/target/installer/MoneyCraft-Desktop-1.0.0-x64.exe"
-          $SumsPath = "desktop/target/installer/SHA256SUMS.txt"
+          $MsiPath = "desktop/target/installer/MoneyCraft-Desktop-1.1.0-windows-x64.msi"
+          $ExePath = "desktop/target/installer/MoneyCraft-Desktop-1.1.0-windows-x64.exe"
+          $SumsPath = "desktop/target/installer/SHA256SUMS-windows.txt"
           if (-not (Test-Path $MsiPath) -or -not (Test-Path $ExePath) -or -not (Test-Path $SumsPath)) {
             throw "Missing expected Windows installer artifacts in desktop/target/installer/"
           }
@@ -85,7 +213,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
-            desktop/target/installer/MoneyCraft-Desktop-1.0.0-x64.msi
-            desktop/target/installer/MoneyCraft-Desktop-1.0.0-x64.exe
-            desktop/target/installer/SHA256SUMS.txt
+            desktop/target/installer/MoneyCraft-Desktop-1.1.0-windows-x64.msi
+            desktop/target/installer/MoneyCraft-Desktop-1.1.0-windows-x64.exe
+            desktop/target/installer/SHA256SUMS-windows.txt
             deploy/windows/install-moneycraft-windows.ps1

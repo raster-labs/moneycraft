@@ -69,6 +69,18 @@
                 <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
                     <execution>
+                        <id>unpack-runtime-libs-for-standalone-jar</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>unpack-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <includeScope>runtime</includeScope>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <excludes>META-INF/MANIFEST.MF,META-INF/*.SF,META-INF/*.DSA,META-INF/*.RSA,META-INF/LICENSE*,META-INF/NOTICE*,module-info.class,META-INF/versions/*/module-info.class</excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>copy-runtime-libs</id>
                         <phase>package</phase>
                         <goals>

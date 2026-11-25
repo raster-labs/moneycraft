@@ -113,18 +113,24 @@ try {
 
     $CanonicalMsi = Join-Path $InstallerDir "MoneyCraft-Desktop-$AppVersion-$Architecture.msi"
     $CanonicalExe = Join-Path $InstallerDir "MoneyCraft-Desktop-$AppVersion-$Architecture.exe"
+    $WindowsNamedMsi = Join-Path $InstallerDir "MoneyCraft-Desktop-$AppVersion-windows-$Architecture.msi"
+    $WindowsNamedExe = Join-Path $InstallerDir "MoneyCraft-Desktop-$AppVersion-windows-$Architecture.exe"
     Move-Item -Force $GeneratedMsi.FullName $CanonicalMsi
     Move-Item -Force $GeneratedExe.FullName $CanonicalExe
+    Copy-Item -Force $CanonicalMsi $WindowsNamedMsi
+    Copy-Item -Force $CanonicalExe $WindowsNamedExe
 
-    Write-Host "[5/5] Writing SHA256SUMS.txt..."
+    Write-Host "[5/5] Writing SHA256SUMS.txt and SHA256SUMS-windows.txt..."
     $SumsPath = Join-Path $InstallerDir "SHA256SUMS.txt"
+    $WinSumsPath = Join-Path $InstallerDir "SHA256SUMS-windows.txt"
     $HashLines = @()
-    foreach ($Artifact in @($CanonicalMsi, $CanonicalExe)) {
+    foreach ($Artifact in @($CanonicalMsi, $CanonicalExe, $WindowsNamedMsi, $WindowsNamedExe)) {
         $Digest = (Get-FileHash -Algorithm SHA256 -Path $Artifact).Hash.ToLowerInvariant()
         $FileName = Split-Path -Leaf $Artifact
         $HashLines += "$Digest  $FileName"
     }
     Set-Content -Path $SumsPath -Value ($HashLines -join "`n") -Encoding utf8NoBOM
+    Set-Content -Path $WinSumsPath -Value ($HashLines -join "`n") -Encoding utf8NoBOM
     Write-Host "Installers ready in ${InstallerDir}:"
     Get-Content $SumsPath | ForEach-Object { Write-Host "  $_" }
 }

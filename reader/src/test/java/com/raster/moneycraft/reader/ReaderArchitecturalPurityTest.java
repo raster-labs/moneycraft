@@ -20,8 +20,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ReaderArchitecturalPurityTest {
 
-    private static final Path MAIN_JAVA_DIR = Path.of(
-            "/Users/pushparaj/projects/Money_Craft/moneycraft-target/reader/src/main/java");
+    private static final Path MAIN_JAVA_DIR = resolveMainJavaDir();
+
+    private static Path resolveMainJavaDir() {
+        for (Path candidate : List.of(
+                Path.of("src/main/java"),
+                Path.of("reader/src/main/java"),
+                Path.of("/Users/pushparaj/projects/Money_Craft/moneycraft-target/reader/src/main/java"))) {
+            if (Files.isDirectory(candidate)) {
+                return candidate;
+            }
+        }
+        return Path.of("src/main/java");
+    }
 
     private static final List<String> FORBIDDEN_IMPORT_PREFIXES = List.of(
             "org.springframework",

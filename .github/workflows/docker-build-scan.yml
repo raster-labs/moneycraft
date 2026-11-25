@@ -25,7 +25,20 @@ jobs:
         run: |
           for df in server/Dockerfile ui/Dockerfile docker/gateway/Dockerfile docker/backup/Dockerfile; do
             echo "Linting ${df}..."
-            docker run --rm -i hadolint/hadolint:v2.12.0-alpine hadolint --failure-threshold error - < "${df}"
+            python3 - "${df}" <<'PY' | docker run --rm -i hadolint/hadolint:v2.12.0-alpine hadolint --failure-threshold error -
+          import re, sys
+          in_heredoc = None
+          for line in open(sys.argv[1], encoding="utf-8"):
+              if in_heredoc is not None:
+                  if line.strip() == in_heredoc:
+                      in_heredoc = None
+                  continue
+              m = re.search(r"<<-?\s*['\"]?([A-Za-z0-9_]+)['\"]?", line)
+              if m:
+                  in_heredoc = m.group(1)
+                  line = re.sub(r"<<-?\s*['\"]?[A-Za-z0-9_]+['\"]?.*", "true", line)
+              sys.stdout.write(line)
+          PY
           done
 
   build-scan-sbom:

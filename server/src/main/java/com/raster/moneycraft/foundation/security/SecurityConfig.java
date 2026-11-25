@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URI;
+import java.util.List;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
@@ -29,6 +30,9 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.ObjectMapper;
 
@@ -62,8 +66,31 @@ public class SecurityConfig {
     }
 
     @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of("https://*", "http://*"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
+        config.setAllowedHeaders(List.of(
+            "Content-Type",
+            "Accept",
+            "X-XSRF-TOKEN",
+            "Idempotency-Key",
+            "Authorization",
+            "If-Match",
+            "X-Request-ID"
+        ));
+        config.setExposedHeaders(List.of("ETag", "X-Request-ID", "Content-Disposition"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/v1/**", config);
+        return source;
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(
         HttpSecurity http,
+        CorsConfigurationSource corsConfigurationSource,
         CookieCsrfTokenRepository csrfTokenRepository,
         @Qualifier("authorityJdbcTemplate") JdbcTemplate authorityJdbcTemplate,
         RbacAuthorizationService rbacAuthorizationService,
@@ -101,6 +128,7 @@ public class SecurityConfig {
         IdempotencyFilter idempotencyFilter = new IdempotencyFilter(idempotencyService, objectMapper);
 
         http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource))
             .csrf(csrf -> csrf
                 .csrfTokenRepository(csrfTokenRepository)
                 .csrfTokenRequestHandler(requestHandler)

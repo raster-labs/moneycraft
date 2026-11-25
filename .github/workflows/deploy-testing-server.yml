@@ -1,0 +1,96 @@
+name: Deploy to Testing / Staging Server
+
+on:
+  push:
+    branches:
+      - develop
+      - "release/**"
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Target testing environment overlay (dev or staging)"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - dev
+      release_tag:
+        description: "Release version tag to deploy (e.g. 1.1.0)"
+        required: true
+        default: "1.1.0"
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  qualify-testing-deployment-bundle:
+    name: "Qualify Testing Server Deployment (Backend + Frontend + Flyway Gate)"
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25 LTS
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Set up Node.js 24 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Verify Expand-and-Contract Flyway DDL & Zero-Licensing Gate
+        run: |
+          python3 tools/verify_flyway_backward_compat.py
+          python3 tools/check_zero_licensing.py
+          bash -n deploy/deploy-release.sh
+          bash -n deploy/pre-deploy-backup-gate.sh
+          bash -n deploy/smoke-verify.sh
+          bash -n deploy/rollback-release.sh
+
+      - name: Build Backend WAR & Frontend Production SPA Bundle for Testing Server
+        run: |
+          RELEASE_VER="${{ inputs.release_tag || '1.1.0' }}"
+          mvn -B -pl reader,server -am package -DskipTests -DskipITs=true
+          npm --prefix ui ci --ignore-scripts
+          npm --prefix ui run build:prod
+          mkdir -p testing-deploy-bundle
+          cp server/target/moneycraft.war "testing-deploy-bundle/moneycraft-${RELEASE_VER}.war"
+          tar -C ui/dist/moneycraft-ui/browser -czf "testing-deploy-bundle/moneycraft-ui-${RELEASE_VER}.tar.gz" .
+          cp deploy/deploy-release.sh deploy/pre-deploy-backup-gate.sh deploy/smoke-verify.sh deploy/rollback-release.sh testing-deploy-bundle/
+          (cd testing-deploy-bundle && sha256sum * > SHA256SUMS-testing-deploy.txt)
+
+      - name: Trigger Remote Testing Server Webhook / SSH Rollout (When Configured)
+        env:
+          TESTING_SERVER_SSH_HOST: ${{ secrets.TESTING_SERVER_SSH_HOST }}
+          TESTING_SERVER_SSH_USER: ${{ secrets.TESTING_SERVER_SSH_USER }}
+          TESTING_SERVER_SSH_KEY: ${{ secrets.TESTING_SERVER_SSH_KEY }}
+          TESTING_SERVER_REPO_DIR: ${{ secrets.TESTING_SERVER_REPO_DIR }}
+        run: |
+          RELEASE_VER="${{ inputs.release_tag || '1.1.0' }}"
+          TARGET_ENV="${{ inputs.target_env || 'dev' }}"
+          if [[ -n "${TESTING_SERVER_SSH_HOST}" && -n "${TESTING_SERVER_SSH_KEY}" ]]; then
+            mkdir -p ~/.ssh
+            printf '%s\n' "${TESTING_SERVER_SSH_KEY}" > ~/.ssh/testing_deploy_key
+            chmod 0600 ~/.ssh/testing_deploy_key
+            ssh -i ~/.ssh/testing_deploy_key -o StrictHostKeyChecking=accept-new \
+              "${TESTING_SERVER_SSH_USER:-raster}@${TESTING_SERVER_SSH_HOST}" \
+              "cd '${TESTING_SERVER_REPO_DIR:-/opt/moneycraft}' && git fetch --all --tags && git pull --ff-only && ./deploy/deploy-release.sh --env '${TARGET_ENV}' --tag '${RELEASE_VER}' --auto-rollback"
+          else
+            echo "No remote TESTING_SERVER_SSH_HOST secret configured; publishing verified testing deployment bundle artifact."
+          fi
+
+      - name: Upload Testing Server Deployment Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moneycraft-testing-server-bundle-${{ inputs.release_tag || '1.1.0' }}
+          path: testing-deploy-bundle/
+          if-no-files-found: error

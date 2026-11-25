@@ -30,7 +30,7 @@ public class CspNonceFilter extends OncePerRequestFilter {
             + "style-src 'self' 'nonce-" + nonce + "'; "
             + "img-src 'self' data:; "
             + "font-src 'self'; "
-            + "connect-src 'self'; "
+            + "connect-src 'self' https: http:; "
             + "object-src 'none'; "
             + "frame-ancestors 'none'; "
             + "base-uri 'self'; "

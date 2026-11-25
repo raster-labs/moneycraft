@@ -79,6 +79,16 @@ dc_target() {
         "$@"
 }
 
+REGISTRY_VAL="$(grep -E '^MC_REGISTRY=' "${ENV_FILE}" | cut -d= -f2 || echo "local")"
+if [[ "${REGISTRY_VAL}" == "local" ]]; then
+    VCS_REF="$(git -C "${REPO_ROOT}" rev-parse --short=7 HEAD 2>/dev/null || echo "dev")"
+    echo "==> [Step 2b/5] Building local OCI images (moneycraft-api, moneycraft-ui, moneycraft-gateway, moneycraft-pg-backup) for tag '${TARGET_TAG}' (${VCS_REF})..."
+    dc_target build \
+        --build-arg MC_VERSION="${TARGET_TAG}" \
+        --build-arg MC_VCS_REF="${VCS_REF}" \
+        moneycraft-api moneycraft-ui moneycraft-gateway moneycraft-pg-backup
+fi
+
 echo "==> [Step 3/5] Applying Expand-only Flyway migrations via moneycraft-migrator..."
 dc_target run --rm moneycraft-migrator
 

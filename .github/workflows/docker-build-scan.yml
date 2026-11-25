@@ -87,21 +87,26 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
       - name: Trivy Container Vulnerability Gate
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ steps.meta.outputs.git_tag }}
-          format: table
-          exit-code: "0"
-          ignore-unfixed: true
-          vuln-type: os,library
-          severity: CRITICAL,HIGH
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.58.1 image \
+            --format table \
+            --exit-code 0 \
+            --ignore-unfixed \
+            --pkg-types os,library \
+            --severity CRITICAL,HIGH \
+            "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ steps.meta.outputs.git_tag }}"
 
       - name: Generate CycloneDX 1.6 JSON SBOM
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ steps.meta.outputs.git_tag }}
-          format: cyclonedx
-          output: sbom-${{ matrix.service }}.cdx.json
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${PWD}:/work" \
+            aquasec/trivy:0.58.1 image \
+            --format cyclonedx \
+            --output "/work/sbom-${{ matrix.service }}.cdx.json" \
+            "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.service }}:${{ steps.meta.outputs.git_tag }}"
 
       - name: Upload CycloneDX SBOM Artifact
         uses: actions/upload-artifact@v4

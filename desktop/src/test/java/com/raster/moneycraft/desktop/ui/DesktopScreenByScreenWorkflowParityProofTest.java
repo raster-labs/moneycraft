@@ -1165,11 +1165,18 @@ class DesktopScreenByScreenWorkflowParityProofTest {
     }
 
     private static Path resolveWorkspaceFile(String relativeFromRoot) {
+        String stripped = relativeFromRoot.startsWith("moneycraft-target/")
+            ? relativeFromRoot.substring("moneycraft-target/".length())
+            : relativeFromRoot;
         Path cur = Path.of("").toAbsolutePath();
         for (int i = 0; i < 4 && cur != null; i++) {
             Path candidate = cur.resolve(relativeFromRoot);
             if (Files.exists(candidate)) {
                 return candidate;
+            }
+            Path strippedCandidate = cur.resolve(stripped);
+            if (Files.exists(strippedCandidate)) {
+                return strippedCandidate;
             }
             cur = cur.getParent();
         }

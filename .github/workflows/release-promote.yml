@@ -55,7 +55,20 @@ jobs:
           else
             VER="${GITHUB_REF_NAME#v}"
           fi
+          BASE_VER="${VER%%-*}"
+          MAJOR_MINOR="$(printf '%s' "${BASE_VER}" | cut -d. -f1,2)"
           echo "semver=${VER}" >> "$GITHUB_OUTPUT"
+          echo "release_branch=release/v${MAJOR_MINOR}" >> "$GITHUB_OUTPUT"
+          echo "version_branch=release/v${VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or Sync Release Branch from Version Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TARGET_SHA="$(git rev-parse HEAD)"
+          git push origin "${TARGET_SHA}:refs/heads/${{ steps.rel.outputs.release_branch }}" --force
+          git push origin "${TARGET_SHA}:refs/heads/${{ steps.rel.outputs.version_branch }}" --force
 
       - name: Run Release Hygiene, Confinement & Zero-Licensing Gates
         run: |
@@ -141,6 +154,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: "MoneyCraft v${{ steps.rel.outputs.semver }} — Cross-Platform Enterprise & Desktop Release"
+          draft: false
           prerelease: ${{ contains(github.ref_name, '-rc.') }}
           generate_release_notes: true
           files: |

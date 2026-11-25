@@ -53,7 +53,7 @@ jobs:
 
       - name: Verify Zero JDBC / Spring / JPA / Servlet Contamination in desktop
         run: |
-          mvn -B dependency:tree -pl desktop > /tmp/desktop-deps.txt
+          mvn -B dependency:tree -pl desktop -DoutputFile=/tmp/desktop-deps.txt
           cat /tmp/desktop-deps.txt
           if grep -E "org\.postgresql|org\.springframework|org\.hibernate|jakarta\.persistence|jakarta\.servlet" /tmp/desktop-deps.txt; then
             echo "SWG-001/SWG-002 violation: forbidden server or database dependency in desktop client" >&2
@@ -175,7 +175,8 @@ jobs:
       - name: Verify Zero JDBC / Spring / JPA / Servlet Contamination in desktop
         shell: pwsh
         run: |
-          mvn -B dependency:tree -pl desktop | Tee-Object -FilePath "$env:RUNNER_TEMP/desktop-deps.txt"
+          mvn -B dependency:tree -pl desktop "-DoutputFile=$env:RUNNER_TEMP/desktop-deps.txt"
+          Get-Content "$env:RUNNER_TEMP/desktop-deps.txt"
           $Forbidden = Select-String -Path "$env:RUNNER_TEMP/desktop-deps.txt" -Pattern "org\.postgresql|org\.springframework|org\.hibernate|jakarta\.persistence|jakarta\.servlet"
           if ($Forbidden) {
             Write-Error "SWG-001/SWG-002 violation: forbidden server or database dependency in desktop client"

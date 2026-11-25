@@ -1,0 +1,87 @@
+name: Create Release Branch from Version Tag
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: "Version tag (e.g. v1.1.0, v1.1.0-rc.1, or v1.2.0)"
+        required: true
+        type: string
+      source_ref:
+        description: "Source branch or commit SHA when dispatching manually (default: main)"
+        required: false
+        default: "main"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-branch-from-tag-${{ github.ref_name }}-${{ inputs.version_tag }}
+  cancel-in-progress: false
+
+jobs:
+  create-or-sync-release-branch:
+    name: "Create & Sync Release Branch from Version Tag"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.source_ref || github.ref }}
+
+      - name: Resolve Version Tag & Target Release Branches
+        id: meta
+        run: |
+          if [[ -n "${{ inputs.version_tag }}" ]]; then
+            RAW_TAG="${{ inputs.version_tag }}"
+          else
+            RAW_TAG="${GITHUB_REF_NAME}"
+          fi
+          TAG_NAME="v${RAW_TAG#v}"
+          SEMVER="${TAG_NAME#v}"
+          BASE_VER="${SEMVER%%-*}"
+          MAJOR_MINOR="$(printf '%s' "${BASE_VER}" | cut -d. -f1,2)"
+          MINOR_RELEASE_BRANCH="release/v${MAJOR_MINOR}"
+          VERSION_RELEASE_BRANCH="release/${TAG_NAME}"
+
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "semver=${SEMVER}" >> "$GITHUB_OUTPUT"
+          echo "minor_branch=${MINOR_RELEASE_BRANCH}" >> "$GITHUB_OUTPUT"
+          echo "version_branch=${VERSION_RELEASE_BRANCH}" >> "$GITHUB_OUTPUT"
+
+      - name: Create & Push Release Branches (release/vX.Y and release/vX.Y.Z)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          TAG_NAME="${{ steps.meta.outputs.tag_name }}"
+          MINOR_BRANCH="${{ steps.meta.outputs.minor_branch }}"
+          VERSION_BRANCH="${{ steps.meta.outputs.version_branch }}"
+
+          if git rev-parse "${TAG_NAME}" >/dev/null 2>&1; then
+            TARGET_SHA="$(git rev-list -n 1 "${TAG_NAME}")"
+          else
+            TARGET_SHA="$(git rev-parse HEAD)"
+            git tag -f -a "${TAG_NAME}" "${TARGET_SHA}" -m "MoneyCraft ${TAG_NAME} Release"
+            git push origin "refs/tags/${TAG_NAME}" --force
+          fi
+
+          echo "Syncing ${MINOR_BRANCH} and ${VERSION_BRANCH} to commit ${TARGET_SHA} (from ${TAG_NAME})..."
+          git push origin "${TARGET_SHA}:refs/heads/${MINOR_BRANCH}" --force
+          git push origin "${TARGET_SHA}:refs/heads/${VERSION_BRANCH}" --force
+
+          {
+            echo "### Release Branch Automation Summary"
+            echo ""
+            echo "| Field | Value |"
+            echo "| :--- | :--- |"
+            echo "| **Version Tag** | \`${TAG_NAME}\` |"
+            echo "| **Commit SHA** | \`${TARGET_SHA}\` |"
+            echo "| **Release Line Branch** | \`${MINOR_BRANCH}\` |"
+            echo "| **Version Branch** | \`${VERSION_BRANCH}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

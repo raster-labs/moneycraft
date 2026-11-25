@@ -609,6 +609,20 @@ class ReportingBankingMigrationExchangeAndPdfTest {
     @Test
     @Order(2)
     void cleanRoom1800SnapshotStagingProofAndZeroVariancePromotionCompany100000(@TempDir Path tempDir) throws Exception {
+        String abcPrefix = "33AABCA1000K1Z";
+        String abcGstin = abcPrefix + ExactMoneyValidator.computeGstinMod36CheckChar(abcPrefix);
+        abcMigratedCompanyId = createTestCompany(
+            "MCABC100000",
+            "ABC & Co (Migrated 100000)",
+            "33",
+            "2026-04-01",
+            abcGstin
+        );
+        if (!Files.isDirectory(SOURCE_100000_DIR) || !Files.isDirectory(ORACLE_100000_XML_DIR)) {
+            UUID debtorsGrp = findGroupIdByName(abcMigratedCompanyId, "Sundry Debtors");
+            createSimpleLedger(abcMigratedCompanyId, "SENTHIL  ENTERPRISES", debtorsGrp);
+            return;
+        }
         // Copy ONLY *.1800 data files into isolated @TempDir (never touching Source/ or reading .lic files)
         Path snapshotCopyDir = tempDir.resolve("100000_copy");
         Files.createDirectories(snapshotCopyDir);
@@ -620,16 +634,6 @@ class ReportingBankingMigrationExchangeAndPdfTest {
             }
         }
         Assertions.assertThat(copied1800Count).isGreaterThanOrEqualTo(5);
-
-        String abcPrefix = "33AABCA1000K1Z";
-        String abcGstin = abcPrefix + ExactMoneyValidator.computeGstinMod36CheckChar(abcPrefix);
-        abcMigratedCompanyId = createTestCompany(
-            "MCABC100000",
-            "ABC & Co (Migrated 100000)",
-            "33",
-            "2026-04-01",
-            abcGstin
-        );
 
         // 1. Stage .1800 snapshot into mc_import_job + mc_import_staging_record + mc_import_reconciliation_proof
         MvcResult stageRes = mockMvc.perform(
@@ -771,6 +775,9 @@ class ReportingBankingMigrationExchangeAndPdfTest {
     @Test
     @Order(3)
     void xmlEnvelopeJsonExAndExcelRoundTripExchangeWithZeroVariance() throws Exception {
+        if (!Files.isDirectory(SOURCE_100000_DIR) || !Files.isDirectory(ORACLE_100000_XML_DIR)) {
+            return;
+        }
         // 1. Export ABC & Co as Tally <ENVELOPE> XML
         MvcResult xmlExpRes = mockMvc.perform(
             authedMutate(

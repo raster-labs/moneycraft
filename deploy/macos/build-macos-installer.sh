@@ -81,9 +81,10 @@ echo "[2/5] Creating stripped Java 25 LTS jlink runtime image (${MODULES})..."
     --no-header-files \
     --output "${RUNTIME_IMAGE_DIR}"
 
+JPACKAGE_VERSION="${APP_VERSION%%-*}"
 COMMON_ARGS=(
     --name "MoneyCraft"
-    --app-version "${APP_VERSION}"
+    --app-version "${JPACKAGE_VERSION}"
     --vendor "Raster Images"
     --description "MoneyCraft Personal Accounting Desktop Client"
     --input "${JPACKAGE_INPUT_DIR}"

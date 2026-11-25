@@ -331,12 +331,13 @@ class Swg001DesktopApiClientTest {
         assertFalse(pomXml.contains("spring-boot-starter-jdbc"));
     }
 
-    private static Path resolveDesktopPomPath() {
+    private static Path resolveDesktopPomPath() throws IOException {
         Path direct = Path.of("pom.xml");
-        if (Files.exists(direct) && direct.toAbsolutePath().toString().endsWith("/desktop/pom.xml")) {
+        if (Files.exists(direct)
+            && Files.readString(direct, StandardCharsets.UTF_8).contains("<artifactId>moneycraft-desktop</artifactId>")) {
             return direct;
         }
-        return Path.of("desktop/pom.xml");
+        return Path.of("desktop", "pom.xml");
     }
 
     private void registerContractRoutes() {

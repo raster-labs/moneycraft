@@ -76,9 +76,10 @@ try {
     }
 
     $UpgradeUuid = "8f4e3c2b-9a10-4d7c-b512-6e11a8f01100"
+    $JPackageVersion = ($AppVersion -split '-')[0]
     $CommonArgs = @(
         "--name", "MoneyCraft",
-        "--app-version", $AppVersion,
+        "--app-version", $JPackageVersion,
         "--vendor", "Raster Images",
         "--description", "MoneyCraft 1.0.0 Personal Accounting Desktop Client",
         "--input", $JPackageInputDir,
@@ -111,28 +112,22 @@ try {
         throw "Expected both .msi and .exe installers in $InstallerDir"
     }
 
-    $CanonicalMsi = Join-Path $InstallerDir "MoneyCraft-Desktop-$AppVersion-$Architecture.msi"
-    $CanonicalExe = Join-Path $InstallerDir "MoneyCraft-Desktop-$AppVersion-$Architecture.exe"
     $WindowsNamedMsi = Join-Path $InstallerDir "MoneyCraft-Desktop-$AppVersion-windows-$Architecture.msi"
     $WindowsNamedExe = Join-Path $InstallerDir "MoneyCraft-Desktop-$AppVersion-windows-$Architecture.exe"
-    Move-Item -Force $GeneratedMsi.FullName $CanonicalMsi
-    Move-Item -Force $GeneratedExe.FullName $CanonicalExe
-    Copy-Item -Force $CanonicalMsi $WindowsNamedMsi
-    Copy-Item -Force $CanonicalExe $WindowsNamedExe
+    Move-Item -Force $GeneratedMsi.FullName $WindowsNamedMsi
+    Move-Item -Force $GeneratedExe.FullName $WindowsNamedExe
 
-    Write-Host "[5/5] Writing SHA256SUMS.txt and SHA256SUMS-windows.txt..."
-    $SumsPath = Join-Path $InstallerDir "SHA256SUMS.txt"
+    Write-Host "[5/5] Writing SHA256SUMS-windows.txt..."
     $WinSumsPath = Join-Path $InstallerDir "SHA256SUMS-windows.txt"
     $HashLines = @()
-    foreach ($Artifact in @($CanonicalMsi, $CanonicalExe, $WindowsNamedMsi, $WindowsNamedExe)) {
+    foreach ($Artifact in @($WindowsNamedMsi, $WindowsNamedExe)) {
         $Digest = (Get-FileHash -Algorithm SHA256 -Path $Artifact).Hash.ToLowerInvariant()
         $FileName = Split-Path -Leaf $Artifact
         $HashLines += "$Digest  $FileName"
     }
-    Set-Content -Path $SumsPath -Value ($HashLines -join "`n") -Encoding utf8NoBOM
     Set-Content -Path $WinSumsPath -Value ($HashLines -join "`n") -Encoding utf8NoBOM
     Write-Host "Installers ready in ${InstallerDir}:"
-    Get-Content $SumsPath | ForEach-Object { Write-Host "  $_" }
+    Get-Content $WinSumsPath | ForEach-Object { Write-Host "  $_" }
 }
 finally {
     Pop-Location

@@ -25,6 +25,7 @@ import com.raster.moneycraft.desktop.device.PrintAttemptLedger;
 import com.raster.moneycraft.desktop.device.ScaleAndBarcodeCaptureManager;
 import com.raster.moneycraft.desktop.help.ContextualHelpCatalog;
 import com.raster.moneycraft.desktop.keyboard.DesktopCommandRegistry;
+import com.raster.moneycraft.desktop.platform.NativeDesktopPlatformAdapter;
 import com.raster.moneycraft.desktop.preferences.DesktopPreferencesManager;
 import com.sun.net.httpserver.HttpServer;
 import java.awt.event.ActionEvent;
@@ -318,7 +319,7 @@ class WindowsVsSwingClientFullParityComparisonTest {
         server.start();
 
         try {
-            MoneyCraftDesktopFrame frame = buildTestFrame();
+            MoneyCraftDesktopFrame frame = buildMacTestFrame();
             AdmittedNativeIssuerProfile issuerProfile = HostNativeIssuerFactory.forHostOrigin(hostOrigin, true);
             InMemoryAccessTokenHolder tokenHolder = new InMemoryAccessTokenHolder();
             tokenHolder.storeInMemory(
@@ -647,7 +648,7 @@ class WindowsVsSwingClientFullParityComparisonTest {
         conflictServer.start();
 
         try {
-            MoneyCraftDesktopFrame frame = buildTestFrame();
+            MoneyCraftDesktopFrame frame = buildMacTestFrame();
             AdmittedNativeIssuerProfile issuerProfile = HostNativeIssuerFactory.forHostOrigin(hostOrigin, true);
             java.time.Instant initialNow = java.time.Instant.parse("2026-11-17T08:00:00Z");
             AtomicReference<java.time.Instant> clockNow = new AtomicReference<>(initialNow);
@@ -946,6 +947,21 @@ class WindowsVsSwingClientFullParityComparisonTest {
     }
 
     private MoneyCraftDesktopFrame buildTestFrame() {
+        return buildTestFrameWithPlatform(null);
+    }
+
+    private MoneyCraftDesktopFrame buildMacTestFrame() {
+        NativeDesktopPlatformAdapter macAdapter = new NativeDesktopPlatformAdapter(
+            "Mac OS X",
+            () -> { },
+            () -> { },
+            () -> { },
+            () -> true
+        );
+        return buildTestFrameWithPlatform(macAdapter);
+    }
+
+    private MoneyCraftDesktopFrame buildTestFrameWithPlatform(NativeDesktopPlatformAdapter customAdapter) {
         byte[] key = new byte[32];
         new SecureRandom().nextBytes(key);
         BrandSwingTheme theme = new BrandSwingTheme();
@@ -965,7 +981,7 @@ class WindowsVsSwingClientFullParityComparisonTest {
             prefs,
             new ContextualHelpCatalog(),
             new ContextEpochGuard(),
-            null
+            customAdapter
         );
     }
 

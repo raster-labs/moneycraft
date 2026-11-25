@@ -67,7 +67,7 @@ jobs:
 
       - name: Verify Zero Spring / JPA / Network Dependencies in reader
         run: |
-          mvn -B dependency:tree -pl reader > /tmp/reader-deps.txt
+          mvn -B dependency:tree -pl reader -DoutputFile=/tmp/reader-deps.txt
           cat /tmp/reader-deps.txt
           if grep -E "org\.springframework|org\.hibernate|jakarta\.persistence|jakarta\.servlet" /tmp/reader-deps.txt; then
             echo "MIG-003 violation: forbidden framework dependency in standalone reader" >&2
@@ -92,7 +92,7 @@ jobs:
 
       - name: Verify Zero JDBC / Spring / JPA / Servlet Dependencies in desktop
         run: |
-          mvn -B dependency:tree -pl desktop > /tmp/desktop-deps.txt
+          mvn -B dependency:tree -pl desktop -DoutputFile=/tmp/desktop-deps.txt
           cat /tmp/desktop-deps.txt
           if grep -E "org\.postgresql|org\.springframework|org\.hibernate|jakarta\.persistence|jakarta\.servlet" /tmp/desktop-deps.txt; then
             echo "SWG-001/SWG-002 violation: forbidden server or database dependency in desktop client" >&2
